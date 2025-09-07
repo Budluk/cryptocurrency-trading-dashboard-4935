@@ -79,10 +79,12 @@ const fetchCryptoNews = async (): Promise<NewsItem[]> => {
 };
 
 const MarketNews = () => {
-  const { data: news, isLoading } = useQuery({
+  const { data: news, isLoading, error } = useQuery({
     queryKey: ['cryptoNews'],
     queryFn: fetchCryptoNews,
-    refetchInterval: 60000, // Atualiza a cada minuto
+    refetchInterval: 60000,
+    retry: 1,
+    retryOnMount: false
   });
 
   const getImpactColor = (impact: string) => {

@@ -74,10 +74,12 @@ const fetchTechnicalAnalysis = async (symbol: string) => {
 const TradingSignals = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('1H');
   
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['technicalAnalysis', 'BTC'],
     queryFn: () => fetchTechnicalAnalysis('BTC'),
-    refetchInterval: 15000, // Atualiza a cada 15 segundos
+    refetchInterval: 15000,
+    retry: 1,
+    retryOnMount: false
   });
 
   const overallSignal = useMemo(() => {

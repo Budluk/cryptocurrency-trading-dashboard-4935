@@ -72,10 +72,12 @@ const chartConfig = {
 } as const;
 
 const AdvancedAnalytics = () => {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['advancedAnalytics'],
     queryFn: fetchAdvancedAnalytics,
     refetchInterval: 30000,
+    retry: 1,
+    retryOnMount: false
   });
 
   const getConfidenceColor = (confidence: number) => {
