@@ -7,6 +7,7 @@ import MarketNews from "@/components/MarketNews";
 import AdvancedAnalytics from "@/components/AdvancedAnalytics";
 import AITradingSignals from "@/components/AITradingSignals";
 import MarketProjections from "@/components/MarketProjections";
+import LiveSignalFeed from "@/components/LiveSignalFeed";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
@@ -38,12 +39,15 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="ai-signals" className="space-y-8">
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
               <div className="xl:col-span-2">
                 <CryptoChart />
               </div>
               <div>
                 <AITradingSignals />
+              </div>
+              <div>
+                <LiveSignalFeed />
               </div>
             </div>
           </TabsContent>
