@@ -5,6 +5,8 @@ import CryptoList from "@/components/CryptoList";
 import TradingSignals from "@/components/TradingSignals";
 import MarketNews from "@/components/MarketNews";
 import AdvancedAnalytics from "@/components/AdvancedAnalytics";
+import AITradingSignals from "@/components/AITradingSignals";
+import MarketProjections from "@/components/MarketProjections";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
@@ -26,13 +28,29 @@ const Index = () => {
         
         <MarketStats />
         
-        <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="ai-signals" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="ai-signals">IA Trading</TabsTrigger>
+            <TabsTrigger value="projections">Projeções</TabsTrigger>
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="signals">Sinais Trading</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="news">Notícias</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="ai-signals" className="space-y-8">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+              <div className="xl:col-span-2">
+                <CryptoChart />
+              </div>
+              <div>
+                <AITradingSignals />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="projections" className="space-y-8">
+            <MarketProjections />
+          </TabsContent>
 
           <TabsContent value="overview" className="space-y-8">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -44,13 +62,6 @@ const Index = () => {
               </div>
             </div>
             <CryptoList />
-          </TabsContent>
-
-          <TabsContent value="signals" className="space-y-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <TradingSignals />
-              <MarketNews />
-            </div>
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-8">
