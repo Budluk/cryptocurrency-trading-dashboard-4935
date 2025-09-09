@@ -13,6 +13,15 @@ interface LiveSignal {
   timestamp: number;
   reason: string;
   status: 'ACTIVE' | 'EXPIRED' | 'TRIGGERED';
+  newsImpact?: {
+    title: string;
+    sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
+    impact: 'HIGH' | 'MEDIUM' | 'LOW';
+    priceEffect: number;
+  };
+  targetPrice?: number;
+  stopLoss?: number;
+  riskReward?: number;
 }
 
 const LiveSignalFeed = () => {
@@ -21,47 +30,93 @@ const LiveSignalFeed = () => {
 
   useEffect(() => {
     const generateLiveSignal = (): LiveSignal => {
-      const currentPrice = 111250 + (Math.random() - 0.5) * 400;
+      const currentPrice = 111250 + (Math.random() - 0.5) * 300;
       
-      // Indicadores técnicos para gerar sinais mais precisos
-      const rsi = 25 + Math.random() * 50;
-      const ema20 = currentPrice * (0.998 + Math.random() * 0.004);
-      const volume = 0.7 + Math.random() * 0.6;
-      const atr = currentPrice * (0.008 + Math.random() * 0.012);
+      // Indicadores para day trading - timeframes curtos
+      const rsi = 30 + Math.random() * 40;
+      const ema9 = currentPrice * (0.9995 + Math.random() * 0.001);
+      const ema21 = currentPrice * (0.998 + Math.random() * 0.004);
+      const volume = 0.8 + Math.random() * 0.8;
+      const macd = (Math.random() - 0.5) * 100;
+      const atr = currentPrice * (0.003 + Math.random() * 0.007);
       
-      // Lógica profissional para determinação de sinal
+      // Gerador de notícias de impacto
+      const newsEvents = [
+        { title: "Fed mantém taxa de juros", sentiment: "POSITIVE" as const, impact: "HIGH" as const, effect: 1.2 },
+        { title: "Whale movimenta $500M BTC", sentiment: "NEGATIVE" as const, impact: "MEDIUM" as const, effect: -0.8 },
+        { title: "BlackRock adiciona BTC ao ETF", sentiment: "POSITIVE" as const, impact: "HIGH" as const, effect: 2.1 },
+        { title: "Correção técnica esperada", sentiment: "NEUTRAL" as const, impact: "LOW" as const, effect: -0.3 },
+        { title: "Adoção institucional aumenta", sentiment: "POSITIVE" as const, impact: "MEDIUM" as const, effect: 1.5 }
+      ];
+      
+      // Lógica otimizada para day trading
       let action: 'BUY' | 'SELL' | 'HOLD';
       let confidence: number;
       let reason: string;
       let timeframe: string;
+      let newsImpact: any = undefined;
+      let targetPrice: number;
+      let stopLoss: number;
+      let riskReward: number;
       
-      if (rsi < 35 && currentPrice > ema20 && volume > 1.1) {
+      // Day trading - foco em timeframes de 1m a 15m
+      if (rsi < 30 && currentPrice > ema9 && ema9 > ema21 && macd > 0 && volume > 1.2) {
         action = 'BUY';
-        confidence = 82 + Math.random() * 15;
-        reason = `RSI(${rsi.toFixed(1)}) oversold + EMA20 support + Volume(${volume.toFixed(2)}x)`;
-        timeframe = Math.random() > 0.7 ? '1m' : Math.random() > 0.4 ? '5m' : '15m';
-      } else if (rsi > 65 && currentPrice < ema20 && volume > 0.9) {
-        action = 'SELL';
-        confidence = 78 + Math.random() * 17;
-        reason = `RSI(${rsi.toFixed(1)}) overbought + EMA20 resistance + ATR(${(atr/currentPrice*100).toFixed(2)}%)`;
-        timeframe = Math.random() > 0.6 ? '5m' : Math.random() > 0.3 ? '15m' : '1h';
-      } else if (Math.abs(currentPrice - ema20) < atr * 0.5 && volume < 0.8) {
-        action = 'HOLD';
-        confidence = 65 + Math.random() * 20;
-        reason = `Consolidação: Preço próximo EMA20, Volume baixo(${volume.toFixed(2)}x)`;
-        timeframe = Math.random() > 0.5 ? '15m' : '1h';
-      } else {
-        // Sinais alternativos baseados em breakouts
+        confidence = 85 + Math.random() * 12;
+        reason = `COMPRA: RSI(${rsi.toFixed(1)}) oversold + EMA crossover + MACD(+${macd.toFixed(1)}) + Volume alto`;
+        timeframe = Math.random() > 0.8 ? '1m' : Math.random() > 0.5 ? '3m' : '5m';
+        targetPrice = currentPrice + (atr * 1.5);
+        stopLoss = currentPrice - (atr * 0.8);
+        riskReward = 1.9;
+        
         if (Math.random() > 0.6) {
+          const news = newsEvents[Math.floor(Math.random() * newsEvents.length)];
+          newsImpact = { ...news, priceEffect: news.effect };
+        }
+      } else if (rsi > 70 && currentPrice < ema9 && ema9 < ema21 && macd < 0 && volume > 1.0) {
+        action = 'SELL';
+        confidence = 82 + Math.random() * 15;
+        reason = `VENDA: RSI(${rsi.toFixed(1)}) overbought + EMA bearish + MACD(-${Math.abs(macd).toFixed(1)}) + Volume confirmação`;
+        timeframe = Math.random() > 0.7 ? '1m' : Math.random() > 0.4 ? '3m' : '5m';
+        targetPrice = currentPrice - (atr * 1.8);
+        stopLoss = currentPrice + (atr * 0.9);
+        riskReward = 2.0;
+        
+        if (Math.random() > 0.5) {
+          const news = newsEvents[Math.floor(Math.random() * newsEvents.length)];
+          newsImpact = { ...news, priceEffect: news.effect };
+        }
+      } else if (Math.abs(rsi - 50) < 10 && Math.abs(currentPrice - ema21) < atr * 0.3) {
+        action = 'HOLD';
+        confidence = 60 + Math.random() * 25;
+        reason = `AGUARDAR: RSI neutro(${rsi.toFixed(1)}) + Preço em consolidação próximo EMA21`;
+        timeframe = Math.random() > 0.6 ? '5m' : '15m';
+        targetPrice = currentPrice + (atr * 0.5);
+        stopLoss = currentPrice - (atr * 0.5);
+        riskReward = 1.0;
+      } else {
+        // Scalping rápido para day trading
+        if (Math.random() > 0.5) {
           action = 'BUY';
-          confidence = 71 + Math.random() * 20;
-          reason = `Breakout tentativa + Volume confirmação(${volume.toFixed(2)}x)`;
+          confidence = 75 + Math.random() * 18;
+          reason = `SCALP BUY: Momentum + Volume(${volume.toFixed(2)}x) + Support EMA9`;
+          targetPrice = currentPrice + (atr * 0.8);
+          stopLoss = currentPrice - (atr * 0.4);
+          riskReward = 2.0;
         } else {
           action = 'SELL';
-          confidence = 68 + Math.random() * 22;
-          reason = `Breakdown pattern + RSI(${rsi.toFixed(1)}) divergência`;
+          confidence = 73 + Math.random() * 20;
+          reason = `SCALP SELL: Reversal + RSI(${rsi.toFixed(1)}) + Resistance EMA21`;
+          targetPrice = currentPrice - (atr * 0.9);
+          stopLoss = currentPrice + (atr * 0.45);
+          riskReward = 2.0;
         }
-        timeframe = Math.random() > 0.5 ? '5m' : '15m';
+        timeframe = Math.random() > 0.7 ? '1m' : '3m';
+        
+        if (Math.random() > 0.7) {
+          const news = newsEvents[Math.floor(Math.random() * newsEvents.length)];
+          newsImpact = { ...news, priceEffect: news.effect };
+        }
       }
 
       return {
@@ -73,7 +128,11 @@ const LiveSignalFeed = () => {
         timeframe,
         timestamp: Date.now(),
         reason,
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        newsImpact,
+        targetPrice: Math.round(targetPrice),
+        stopLoss: Math.round(stopLoss),
+        riskReward: Math.round(riskReward * 10) / 10
       };
     };
 
@@ -96,7 +155,7 @@ const LiveSignalFeed = () => {
           return signal;
         });
       });
-    }, 2500); // Novo sinal a cada 2.5 segundos
+    }, 1800); // Novo sinal a cada 1.8 segundos para day trading
 
     return () => clearInterval(interval);
   }, []);
@@ -157,7 +216,7 @@ const LiveSignalFeed = () => {
               {getStatusBadge(signal.status)}
             </div>
 
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-sm mb-2">
               <div>
                 <span className="font-mono font-semibold">${signal.price.toLocaleString()}</span>
                 <span className="text-muted-foreground ml-2">({signal.confidence}%)</span>
@@ -168,7 +227,42 @@ const LiveSignalFeed = () => {
               </div>
             </div>
 
-            <div className="text-xs text-muted-foreground mt-1 truncate">
+            {signal.targetPrice && signal.stopLoss && (
+              <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                <div className="text-center p-1 bg-green-500/10 rounded">
+                  <div className="text-green-600 font-semibold">Target</div>
+                  <div className="font-mono">${signal.targetPrice.toLocaleString()}</div>
+                </div>
+                <div className="text-center p-1 bg-red-500/10 rounded">
+                  <div className="text-red-600 font-semibold">Stop</div>
+                  <div className="font-mono">${signal.stopLoss.toLocaleString()}</div>
+                </div>
+                <div className="text-center p-1 bg-blue-500/10 rounded">
+                  <div className="text-blue-600 font-semibold">R:R</div>
+                  <div className="font-mono">1:{signal.riskReward}</div>
+                </div>
+              </div>
+            )}
+
+            {signal.newsImpact && (
+              <div className="bg-muted/30 p-2 rounded text-xs mb-2">
+                <div className="flex items-center gap-1 mb-1">
+                  <Badge variant="outline" className="text-xs px-1">{signal.newsImpact.impact}</Badge>
+                  <span className={`font-semibold ${
+                    signal.newsImpact.sentiment === 'POSITIVE' ? 'text-green-600' : 
+                    signal.newsImpact.sentiment === 'NEGATIVE' ? 'text-red-600' : 'text-yellow-600'
+                  }`}>
+                    {signal.newsImpact.sentiment}
+                  </span>
+                </div>
+                <div className="text-muted-foreground">{signal.newsImpact.title}</div>
+                <div className={`font-mono ${signal.newsImpact.priceEffect > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  Impacto: {signal.newsImpact.priceEffect > 0 ? '+' : ''}{signal.newsImpact.priceEffect}%
+                </div>
+              </div>
+            )}
+
+            <div className="text-xs text-muted-foreground truncate">
               {signal.reason}
             </div>
           </div>
