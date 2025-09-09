@@ -30,24 +30,70 @@ interface MarketAnalysis {
 
 const fetchAITradingData = async () => {
   try {
-    // Simula dados em tempo real da API
-    const currentPrice = 111000 + (Math.random() - 0.5) * 1000;
+    // Simula dados em tempo real da API com precisão profissional
+    const currentPrice = 111250 + (Math.random() - 0.5) * 800;
     const timestamp = Date.now();
     
+    // Indicadores técnicos simulados realistas
+    const rsi = 30 + Math.random() * 40;
+    const macd = (Math.random() - 0.5) * 100;
+    const volume = 0.8 + Math.random() * 0.4; // Volume normalizado
+    const bollinger = {
+      upper: currentPrice * 1.02,
+      lower: currentPrice * 0.98,
+      middle: currentPrice
+    };
+    
+    const technicalReasons = [
+      `RSI(${rsi.toFixed(1)}) ${rsi < 35 ? 'oversold' : rsi > 65 ? 'overbought' : 'neutral'} + Volume ${volume > 1.2 ? 'spike' : 'normal'}`,
+      `MACD(${macd.toFixed(2)}) ${macd > 0 ? 'bullish' : 'bearish'} crossover confirmed`,
+      `Bollinger Bands squeeze breakout - Price at ${((currentPrice - bollinger.lower) / (bollinger.upper - bollinger.lower) * 100).toFixed(1)}%`,
+      `EMA(20) ${currentPrice > currentPrice * 0.999 ? 'support' : 'resistance'} test with ${volume.toFixed(2)}x volume`,
+      `Fibonacci 0.618 retracement ${Math.random() > 0.5 ? 'hold' : 'break'} - Key level: $${(currentPrice * 0.995).toFixed(0)}`
+    ];
+    
+    const generateProfessionalSignal = (timeframe: string, index: number): AITradingSignal => {
+      // Lógica mais realista baseada em indicadores
+      let signalType: 'BUY' | 'SELL' | 'HOLD';
+      let confidence: number;
+      let riskReward: number;
+      
+      if (rsi < 35 && macd > -20 && volume > 1.1) {
+        signalType = 'BUY';
+        confidence = 78 + Math.random() * 15;
+        riskReward = 2.8 + Math.random() * 1.2;
+      } else if (rsi > 65 && macd < 20 && volume > 1.0) {
+        signalType = 'SELL';
+        confidence = 72 + Math.random() * 18;
+        riskReward = 2.2 + Math.random() * 1.8;
+      } else {
+        signalType = 'HOLD';
+        confidence = 60 + Math.random() * 20;
+        riskReward = 1.5 + Math.random() * 1.0;
+      }
+      
+      const entryPrice = currentPrice + (Math.random() - 0.5) * 50;
+      const multiplier = timeframe === '1H' ? 0.015 : timeframe === '4H' ? 0.025 : timeframe === '1D' ? 0.045 : 0.08;
+      
+      return {
+        type: signalType,
+        confidence,
+        entry_price: entryPrice,
+        target: signalType === 'BUY' ? entryPrice * (1 + multiplier * riskReward) : 
+                signalType === 'SELL' ? entryPrice * (1 - multiplier * riskReward) : entryPrice,
+        stop_loss: signalType === 'BUY' ? entryPrice * (1 - multiplier) : 
+                   signalType === 'SELL' ? entryPrice * (1 + multiplier) : entryPrice * 0.985,
+        timeframe,
+        reason: technicalReasons[index % technicalReasons.length],
+        market_condition: `RSI: ${rsi.toFixed(1)} | MACD: ${macd.toFixed(2)} | Vol: ${volume.toFixed(2)}x`,
+        risk_reward: riskReward,
+        prediction: `Análise multifator indica ${confidence.toFixed(0)}% probabilidade de ${signalType === 'BUY' ? 'alta' : signalType === 'SELL' ? 'baixa' : 'lateralização'}`,
+        timestamp: timestamp - (index * 1800000)
+      };
+    };
+    
     const signals: AITradingSignal[] = [
-      {
-        type: Math.random() > 0.6 ? 'BUY' : Math.random() > 0.3 ? 'SELL' : 'HOLD',
-        confidence: 75 + Math.random() * 20,
-        entry_price: currentPrice + (Math.random() - 0.5) * 200,
-        target: currentPrice * (1 + (Math.random() * 0.04 + 0.01)),
-        stop_loss: currentPrice * (0.98 - Math.random() * 0.02),
-        timeframe: '1H',
-        reason: 'RSI divergence + volume breakout pattern detected',
-        market_condition: 'High volatility with strong momentum',
-        risk_reward: 2.5 + Math.random() * 1.5,
-        prediction: 'IA detecta padrão de alta probabilidade nas próximas 2-4 horas',
-        timestamp
-      },
+      generateProfessionalSignal('1H', 0),
       {
         type: Math.random() > 0.5 ? 'BUY' : 'SELL',
         confidence: 68 + Math.random() * 25,

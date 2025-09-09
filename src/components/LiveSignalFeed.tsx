@@ -21,26 +21,58 @@ const LiveSignalFeed = () => {
 
   useEffect(() => {
     const generateLiveSignal = (): LiveSignal => {
-      const actions: ('BUY' | 'SELL' | 'HOLD')[] = ['BUY', 'SELL', 'HOLD'];
-      const timeframes = ['1m', '5m', '15m', '1h'];
-      const reasons = [
-        'RSI oversold + volume spike',
-        'MACD golden cross detected',
-        'Support level bounce confirmed',
-        'Resistance breakout imminent',
-        'Bearish divergence forming',
-        'Volume surge above MA20'
-      ];
+      const currentPrice = 111250 + (Math.random() - 0.5) * 400;
+      
+      // Indicadores técnicos para gerar sinais mais precisos
+      const rsi = 25 + Math.random() * 50;
+      const ema20 = currentPrice * (0.998 + Math.random() * 0.004);
+      const volume = 0.7 + Math.random() * 0.6;
+      const atr = currentPrice * (0.008 + Math.random() * 0.012);
+      
+      // Lógica profissional para determinação de sinal
+      let action: 'BUY' | 'SELL' | 'HOLD';
+      let confidence: number;
+      let reason: string;
+      let timeframe: string;
+      
+      if (rsi < 35 && currentPrice > ema20 && volume > 1.1) {
+        action = 'BUY';
+        confidence = 82 + Math.random() * 15;
+        reason = `RSI(${rsi.toFixed(1)}) oversold + EMA20 support + Volume(${volume.toFixed(2)}x)`;
+        timeframe = Math.random() > 0.7 ? '1m' : Math.random() > 0.4 ? '5m' : '15m';
+      } else if (rsi > 65 && currentPrice < ema20 && volume > 0.9) {
+        action = 'SELL';
+        confidence = 78 + Math.random() * 17;
+        reason = `RSI(${rsi.toFixed(1)}) overbought + EMA20 resistance + ATR(${(atr/currentPrice*100).toFixed(2)}%)`;
+        timeframe = Math.random() > 0.6 ? '5m' : Math.random() > 0.3 ? '15m' : '1h';
+      } else if (Math.abs(currentPrice - ema20) < atr * 0.5 && volume < 0.8) {
+        action = 'HOLD';
+        confidence = 65 + Math.random() * 20;
+        reason = `Consolidação: Preço próximo EMA20, Volume baixo(${volume.toFixed(2)}x)`;
+        timeframe = Math.random() > 0.5 ? '15m' : '1h';
+      } else {
+        // Sinais alternativos baseados em breakouts
+        if (Math.random() > 0.6) {
+          action = 'BUY';
+          confidence = 71 + Math.random() * 20;
+          reason = `Breakout tentativa + Volume confirmação(${volume.toFixed(2)}x)`;
+        } else {
+          action = 'SELL';
+          confidence = 68 + Math.random() * 22;
+          reason = `Breakdown pattern + RSI(${rsi.toFixed(1)}) divergência`;
+        }
+        timeframe = Math.random() > 0.5 ? '5m' : '15m';
+      }
 
       return {
-        id: Date.now().toString(),
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         symbol: 'BTC/USD',
-        action: actions[Math.floor(Math.random() * actions.length)],
-        price: 111000 + (Math.random() - 0.5) * 2000,
-        confidence: Math.floor(70 + Math.random() * 25),
-        timeframe: timeframes[Math.floor(Math.random() * timeframes.length)],
+        action,
+        price: currentPrice,
+        confidence: Math.floor(confidence),
+        timeframe,
         timestamp: Date.now(),
-        reason: reasons[Math.floor(Math.random() * reasons.length)],
+        reason,
         status: 'ACTIVE'
       };
     };
@@ -64,7 +96,7 @@ const LiveSignalFeed = () => {
           return signal;
         });
       });
-    }, 3000); // Novo sinal a cada 3 segundos
+    }, 2500); // Novo sinal a cada 2.5 segundos
 
     return () => clearInterval(interval);
   }, []);
