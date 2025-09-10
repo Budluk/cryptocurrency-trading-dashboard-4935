@@ -30,20 +30,20 @@ const LiveSignalFeed = memo(() => {
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
   const generateLiveSignal = useCallback((): LiveSignal => {
-    const currentPrice = 111250 + (Math.random() - 0.5) * 200; // Menor variação para mais precisão
+    const currentPrice = 111250 + (Math.random() - 0.5) * 150; // Menor variação para mais precisão
     
     // Indicadores técnicos mais precisos para scalping/day trading
-    const rsi14 = 25 + Math.random() * 50;
-    const rsi7 = 30 + Math.random() * 40; 
-    const ema9 = currentPrice * (0.9998 + Math.random() * 0.0004);
-    const ema21 = currentPrice * (0.9995 + Math.random() * 0.001);
-    const sma50 = currentPrice * (0.997 + Math.random() * 0.006);
-    const volume = 0.5 + Math.random() * 1.5;
-    const macd = (Math.random() - 0.5) * 50;
-    const macdSignal = macd * 0.8;
-    const atr = currentPrice * (0.002 + Math.random() * 0.005);
-    const bb_upper = currentPrice * 1.004;
-    const bb_lower = currentPrice * 0.996;
+    const rsi14 = 20 + Math.random() * 60;
+    const rsi7 = 25 + Math.random() * 50; 
+    const ema9 = currentPrice * (0.9999 + Math.random() * 0.0002);
+    const ema21 = currentPrice * (0.9998 + Math.random() * 0.0004);
+    const sma50 = currentPrice * (0.998 + Math.random() * 0.004);
+    const volume = 0.8 + Math.random() * 1.2;
+    const macd = (Math.random() - 0.5) * 30;
+    const macdSignal = macd * 0.9;
+    const atr = currentPrice * (0.001 + Math.random() * 0.003);
+    const bb_upper = currentPrice * 1.002;
+    const bb_lower = currentPrice * 0.998;
       
       // Gerador de notícias de impacto
       const newsEvents = [
@@ -150,21 +150,21 @@ const LiveSignalFeed = memo(() => {
     const interval = setInterval(() => {
       setSignals(prev => {
         const newSignal = generateLiveSignal();
-        const updated = [newSignal, ...prev.slice(0, 7)]; // Mantém últimos 8 sinais
+        const updated = [newSignal, ...prev.slice(0, 4)]; // Mantém últimos 5 sinais para melhor performance
         
         // Atualiza status dos sinais antigos de forma otimizada
         return updated.map(signal => {
           const age = Date.now() - signal.timestamp;
-          if (age > 180000) { // 3 minutos para day trading
+          if (age > 120000) { // 2 minutos para day trading
             return { ...signal, status: 'EXPIRED' as const };
-          } else if (age > 45000 && Math.random() > 0.6) { // 45 segundos + chance
+          } else if (age > 30000 && Math.random() > 0.7) { // 30 segundos + chance
             return { ...signal, status: 'TRIGGERED' as const };
           }
           return signal;
         });
       });
       setLastUpdateTime(Date.now());
-    }, 2500); // Otimizado: novo sinal a cada 2.5 segundos
+    }, 3000); // Otimizado: novo sinal a cada 3 segundos
 
     return () => clearInterval(interval);
   }, [generateLiveSignal]);
@@ -210,31 +210,60 @@ const LiveSignalFeed = memo(() => {
       </div>
 
       <div className="space-y-3 max-h-96 overflow-y-auto">
-        {signals.map((signal) => (
+        {signals.map((signal, index) => (
           <div
             key={signal.id}
-            className={`p-3 border-l-4 rounded-r-lg transition-all duration-300 ${getSignalColor(signal.action)}`}
+            className={`relative p-4 border-l-4 rounded-r-lg transition-all duration-300 hover:scale-[1.02] ${getSignalColor(signal.action)} ${
+              index === 0 ? 'ring-2 ring-primary/20 shadow-lg' : ''
+            }`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {getSignalIcon(signal.action)}
-                <span className="font-semibold text-sm">{signal.action}</span>
-                <span className="text-xs text-muted-foreground">{signal.symbol}</span>
-                <Badge variant="outline" className="text-xs">{signal.timeframe}</Badge>
+            {/* Badge de Novo Sinal */}
+            {index === 0 && (
+              <div className="absolute -top-2 -right-2 bg-gradient-to-r from-primary to-primary/70 text-white text-xs px-2 py-1 rounded-full font-semibold animate-pulse">
+                NOVO
+              </div>
+            )}
+
+            {/* Header do Sinal */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${
+                  signal.action === 'BUY' ? 'bg-green-500/20' : 
+                  signal.action === 'SELL' ? 'bg-red-500/20' : 'bg-yellow-500/20'
+                }`}>
+                  {getSignalIcon(signal.action)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-bold text-lg ${
+                      signal.action === 'BUY' ? 'text-green-500' : 
+                      signal.action === 'SELL' ? 'text-red-500' : 'text-yellow-500'
+                    }`}>
+                      {signal.action}
+                    </span>
+                    <Badge variant="outline" className="text-xs font-semibold">{signal.timeframe}</Badge>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{signal.symbol}</span>
+                </div>
               </div>
               {getStatusBadge(signal.status)}
             </div>
 
-            <div className="flex items-center justify-between text-sm mb-2">
+            {/* Preço e Confiança */}
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <span className="font-mono font-semibold text-base">${signal.price.toLocaleString()}</span>
-                <Badge variant="outline" className={`text-xs font-semibold ${
-                  signal.confidence >= 85 ? 'bg-green-500/20 text-green-600 border-green-500' :
-                  signal.confidence >= 75 ? 'bg-yellow-500/20 text-yellow-600 border-yellow-500' :
-                  'bg-red-500/20 text-red-600 border-red-500'
+                <span className="font-mono font-bold text-xl">${signal.price.toLocaleString()}</span>
+                <div className={`flex items-center gap-1 px-3 py-1 rounded-full ${
+                  signal.confidence >= 85 ? 'bg-green-500/20 text-green-400' :
+                  signal.confidence >= 75 ? 'bg-yellow-500/20 text-yellow-400' :
+                  'bg-red-500/20 text-red-400'
                 }`}>
-                  {signal.confidence}%
-                </Badge>
+                  <div className={`w-2 h-2 rounded-full ${
+                    signal.confidence >= 85 ? 'bg-green-500' :
+                    signal.confidence >= 75 ? 'bg-yellow-500' : 'bg-red-500'
+                  } animate-pulse`}></div>
+                  <span className="text-sm font-bold">{signal.confidence}%</span>
+                </div>
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <ClockIcon className="w-3 h-3" />
@@ -242,49 +271,62 @@ const LiveSignalFeed = memo(() => {
               </div>
             </div>
 
+            {/* Targets e Stop Loss - Layout Melhorado */}
             {signal.targetPrice && signal.stopLoss && (
-              <div className="grid grid-cols-3 gap-2 text-xs mb-3">
-                <div className="text-center p-2 bg-green-600/15 rounded border border-green-500/30">
-                  <div className="flex items-center justify-center gap-1 text-green-600 font-semibold mb-1">
-                    <TargetIcon className="w-3 h-3" />
-                    Target
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="text-center p-3 bg-gradient-to-b from-green-500/10 to-green-500/5 rounded-lg border border-green-500/30">
+                  <div className="flex items-center justify-center gap-1 text-green-500 font-bold mb-1">
+                    <TargetIcon className="w-4 h-4" />
+                    TARGET
                   </div>
-                  <div className="font-mono font-bold">${signal.targetPrice.toLocaleString()}</div>
-                </div>
-                <div className="text-center p-2 bg-red-600/15 rounded border border-red-500/30">
-                  <div className="flex items-center justify-center gap-1 text-red-600 font-semibold mb-1">
-                    <AlertTriangleIcon className="w-3 h-3" />
-                    Stop
+                  <div className="font-mono font-bold text-lg text-green-400">${signal.targetPrice.toLocaleString()}</div>
+                  <div className="text-xs text-green-600/70 mt-1">
+                    +{Math.round(((signal.targetPrice - signal.price) / signal.price) * 100 * 100) / 100}%
                   </div>
-                  <div className="font-mono font-bold">${signal.stopLoss.toLocaleString()}</div>
                 </div>
-                <div className="text-center p-2 bg-blue-600/15 rounded border border-blue-500/30">
-                  <div className="text-blue-600 font-semibold mb-1">R:R</div>
-                  <div className="font-mono font-bold">1:{signal.riskReward}</div>
+                <div className="text-center p-3 bg-gradient-to-b from-red-500/10 to-red-500/5 rounded-lg border border-red-500/30">
+                  <div className="flex items-center justify-center gap-1 text-red-500 font-bold mb-1">
+                    <AlertTriangleIcon className="w-4 h-4" />
+                    STOP
+                  </div>
+                  <div className="font-mono font-bold text-lg text-red-400">${signal.stopLoss.toLocaleString()}</div>
+                  <div className="text-xs text-red-600/70 mt-1">
+                    {Math.round(((signal.stopLoss - signal.price) / signal.price) * 100 * 100) / 100}%
+                  </div>
+                </div>
+                <div className="text-center p-3 bg-gradient-to-b from-blue-500/10 to-blue-500/5 rounded-lg border border-blue-500/30">
+                  <div className="text-blue-500 font-bold mb-1">RISCO</div>
+                  <div className="font-mono font-bold text-lg text-blue-400">1:{signal.riskReward}</div>
+                  <div className="text-xs text-blue-600/70 mt-1">Recompensa</div>
                 </div>
               </div>
             )}
 
+            {/* Notícias de Impacto */}
             {signal.newsImpact && (
-              <div className="bg-muted/30 p-2 rounded text-xs mb-2">
-                <div className="flex items-center gap-1 mb-1">
-                  <Badge variant="outline" className="text-xs px-1">{signal.newsImpact.impact}</Badge>
-                  <span className={`font-semibold ${
-                    signal.newsImpact.sentiment === 'POSITIVE' ? 'text-green-600' : 
-                    signal.newsImpact.sentiment === 'NEGATIVE' ? 'text-red-600' : 'text-yellow-600'
+              <div className="bg-gradient-to-r from-muted/20 to-muted/10 p-3 rounded-lg border border-muted/30 mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline" className="text-xs px-2 py-1 font-semibold">{signal.newsImpact.impact}</Badge>
+                  <span className={`font-bold text-sm ${
+                    signal.newsImpact.sentiment === 'POSITIVE' ? 'text-green-500' : 
+                    signal.newsImpact.sentiment === 'NEGATIVE' ? 'text-red-500' : 'text-yellow-500'
                   }`}>
                     {signal.newsImpact.sentiment}
                   </span>
+                  <div className={`px-2 py-1 rounded text-xs font-mono font-bold ${
+                    signal.newsImpact.priceEffect > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {signal.newsImpact.priceEffect > 0 ? '+' : ''}{signal.newsImpact.priceEffect}%
+                  </div>
                 </div>
-                <div className="text-muted-foreground">{signal.newsImpact.title}</div>
-                <div className={`font-mono ${signal.newsImpact.priceEffect > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Impacto: {signal.newsImpact.priceEffect > 0 ? '+' : ''}{signal.newsImpact.priceEffect}%
-                </div>
+                <div className="text-sm font-medium">{signal.newsImpact.title}</div>
               </div>
             )}
 
-            <div className="text-xs text-muted-foreground truncate">
-              {signal.reason}
+            {/* Razão do Sinal */}
+            <div className="p-3 bg-muted/20 rounded-lg border border-muted/30">
+              <div className="text-xs font-semibold text-muted-foreground mb-1">ANÁLISE TÉCNICA:</div>
+              <div className="text-sm leading-relaxed">{signal.reason}</div>
             </div>
           </div>
         ))}
