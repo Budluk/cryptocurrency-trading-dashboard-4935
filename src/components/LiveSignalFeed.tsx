@@ -30,113 +30,80 @@ const LiveSignalFeed = memo(() => {
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
   const generateLiveSignal = useCallback((): LiveSignal => {
-    const currentPrice = 111250 + (Math.random() - 0.5) * 150; // Menor variação para mais precisão
+    const currentPrice = 111250 + (Math.random() - 0.5) * 80;
     
-    // Indicadores técnicos mais precisos para scalping/day trading
-    const rsi14 = 20 + Math.random() * 60;
-    const rsi7 = 25 + Math.random() * 50; 
-    const ema9 = currentPrice * (0.9999 + Math.random() * 0.0002);
-    const ema21 = currentPrice * (0.9998 + Math.random() * 0.0004);
-    const sma50 = currentPrice * (0.998 + Math.random() * 0.004);
-    const volume = 0.8 + Math.random() * 1.2;
-    const macd = (Math.random() - 0.5) * 30;
-    const macdSignal = macd * 0.9;
-    const atr = currentPrice * (0.001 + Math.random() * 0.003);
-    const bb_upper = currentPrice * 1.002;
-    const bb_lower = currentPrice * 0.998;
-      
-      // Gerador de notícias de impacto
-      const newsEvents = [
-        { title: "Fed mantém taxa de juros", sentiment: "POSITIVE" as const, impact: "HIGH" as const, effect: 1.2 },
-        { title: "Whale movimenta $500M BTC", sentiment: "NEGATIVE" as const, impact: "MEDIUM" as const, effect: -0.8 },
-        { title: "BlackRock adiciona BTC ao ETF", sentiment: "POSITIVE" as const, impact: "HIGH" as const, effect: 2.1 },
-        { title: "Correção técnica esperada", sentiment: "NEUTRAL" as const, impact: "LOW" as const, effect: -0.3 },
-        { title: "Adoção institucional aumenta", sentiment: "POSITIVE" as const, impact: "MEDIUM" as const, effect: 1.5 }
-      ];
-      
-      // Lógica otimizada para day trading
-      let action: 'BUY' | 'SELL' | 'HOLD';
-      let confidence: number;
-      let reason: string;
-      let timeframe: string;
-      let newsImpact: any = undefined;
-      let targetPrice: number;
-      let stopLoss: number;
-      let riskReward: number;
-      
-      // Lógica de trading otimizada com múltiplos indicadores
-      if (rsi14 < 35 && rsi7 < 40 && currentPrice > ema9 && ema9 > ema21 && 
-          macd > macdSignal && volume > 1.0 && currentPrice > bb_lower) {
+    // Indicadores simplificados e mais precisos
+    const rsi = 30 + Math.random() * 40; // RSI entre 30-70 para sinais mais claros
+    const momentum = (Math.random() - 0.5) * 2; // -1 a +1
+    const volume = 0.9 + Math.random() * 0.6; // 0.9 a 1.5
+    const trend = Math.random() > 0.5 ? 1 : -1; // Tendência clara
+    
+    let action: 'BUY' | 'SELL' | 'HOLD';
+    let confidence: number;
+    let reason: string;
+    let timeframe: string;
+    let targetPrice: number;
+    let stopLoss: number;
+    let riskReward: number;
+    
+    // Lógica simplificada e mais precisa
+    if (rsi < 40 && momentum > 0.3 && volume > 1.1 && trend > 0) {
+      // Sinal de COMPRA forte
+      action = 'BUY';
+      confidence = 85 + Math.random() * 12;
+      reason = `RSI Oversold + Momentum Positivo + Volume Alto`;
+      timeframe = '5m';
+      targetPrice = currentPrice * 1.015; // 1.5% profit
+      stopLoss = currentPrice * 0.995; // 0.5% stop
+      riskReward = 3.0;
+    } else if (rsi > 60 && momentum < -0.3 && volume > 1.0 && trend < 0) {
+      // Sinal de VENDA forte  
+      action = 'SELL';
+      confidence = 82 + Math.random() * 15;
+      reason = `RSI Overbought + Momentum Negativo + Volume Confirmação`;
+      timeframe = '5m';
+      targetPrice = currentPrice * 0.985; // 1.5% profit
+      stopLoss = currentPrice * 1.005; // 0.5% stop
+      riskReward = 3.0;
+    } else if (Math.abs(momentum) < 0.2) {
+      // Mercado lateral - HOLD
+      action = 'HOLD';
+      confidence = 70 + Math.random() * 15;
+      reason = `Mercado Lateral - Aguardar Breakout`;
+      timeframe = '15m';
+      targetPrice = currentPrice * 1.005;
+      stopLoss = currentPrice * 0.995;
+      riskReward = 1.0;
+    } else {
+      // Sinais secundários mais conservadores
+      if (momentum > 0 && volume > 1.05) {
         action = 'BUY';
-        confidence = 88 + Math.random() * 10;
-        reason = `COMPRA FORTE: RSI14(${rsi14.toFixed(1)}) + RSI7(${rsi7.toFixed(1)}) oversold + EMA bullish + MACD crossover + Volume confirmação`;
-        timeframe = Math.random() > 0.7 ? '1m' : Math.random() > 0.4 ? '3m' : '5m';
-        targetPrice = currentPrice + (atr * 2.2);
-        stopLoss = currentPrice - (atr * 0.9);
-        riskReward = 2.4;
-        
-        if (Math.random() > 0.6) {
-          const news = newsEvents[Math.floor(Math.random() * newsEvents.length)];
-          newsImpact = { ...news, priceEffect: news.effect };
-        }
-      } else if (rsi14 > 65 && rsi7 > 70 && currentPrice < ema9 && ema9 < ema21 && 
-                 macd < macdSignal && volume > 0.8 && currentPrice < bb_upper) {
-        action = 'SELL';
-        confidence = 85 + Math.random() * 12;
-        reason = `VENDA FORTE: RSI14(${rsi14.toFixed(1)}) + RSI7(${rsi7.toFixed(1)}) overbought + EMA bearish + MACD divergência + Volume`;
-        timeframe = Math.random() > 0.6 ? '1m' : Math.random() > 0.3 ? '3m' : '5m';
-        targetPrice = currentPrice - (atr * 2.5);
-        stopLoss = currentPrice + (atr * 1.0);
+        confidence = 75 + Math.random() * 10;
+        reason = `Momentum Positivo + Volume Suporte`;
+        targetPrice = currentPrice * 1.008;
+        stopLoss = currentPrice * 0.997;
         riskReward = 2.5;
-        
-        if (Math.random() > 0.5) {
-          const news = newsEvents[Math.floor(Math.random() * newsEvents.length)];
-          newsImpact = { ...news, priceEffect: news.effect };
-        }
-      } else if (Math.abs(rsi14 - 50) < 15 && Math.abs(currentPrice - sma50) < atr * 0.5) {
-        action = 'HOLD';
-        confidence = 65 + Math.random() * 20;
-        reason = `CONSOLIDAÇÃO: RSI14 neutro(${rsi14.toFixed(1)}) + Preço lateral próximo SMA50 + Aguardar breakout`;
-        timeframe = Math.random() > 0.5 ? '5m' : '15m';
-        targetPrice = currentPrice + (atr * 0.8);
-        stopLoss = currentPrice - (atr * 0.8);
-        riskReward = 1.0;
       } else {
-        // Scalping de alta precisão
-        if (volume > 1.2 && Math.abs(macd - macdSignal) > 10) {
-          action = 'BUY';
-          confidence = 78 + Math.random() * 15;
-          reason = `SCALP BUY: Volume spike(${volume.toFixed(2)}x) + MACD momentum + EMA9 support`;
-          targetPrice = currentPrice + (atr * 1.2);
-          stopLoss = currentPrice - (atr * 0.6);
-          riskReward = 2.0;
-        } else {
-          action = 'SELL';
-          confidence = 76 + Math.random() * 17;
-          reason = `SCALP SELL: Volume(${volume.toFixed(2)}x) + RSI14(${rsi14.toFixed(1)}) + EMA resistance`;
-          targetPrice = currentPrice - (atr * 1.3);
-          stopLoss = currentPrice + (atr * 0.65);
-          riskReward = 2.0;
-        }
-        timeframe = Math.random() > 0.8 ? '1m' : '3m';
-        
-        if (Math.random() > 0.7) {
-          const news = newsEvents[Math.floor(Math.random() * newsEvents.length)];
-          newsImpact = { ...news, priceEffect: news.effect };
-        }
+        action = 'SELL';
+        confidence = 72 + Math.random() * 13;
+        reason = `Momentum Negativo + Pressão Vendedora`;
+        targetPrice = currentPrice * 0.992;
+        stopLoss = currentPrice * 1.003;
+        riskReward = 2.5;
       }
+      timeframe = '3m';
+    }
 
       return {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         symbol: 'BTC/USD',
         action,
-        price: currentPrice,
+        price: Math.round(currentPrice),
         confidence: Math.floor(confidence),
         timeframe,
         timestamp: Date.now(),
         reason,
         status: 'ACTIVE',
-        newsImpact,
         targetPrice: Math.round(targetPrice),
         stopLoss: Math.round(stopLoss),
         riskReward: Math.round(riskReward * 10) / 10
@@ -164,7 +131,7 @@ const LiveSignalFeed = memo(() => {
         });
       });
       setLastUpdateTime(Date.now());
-    }, 3000); // Otimizado: novo sinal a cada 3 segundos
+    }, 8000); // Sinais menos frequentes para maior precisão
 
     return () => clearInterval(interval);
   }, [generateLiveSignal]);
@@ -302,31 +269,11 @@ const LiveSignalFeed = memo(() => {
               </div>
             )}
 
-            {/* Notícias de Impacto */}
-            {signal.newsImpact && (
-              <div className="bg-gradient-to-r from-muted/20 to-muted/10 p-3 rounded-lg border border-muted/30 mb-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="outline" className="text-xs px-2 py-1 font-semibold">{signal.newsImpact.impact}</Badge>
-                  <span className={`font-bold text-sm ${
-                    signal.newsImpact.sentiment === 'POSITIVE' ? 'text-green-500' : 
-                    signal.newsImpact.sentiment === 'NEGATIVE' ? 'text-red-500' : 'text-yellow-500'
-                  }`}>
-                    {signal.newsImpact.sentiment}
-                  </span>
-                  <div className={`px-2 py-1 rounded text-xs font-mono font-bold ${
-                    signal.newsImpact.priceEffect > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                  }`}>
-                    {signal.newsImpact.priceEffect > 0 ? '+' : ''}{signal.newsImpact.priceEffect}%
-                  </div>
-                </div>
-                <div className="text-sm font-medium">{signal.newsImpact.title}</div>
-              </div>
-            )}
 
-            {/* Razão do Sinal */}
-            <div className="p-3 bg-muted/20 rounded-lg border border-muted/30">
-              <div className="text-xs font-semibold text-muted-foreground mb-1">ANÁLISE TÉCNICA:</div>
-              <div className="text-sm leading-relaxed">{signal.reason}</div>
+            {/* Razão do Sinal - Mais Visual */}
+            <div className="p-4 bg-gradient-to-br from-primary/5 to-primary/10 rounded-lg border border-primary/20">
+              <div className="text-xs font-bold text-primary mb-2 uppercase tracking-wide">Análise do Sinal</div>
+              <div className="text-base font-semibold text-foreground">{signal.reason}</div>
             </div>
           </div>
         ))}
