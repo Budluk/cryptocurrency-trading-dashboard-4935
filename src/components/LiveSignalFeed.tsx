@@ -30,13 +30,19 @@ const LiveSignalFeed = memo(() => {
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
   const generateLiveSignal = useCallback((): LiveSignal => {
-    const currentPrice = 111250 + (Math.random() - 0.5) * 80;
+    const currentPrice = 111250 + (Math.random() - 0.5) * 120;
     
-    // Indicadores simplificados e mais precisos
-    const rsi = 30 + Math.random() * 40; // RSI entre 30-70 para sinais mais claros
-    const momentum = (Math.random() - 0.5) * 2; // -1 a +1
-    const volume = 0.9 + Math.random() * 0.6; // 0.9 a 1.5
-    const trend = Math.random() > 0.5 ? 1 : -1; // Tendência clara
+    // Indicadores técnicos mais robustos
+    const rsi = 25 + Math.random() * 50; // RSI 25-75 para maior amplitude
+    const macd = (Math.random() - 0.5) * 0.8; // MACD sinal
+    const macdHistogram = (Math.random() - 0.5) * 0.6; // Histograma MACD
+    const volumeRatio = 0.8 + Math.random() * 0.8; // 0.8 a 1.6
+    const priceMA20 = currentPrice * (0.998 + Math.random() * 0.004); // Média móvel 20
+    const priceMA50 = currentPrice * (0.996 + Math.random() * 0.008); // Média móvel 50
+    const bollingerUpper = currentPrice * 1.012;
+    const bollingerLower = currentPrice * 0.988;
+    const stochastic = Math.random() * 100; // Estocástico
+    const williams = -100 + Math.random() * 100; // Williams %R
     
     let action: 'BUY' | 'SELL' | 'HOLD';
     let confidence: number;
@@ -46,52 +52,75 @@ const LiveSignalFeed = memo(() => {
     let stopLoss: number;
     let riskReward: number;
     
-    // Lógica simplificada e mais precisa
-    if (rsi < 40 && momentum > 0.3 && volume > 1.1 && trend > 0) {
-      // Sinal de COMPRA forte
+    // Estratégia multi-indicador mais precisa
+    const bullishSignals = [
+      rsi < 35, // RSI oversold
+      macd > 0 && macdHistogram > 0, // MACD bullish
+      currentPrice > priceMA20, // Acima da MA20
+      currentPrice < bollingerLower * 1.005, // Próximo ao suporte Bollinger
+      stochastic < 25, // Estocástico oversold
+      williams < -75, // Williams oversold
+      volumeRatio > 1.15 // Volume alto
+    ].filter(Boolean).length;
+    
+    const bearishSignals = [
+      rsi > 65, // RSI overbought
+      macd < 0 && macdHistogram < 0, // MACD bearish
+      currentPrice < priceMA20, // Abaixo da MA20
+      currentPrice > bollingerUpper * 0.995, // Próximo à resistência Bollinger
+      stochastic > 75, // Estocástico overbought
+      williams > -25, // Williams overbought
+      volumeRatio > 1.2 // Volume alto confirmando venda
+    ].filter(Boolean).length;
+    
+    // Sinal COMPRA forte (4+ indicadores bullish)
+    if (bullishSignals >= 4 && bearishSignals <= 1) {
       action = 'BUY';
-      confidence = 85 + Math.random() * 12;
-      reason = `RSI Oversold + Momentum Positivo + Volume Alto`;
-      timeframe = '5m';
-      targetPrice = currentPrice * 1.015; // 1.5% profit
-      stopLoss = currentPrice * 0.995; // 0.5% stop
-      riskReward = 3.0;
-    } else if (rsi > 60 && momentum < -0.3 && volume > 1.0 && trend < 0) {
-      // Sinal de VENDA forte  
+      confidence = 88 + Math.min(bullishSignals * 2, 10);
+      reason = `${bullishSignals} Indicadores Bullish: RSI Oversold, MACD+, Volume Alto`;
+      timeframe = bullishSignals >= 5 ? '1m' : '3m';
+      targetPrice = currentPrice * (1.012 + Math.random() * 0.008); // 1.2-2% profit
+      stopLoss = currentPrice * (0.994 - Math.random() * 0.002); // 0.6-0.8% stop
+      riskReward = 2.5 + Math.random() * 1.5;
+    }
+    // Sinal VENDA forte (4+ indicadores bearish)
+    else if (bearishSignals >= 4 && bullishSignals <= 1) {
       action = 'SELL';
-      confidence = 82 + Math.random() * 15;
-      reason = `RSI Overbought + Momentum Negativo + Volume Confirmação`;
+      confidence = 85 + Math.min(bearishSignals * 2, 12);
+      reason = `${bearishSignals} Indicadores Bearish: RSI Overbought, MACD-, Resistência`;
+      timeframe = bearishSignals >= 5 ? '1m' : '3m';
+      targetPrice = currentPrice * (0.988 - Math.random() * 0.008); // 1.2-2% profit
+      stopLoss = currentPrice * (1.006 + Math.random() * 0.002); // 0.6-0.8% stop
+      riskReward = 2.5 + Math.random() * 1.5;
+    }
+    // Sinais médios (2-3 indicadores)
+    else if (bullishSignals >= 2 && bullishSignals > bearishSignals) {
+      action = 'BUY';
+      confidence = 72 + bullishSignals * 3;
+      reason = `Sinal Moderado: ${bullishSignals} Fatores Bullish vs ${bearishSignals} Bearish`;
       timeframe = '5m';
-      targetPrice = currentPrice * 0.985; // 1.5% profit
-      stopLoss = currentPrice * 1.005; // 0.5% stop
-      riskReward = 3.0;
-    } else if (Math.abs(momentum) < 0.2) {
-      // Mercado lateral - HOLD
+      targetPrice = currentPrice * (1.006 + Math.random() * 0.004);
+      stopLoss = currentPrice * (0.996 - Math.random() * 0.002);
+      riskReward = 1.8 + Math.random() * 0.7;
+    }
+    else if (bearishSignals >= 2 && bearishSignals > bullishSignals) {
+      action = 'SELL';
+      confidence = 70 + bearishSignals * 3;
+      reason = `Sinal Moderado: ${bearishSignals} Fatores Bearish vs ${bullishSignals} Bullish`;
+      timeframe = '5m';
+      targetPrice = currentPrice * (0.994 - Math.random() * 0.004);
+      stopLoss = currentPrice * (1.004 + Math.random() * 0.002);
+      riskReward = 1.8 + Math.random() * 0.7;
+    }
+    // Mercado neutro - HOLD
+    else {
       action = 'HOLD';
-      confidence = 70 + Math.random() * 15;
-      reason = `Mercado Lateral - Aguardar Breakout`;
+      confidence = 65 + Math.random() * 10;
+      reason = `Mercado Neutro: ${bullishSignals} Bull vs ${bearishSignals} Bear - Aguardar Confirmação`;
       timeframe = '15m';
-      targetPrice = currentPrice * 1.005;
-      stopLoss = currentPrice * 0.995;
-      riskReward = 1.0;
-    } else {
-      // Sinais secundários mais conservadores
-      if (momentum > 0 && volume > 1.05) {
-        action = 'BUY';
-        confidence = 75 + Math.random() * 10;
-        reason = `Momentum Positivo + Volume Suporte`;
-        targetPrice = currentPrice * 1.008;
-        stopLoss = currentPrice * 0.997;
-        riskReward = 2.5;
-      } else {
-        action = 'SELL';
-        confidence = 72 + Math.random() * 13;
-        reason = `Momentum Negativo + Pressão Vendedora`;
-        targetPrice = currentPrice * 0.992;
-        stopLoss = currentPrice * 1.003;
-        riskReward = 2.5;
-      }
-      timeframe = '3m';
+      targetPrice = currentPrice * (1.003 + Math.random() * 0.002);
+      stopLoss = currentPrice * (0.997 - Math.random() * 0.002);
+      riskReward = 1.2 + Math.random() * 0.3;
     }
 
       return {
