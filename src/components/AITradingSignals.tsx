@@ -53,23 +53,43 @@ const fetchAITradingData = async () => {
     ];
     
     const generateProfessionalSignal = (timeframe: string, index: number): AITradingSignal => {
-      // Lógica mais realista baseada em indicadores
+    // Sistema de scoring avançado com múltiplos fatores
+      const factors = {
+        rsi: rsi < 30 ? 3 : rsi > 70 ? -3 : rsi < 40 ? 2 : rsi > 60 ? -2 : 0,
+        macd: macd > 50 ? 3 : macd > 0 ? 2 : macd < -50 ? -3 : macd < 0 ? -2 : 0,
+        volume: volume > 1.5 ? 2 : volume > 1.2 ? 1 : volume < 0.8 ? -1 : 0,
+        bollinger: currentPrice < (bollinger.lower * 1.002) ? 2 : currentPrice > (bollinger.upper * 0.998) ? -2 : 0,
+        trend: currentPrice > (currentPrice * 0.999) ? 1 : currentPrice < (currentPrice * 0.999) ? -1 : 0
+      };
+      
+      const totalScore = Object.values(factors).reduce((sum, val) => sum + val, 0);
+      const maxPossibleScore = 11; // Máximo score positivo
+      const scoreRatio = totalScore / maxPossibleScore;
+      
       let signalType: 'BUY' | 'SELL' | 'HOLD';
       let confidence: number;
       let riskReward: number;
       
-      if (rsi < 35 && macd > -20 && volume > 1.1) {
+      if (totalScore >= 5) {
         signalType = 'BUY';
-        confidence = 78 + Math.random() * 15;
-        riskReward = 2.8 + Math.random() * 1.2;
-      } else if (rsi > 65 && macd < 20 && volume > 1.0) {
+        confidence = 82 + (scoreRatio * 15);
+        riskReward = 3.2 + Math.random() * 1.8;
+      } else if (totalScore <= -5) {
         signalType = 'SELL';
-        confidence = 72 + Math.random() * 18;
-        riskReward = 2.2 + Math.random() * 1.8;
+        confidence = 80 + (Math.abs(scoreRatio) * 15);
+        riskReward = 2.8 + Math.random() * 2.2;
+      } else if (totalScore >= 2) {
+        signalType = 'BUY';
+        confidence = 70 + (scoreRatio * 12);
+        riskReward = 2.1 + Math.random() * 1.4;
+      } else if (totalScore <= -2) {
+        signalType = 'SELL';
+        confidence = 68 + (Math.abs(scoreRatio) * 12);
+        riskReward = 1.9 + Math.random() * 1.6;
       } else {
         signalType = 'HOLD';
-        confidence = 60 + Math.random() * 20;
-        riskReward = 1.5 + Math.random() * 1.0;
+        confidence = 55 + Math.random() * 15;
+        riskReward = 1.2 + Math.random() * 0.8;
       }
       
       const entryPrice = currentPrice + (Math.random() - 0.5) * 50;
