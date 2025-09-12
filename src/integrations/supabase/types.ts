@@ -405,6 +405,87 @@ export type Database = {
         }
         Relationships: []
       }
+      paper_trades: {
+        Row: {
+          action: string
+          close_reason: string | null
+          closed_at: string | null
+          current_price: number | null
+          demo_account_id: string
+          entry_price: number
+          fees: number | null
+          id: string
+          notes: string | null
+          opened_at: string
+          quantity: number
+          realized_pnl: number | null
+          signal_id: string | null
+          status: string
+          stop_loss: number | null
+          symbol: string
+          take_profit: number | null
+          unrealized_pnl: number | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          close_reason?: string | null
+          closed_at?: string | null
+          current_price?: number | null
+          demo_account_id: string
+          entry_price: number
+          fees?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          quantity: number
+          realized_pnl?: number | null
+          signal_id?: string | null
+          status?: string
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          close_reason?: string | null
+          closed_at?: string | null
+          current_price?: number | null
+          demo_account_id?: string
+          entry_price?: number
+          fees?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          quantity?: number
+          realized_pnl?: number | null
+          signal_id?: string | null
+          status?: string
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "paper_trades_demo_account_id_fkey"
+            columns: ["demo_account_id"]
+            isOneToOne: false
+            referencedRelation: "demo_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "paper_trades_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "signal_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -481,6 +562,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      signal_history: {
+        Row: {
+          action: string
+          actual_outcome: string | null
+          closed_at: string | null
+          confidence: number
+          created_at: string
+          duration_minutes: number | null
+          entry_price: number
+          exit_price: number | null
+          id: string
+          pnl_percentage: number | null
+          reasoning: string | null
+          signal_type: string
+          status: string
+          stop_loss: number | null
+          symbol: string
+          target_price: number | null
+          timeframe: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          actual_outcome?: string | null
+          closed_at?: string | null
+          confidence: number
+          created_at?: string
+          duration_minutes?: number | null
+          entry_price: number
+          exit_price?: number | null
+          id?: string
+          pnl_percentage?: number | null
+          reasoning?: string | null
+          signal_type: string
+          status?: string
+          stop_loss?: number | null
+          symbol?: string
+          target_price?: number | null
+          timeframe: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          actual_outcome?: string | null
+          closed_at?: string | null
+          confidence?: number
+          created_at?: string
+          duration_minutes?: number | null
+          entry_price?: number
+          exit_price?: number | null
+          id?: string
+          pnl_percentage?: number | null
+          reasoning?: string | null
+          signal_type?: string
+          status?: string
+          stop_loss?: number | null
+          symbol?: string
+          target_price?: number | null
+          timeframe?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       strategies: {
         Row: {
@@ -690,6 +834,45 @@ export type Database = {
         }
         Relationships: []
       }
+      trading_alerts_config: {
+        Row: {
+          alert_type: string
+          conditions: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          notifications: Json
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_type: string
+          conditions: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          notifications?: Json
+          symbol?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_type?: string
+          conditions?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          notifications?: Json
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       trading_logs: {
         Row: {
           context: Json | null
@@ -724,6 +907,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      trading_performance: {
+        Row: {
+          avg_loss: number
+          avg_trade_duration: number | null
+          avg_win: number
+          created_at: string
+          id: string
+          largest_loss: number
+          largest_win: number
+          losing_trades: number
+          max_drawdown: number
+          period_end: string
+          period_start: string
+          profit_factor: number
+          sharpe_ratio: number | null
+          total_pnl: number
+          total_trades: number
+          updated_at: string
+          user_id: string
+          win_rate: number
+          winning_trades: number
+        }
+        Insert: {
+          avg_loss?: number
+          avg_trade_duration?: number | null
+          avg_win?: number
+          created_at?: string
+          id?: string
+          largest_loss?: number
+          largest_win?: number
+          losing_trades?: number
+          max_drawdown?: number
+          period_end: string
+          period_start: string
+          profit_factor?: number
+          sharpe_ratio?: number | null
+          total_pnl?: number
+          total_trades?: number
+          updated_at?: string
+          user_id: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Update: {
+          avg_loss?: number
+          avg_trade_duration?: number | null
+          avg_win?: number
+          created_at?: string
+          id?: string
+          largest_loss?: number
+          largest_win?: number
+          losing_trades?: number
+          max_drawdown?: number
+          period_end?: string
+          period_start?: string
+          profit_factor?: number
+          sharpe_ratio?: number | null
+          total_pnl?: number
+          total_trades?: number
+          updated_at?: string
+          user_id?: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Relationships: []
       }
       trading_positions: {
         Row: {
@@ -864,12 +1113,63 @@ export type Database = {
         }
         Relationships: []
       }
+      triggered_alerts: {
+        Row: {
+          action_taken: string | null
+          alert_config_id: string
+          id: string
+          is_read: boolean
+          message: string
+          trigger_data: Json
+          triggered_at: string
+          user_id: string
+        }
+        Insert: {
+          action_taken?: string | null
+          alert_config_id: string
+          id?: string
+          is_read?: boolean
+          message: string
+          trigger_data: Json
+          triggered_at?: string
+          user_id: string
+        }
+        Update: {
+          action_taken?: string | null
+          alert_config_id?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          trigger_data?: Json
+          triggered_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "triggered_alerts_alert_config_id_fkey"
+            columns: ["alert_config_id"]
+            isOneToOne: false
+            referencedRelation: "trading_alerts_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      calculate_trading_performance: {
+        Args: { end_date: string; start_date: string; user_uuid: string }
+        Returns: {
+          max_drawdown: number
+          profit_factor: number
+          total_pnl: number
+          total_trades: number
+          win_rate: number
+          winning_trades: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
