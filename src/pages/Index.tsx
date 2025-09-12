@@ -9,6 +9,10 @@ import AITradingSignals from "@/components/AITradingSignals";
 import MarketProjections from "@/components/MarketProjections";
 import LiveSignalFeed from "@/components/LiveSignalFeed";
 import PrecisionSignals from "@/components/PrecisionSignals";
+import PerformanceDashboard from "@/components/PerformanceDashboard";
+import SmartAlerts from "@/components/SmartAlerts";
+import PaperTrading from "@/components/PaperTrading";
+import AdvancedAISignals from "@/components/AdvancedAISignals";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
@@ -31,12 +35,14 @@ const Index = () => {
         <MarketStats />
         
         <Tabs defaultValue="ai-signals" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="ai-signals">IA Trading</TabsTrigger>
-            <TabsTrigger value="projections">Projeções</TabsTrigger>
+            <TabsTrigger value="advanced-ai">IA Avançada</TabsTrigger>
+            <TabsTrigger value="paper-trading">Paper Trading</TabsTrigger>
+            <TabsTrigger value="performance">Performance</TabsTrigger>
+            <TabsTrigger value="alerts">Alertas</TabsTrigger>
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
-            <TabsTrigger value="news">Notícias</TabsTrigger>
           </TabsList>
 
           <TabsContent value="ai-signals" className="space-y-8">
@@ -56,8 +62,20 @@ const Index = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="projections" className="space-y-8">
-            <MarketProjections />
+          <TabsContent value="advanced-ai" className="space-y-8">
+            <AdvancedAISignals />
+          </TabsContent>
+
+          <TabsContent value="paper-trading" className="space-y-8">
+            <PaperTrading />
+          </TabsContent>
+
+          <TabsContent value="performance" className="space-y-8">
+            <PerformanceDashboard />
+          </TabsContent>
+
+          <TabsContent value="alerts" className="space-y-8">
+            <SmartAlerts />
           </TabsContent>
 
           <TabsContent value="overview" className="space-y-8">
