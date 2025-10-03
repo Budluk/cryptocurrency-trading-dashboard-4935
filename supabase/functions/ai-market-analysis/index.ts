@@ -191,61 +191,94 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
       console.log('OpenAI API key not configured, using advanced ML scoring');
     }
 
-    // 4. Machine Learning Score Avançado
+    // 4. Machine Learning Score Ultra-Conservador e Preciso
     const mlFactors = {
-      // Análise RSI (peso: 25 pontos)
-      rsi_score: marketData.indicators.rsi < 30 ? 25 : 
-                 marketData.indicators.rsi > 70 ? -25 :
-                 marketData.indicators.rsi < 45 ? 10 : 
-                 marketData.indicators.rsi > 55 ? -10 : 0,
+      // RSI - Mais rigoroso (peso: 30)
+      rsi_score: marketData.indicators.rsi < 25 ? 30 :        // Forte sobrevenda
+                 marketData.indicators.rsi < 30 ? 15 :         // Sobrevenda
+                 marketData.indicators.rsi > 75 ? -30 :        // Forte sobrecompra
+                 marketData.indicators.rsi > 70 ? -15 :        // Sobrecompra
+                 marketData.indicators.rsi < 40 ? 8 :          // Levemente baixo
+                 marketData.indicators.rsi > 60 ? -8 : 0,      // Levemente alto
       
-      // Análise MACD (peso: 20 pontos)
-      macd_score: marketData.indicators.macd > 50 ? 20 :
-                  marketData.indicators.macd > 0 ? 10 :
-                  marketData.indicators.macd < -50 ? -20 : -10,
+      // MACD - Confirmação de tendência (peso: 25)
+      macd_score: marketData.indicators.macd > 100 ? 25 :     // Forte alta
+                  marketData.indicators.macd > 50 ? 15 :       // Tendência de alta
+                  marketData.indicators.macd > 0 ? 5 :         // Fraco positivo
+                  marketData.indicators.macd < -100 ? -25 :    // Forte baixa
+                  marketData.indicators.macd < -50 ? -15 : -5, // Tendência de baixa
       
-      // Volume Profile (peso: 15 pontos)
-      volume_score: marketData.indicators.volume_profile > 1.3 ? 15 :
-                    marketData.indicators.volume_profile > 1.0 ? 8 :
-                    marketData.indicators.volume_profile < 0.8 ? -15 : -5,
+      // Volume - Confirmação crucial (peso: 20)
+      volume_score: marketData.indicators.volume_profile > 1.5 ? 20 :   // Volume muito alto
+                    marketData.indicators.volume_profile > 1.2 ? 12 :    // Volume alto
+                    marketData.indicators.volume_profile > 0.9 ? 5 :     // Volume normal
+                    marketData.indicators.volume_profile < 0.7 ? -15 : -8, // Volume baixo
       
-      // Força da Tendência (peso: 15 pontos)
-      trend_score: marketData.indicators.trend_strength > 70 ? 15 :
-                   marketData.indicators.trend_strength > 40 ? 8 : -5,
+      // Força da Tendência - Necessário para sinal forte (peso: 20)
+      trend_score: marketData.indicators.trend_strength > 80 ? 20 :
+                   marketData.indicators.trend_strength > 60 ? 12 :
+                   marketData.indicators.trend_strength > 40 ? 5 :
+                   marketData.indicators.trend_strength < 20 ? -10 : -3,
       
-      // Análise Fundamental via Notícias (peso: 20 pontos)
+      // Sentimento de Notícias (peso condicional)
       fundamental_score: newsAnalysis ? 
-        (newsAnalysis.sentiment === 'BULLISH' ? 20 : 
-         newsAnalysis.sentiment === 'BEARISH' ? -20 : 0) +
-        (newsAnalysis.impact === 'HIGH' ? 10 : 
-         newsAnalysis.impact === 'MEDIUM' ? 5 : 0) : 0,
+        (newsAnalysis.sentiment === 'BULLISH' ? 15 : 
+         newsAnalysis.sentiment === 'BEARISH' ? -15 : 0) : 0,
       
-      // Confiança do Sentimento (peso: 10 pontos ajustado)
+      // Confiança do Sentimento
       sentiment_confidence: newsAnalysis ? 
-        (newsAnalysis.confidence - 50) / 5 : 0,
+        (newsAnalysis.confidence - 50) / 10 : 0,
       
-      // Volatilidade (ajuste de risco: -10 a +5 pontos)
-      volatility_score: Math.abs(marketData.indicators.macd) > 150 ? -10 :
-                        Math.abs(marketData.indicators.macd) > 100 ? -5 : 5
+      // Penalização por Alta Volatilidade (reduz risco)
+      volatility_penalty: Math.abs(marketData.indicators.macd) > 150 ? -15 :
+                          Math.abs(marketData.indicators.macd) > 100 ? -8 : 0
     };
 
-    const mlScore = Object.values(mlFactors).reduce((sum, val) => sum + val, 0);
-    // Normaliza para 0-100 com melhor distribuição
-    const normalizedScore = Math.max(0, Math.min(100, 50 + (mlScore * 0.8)));
+    // Verificação de Confluência (múltiplos indicadores devem concordar)
+    const bullishIndicators = [
+      marketData.indicators.rsi < 35,
+      marketData.indicators.macd > 30,
+      marketData.indicators.volume_profile > 1.1,
+      marketData.indicators.trend_strength > 50
+    ].filter(x => x).length;
 
-    // 5. Geração de Sinal Inteligente
-    const baseAction = normalizedScore > 65 ? 'BUY' : normalizedScore < 35 ? 'SELL' : 'HOLD';
+    const bearishIndicators = [
+      marketData.indicators.rsi > 65,
+      marketData.indicators.macd < -30,
+      marketData.indicators.volume_profile < 0.9,
+      marketData.indicators.trend_strength < 30
+    ].filter(x => x).length;
+
+    // Bônus por confluência (múltiplos indicadores alinhados)
+    const confluenceBonus = bullishIndicators >= 3 ? 15 : 
+                           bearishIndicators >= 3 ? -15 : 
+                           bullishIndicators >= 2 ? 8 : 
+                           bearishIndicators >= 2 ? -8 : 0;
+
+    const mlScore = Object.values(mlFactors).reduce((sum, val) => sum + val, 0) + confluenceBonus;
+    
+    // Normalização mais rigorosa - exige score maior para sinais
+    const normalizedScore = Math.max(0, Math.min(100, 50 + (mlScore * 0.6)));
+
+    // 5. Geração de Sinal Ultra-Conservador
+    // Exige scores MUITO mais altos para gerar sinais de compra/venda
+    const baseAction = normalizedScore > 72 ? 'BUY' :      // Precisa score >72 para BUY
+                       normalizedScore < 28 ? 'SELL' :     // Precisa score <28 para SELL
+                       'HOLD';                              // Caso contrário HOLD
+    
     const action = aiPrediction?.action || baseAction;
     const confidence = aiPrediction?.confidence || normalizedScore;
     
-    // Cálculo de alvos mais conservador e realista
-    const volatilityFactor = Math.abs(marketData.indicators.macd) / 1000;
+    // Alvos e Stop Loss mais realistas e conservadores
+    const volatilityFactor = Math.abs(marketData.indicators.macd) / 2000; // Reduzido pela metade
+    
     const targetMultiplier = action === 'BUY' ? 
-      1.015 + (confidence / 1000) + (volatilityFactor * 0.5) : 
-      0.985 - (confidence / 1000) - (volatilityFactor * 0.5);
+      1.008 + (confidence / 2000) + (volatilityFactor * 0.3) :  // Alvos menores
+      0.992 - (confidence / 2000) - (volatilityFactor * 0.3);
+    
     const stopMultiplier = action === 'BUY' ? 
-      0.99 - (volatilityFactor * 0.3) : 
-      1.01 + (volatilityFactor * 0.3);
+      0.985 - (volatilityFactor * 0.2) :  // Stop loss mais apertado
+      1.015 + (volatilityFactor * 0.2);
     
     const signalData = {
       signal_type: 'AI_ADVANCED',
