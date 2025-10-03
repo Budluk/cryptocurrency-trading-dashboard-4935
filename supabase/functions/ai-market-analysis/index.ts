@@ -92,16 +92,25 @@ serve(async (req) => {
       console.log('Perplexity API key not configured, skipping news analysis');
     }
 
-    // 2. Dados de mercado avançados com indicadores técnicos realistas
-    const currentPrice = 111200 + (Math.random() - 0.5) * 800;
-    const volume24h = 28000000000 + (Math.random() - 0.5) * 5000000000;
+    // 2. Dados de mercado ESTÁVEIS com indicadores técnicos consistentes
+    // Usar timestamp como seed para criar consistência temporal
+    const timeSeed = Math.floor(Date.now() / (1000 * 60 * 15)); // Muda a cada 15 minutos
+    const priceVariation = Math.sin(timeSeed * 0.1) * 300; // Variação suave e previsível
+    const currentPrice = 111200 + priceVariation;
+    const volume24h = 28000000000 + (Math.sin(timeSeed * 0.05) * 2000000000);
     
-    // Indicadores técnicos mais sofisticados baseados em análise real
-    const rsi = 30 + Math.random() * 40; // RSI entre 30-70 (zona de negociação comum)
-    const macd = (Math.random() - 0.5) * 200;
-    const volumeProfile = 0.7 + Math.random() * 0.6;
-    const ema9 = currentPrice * (1 + (Math.random() - 0.5) * 0.01);
-    const ema21 = currentPrice * (1 + (Math.random() - 0.5) * 0.02);
+    // Indicadores técnicos ESTÁVEIS - mudam gradualmente ao longo do tempo
+    const rsiBase = 50 + Math.sin(timeSeed * 0.08) * 15; // RSI oscila entre 35-65 suavemente
+    const rsi = rsiBase + (Math.random() - 0.5) * 3; // Pequena variação aleatória
+    
+    const macdBase = Math.sin(timeSeed * 0.12) * 80; // MACD oscila suavemente
+    const macd = macdBase + (Math.random() - 0.5) * 10;
+    
+    const volumeProfile = 1.0 + Math.sin(timeSeed * 0.06) * 0.3; // Volume estável
+    
+    const trendBase = Math.abs(Math.sin(timeSeed * 0.1)) * 60; // Tendência consistente
+    const ema9 = currentPrice * (1 + (Math.sin(timeSeed * 0.09) * 0.008));
+    const ema21 = currentPrice * (1 + (Math.sin(timeSeed * 0.07) * 0.015));
     const bollingerUpper = currentPrice * 1.02;
     const bollingerLower = currentPrice * 0.98;
     
@@ -113,7 +122,7 @@ serve(async (req) => {
         rsi,
         macd,
         volume_profile: volumeProfile,
-        trend_strength: Math.abs(ema9 - ema21) / currentPrice * 10000 // Força da tendência baseada em EMAs
+        trend_strength: trendBase // Força da tendência estável
       }
     };
 
@@ -191,15 +200,15 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
       console.log('OpenAI API key not configured, using advanced ML scoring');
     }
 
-    // 4. Machine Learning Score Ultra-Conservador e Preciso
+    // 4. Machine Learning Score ESTÁVEL e CONSISTENTE
     const mlFactors = {
-      // RSI - Mais rigoroso (peso: 30)
-      rsi_score: marketData.indicators.rsi < 25 ? 30 :        // Forte sobrevenda
-                 marketData.indicators.rsi < 30 ? 15 :         // Sobrevenda
-                 marketData.indicators.rsi > 75 ? -30 :        // Forte sobrecompra
-                 marketData.indicators.rsi > 70 ? -15 :        // Sobrecompra
-                 marketData.indicators.rsi < 40 ? 8 :          // Levemente baixo
-                 marketData.indicators.rsi > 60 ? -8 : 0,      // Levemente alto
+      // RSI - Com zonas mortas para evitar oscilação (peso: 30)
+      rsi_score: marketData.indicators.rsi < 35 ? 30 :        // Forte sobrevenda
+                 marketData.indicators.rsi < 42 ? 15 :         // Sobrevenda moderada
+                 marketData.indicators.rsi > 65 ? -30 :        // Forte sobrecompra
+                 marketData.indicators.rsi > 58 ? -15 :        // Sobrecompra moderada
+                 marketData.indicators.rsi >= 45 && marketData.indicators.rsi <= 55 ? 0 : // Zona neutra ampla
+                 marketData.indicators.rsi < 45 ? 5 : -5,      // Levemente bullish/bearish
       
       // MACD - Confirmação de tendência (peso: 25)
       macd_score: marketData.indicators.macd > 100 ? 25 :     // Forte alta
@@ -234,37 +243,41 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
                           Math.abs(marketData.indicators.macd) > 100 ? -8 : 0
     };
 
-    // Verificação de Confluência (múltiplos indicadores devem concordar)
-    const bullishIndicators = [
-      marketData.indicators.rsi < 35,
-      marketData.indicators.macd > 30,
-      marketData.indicators.volume_profile > 1.1,
-      marketData.indicators.trend_strength > 50
-    ].filter(x => x).length;
+    // Verificação de Confluência RIGOROSA (TODOS os indicadores principais devem concordar)
+    const strongBullishSignals = [
+      marketData.indicators.rsi < 40,
+      marketData.indicators.macd > 20,
+      marketData.indicators.volume_profile > 1.05,
+      marketData.indicators.trend_strength > 40
+    ];
+    
+    const strongBearishSignals = [
+      marketData.indicators.rsi > 60,
+      marketData.indicators.macd < -20,
+      marketData.indicators.volume_profile < 0.95,
+      marketData.indicators.trend_strength < 35
+    ];
 
-    const bearishIndicators = [
-      marketData.indicators.rsi > 65,
-      marketData.indicators.macd < -30,
-      marketData.indicators.volume_profile < 0.9,
-      marketData.indicators.trend_strength < 30
-    ].filter(x => x).length;
+    const bullishCount = strongBullishSignals.filter(x => x).length;
+    const bearishCount = strongBearishSignals.filter(x => x).length;
 
-    // Bônus por confluência (múltiplos indicadores alinhados)
-    const confluenceBonus = bullishIndicators >= 3 ? 15 : 
-                           bearishIndicators >= 3 ? -15 : 
-                           bullishIndicators >= 2 ? 8 : 
-                           bearishIndicators >= 2 ? -8 : 0;
+    // Bônus APENAS se TODOS ou quase todos indicadores concordam
+    const confluenceBonus = bullishCount >= 4 ? 25 :  // Todos bullish
+                           bearishCount >= 4 ? -25 : // Todos bearish
+                           bullishCount >= 3 ? 12 :  // Forte bullish
+                           bearishCount >= 3 ? -12 : // Forte bearish
+                           0; // Sem bônus se não há confluência clara
 
     const mlScore = Object.values(mlFactors).reduce((sum, val) => sum + val, 0) + confluenceBonus;
     
     // Normalização mais rigorosa - exige score maior para sinais
     const normalizedScore = Math.max(0, Math.min(100, 50 + (mlScore * 0.6)));
 
-    // 5. Geração de Sinal Ultra-Conservador
-    // Exige scores MUITO mais altos para gerar sinais de compra/venda
-    const baseAction = normalizedScore > 72 ? 'BUY' :      // Precisa score >72 para BUY
-                       normalizedScore < 28 ? 'SELL' :     // Precisa score <28 para SELL
-                       'HOLD';                              // Caso contrário HOLD
+    // 5. Geração de Sinal EXTREMAMENTE CONSERVADOR com ZONAS MORTAS
+    // Thresholds muito altos + zona morta ampla para evitar oscilações
+    const baseAction = normalizedScore > 75 ? 'BUY' :      // Score > 75 para BUY
+                       normalizedScore < 25 ? 'SELL' :     // Score < 25 para SELL
+                       'HOLD';                              // Zona morta grande 25-75
     
     const action = aiPrediction?.action || baseAction;
     const confidence = aiPrediction?.confidence || normalizedScore;
