@@ -39,7 +39,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
-    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -126,24 +126,24 @@ serve(async (req) => {
       }
     };
 
-    // 3. Análise Avançada com OpenAI (funciona independentemente das notícias)
+    // 3. Análise Avançada com Lovable AI
     let aiPrediction = null;
-    if (openaiKey) {
+    if (lovableApiKey) {
       try {
-        console.log('Generating AI prediction with OpenAI...');
+        console.log('Generating AI prediction with Lovable AI...');
         
         const newsContext = newsAnalysis 
           ? `\nAnálise de Notícias:\n- Sentimento: ${newsAnalysis.sentiment}\n- Impacto: ${newsAnalysis.impact}\n- Resumo: ${newsAnalysis.summary}\n- Confiança: ${newsAnalysis.confidence}%`
           : '\nNotícias: Não disponíveis. Foque em análise técnica pura.';
         
-        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${openaiKey}`,
+            'Authorization': `Bearer ${lovableApiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: 'google/gemini-2.5-flash',
             messages: [
               {
                 role: 'system',
@@ -181,9 +181,8 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
         if (aiResponse.ok) {
           const aiData = await aiResponse.json();
           const content = aiData.choices[0]?.message?.content;
-          console.log('OpenAI raw response:', content);
+          console.log('Lovable AI raw response:', content);
           try {
-            // Remove markdown code blocks se houver
             const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
             aiPrediction = JSON.parse(cleanContent);
             console.log('AI prediction completed successfully');
@@ -191,13 +190,14 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
             console.error('Failed to parse AI JSON:', e, content);
           }
         } else {
-          console.error('OpenAI API error:', aiResponse.status, await aiResponse.text());
+          const errorText = await aiResponse.text();
+          console.error('Lovable AI error:', aiResponse.status, errorText);
         }
       } catch (error) {
-        console.error('OpenAI API exception:', error);
+        console.error('Lovable AI exception:', error);
       }
     } else {
-      console.log('OpenAI API key not configured, using advanced ML scoring');
+      console.log('Lovable API key not configured, using advanced ML scoring');
     }
 
     // 4. Machine Learning Score ESTÁVEL e CONSISTENTE

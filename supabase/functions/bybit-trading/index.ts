@@ -60,8 +60,8 @@ serve(async (req) => {
   }
 });
 
-function generateSignature(timestamp: number, apiKey: string, apiSecret: string, params: string): string {
-  const signaturePayload = timestamp + apiKey + params;
+function generateSignature(timestamp: number, apiKey: string, apiSecret: string, recvWindow: string, params: string): string {
+  const signaturePayload = timestamp + apiKey + recvWindow + params;
   return createHmac('sha256', apiSecret).update(signaturePayload).digest('hex');
 }
 
@@ -74,13 +74,15 @@ async function makeBybitRequest(
   params: any = {}
 ) {
   const timestamp = Date.now();
+  const recvWindow = '5000';
   const paramsStr = method === 'GET' ? '' : JSON.stringify(params);
-  const signature = generateSignature(timestamp, apiKey, apiSecret, paramsStr);
+  const signature = generateSignature(timestamp, apiKey, apiSecret, recvWindow, paramsStr);
 
   const headers = {
     'X-BAPI-API-KEY': apiKey,
     'X-BAPI-SIGN': signature,
     'X-BAPI-TIMESTAMP': timestamp.toString(),
+    'X-BAPI-RECV-WINDOW': recvWindow,
     'Content-Type': 'application/json',
   };
 
@@ -100,10 +102,28 @@ async function makeBybitRequest(
   }
 
   const response = await fetch(url, options);
-  const data = await response.json();
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Bybit API HTTP Error:', response.status, errorText);
+    throw new Error(`Bybit API HTTP ${response.status}: ${errorText || 'Unknown error'}`);
+  }
+
+  const text = await response.text();
+  if (!text) {
+    throw new Error('Empty response from Bybit API');
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error('Failed to parse Bybit response:', text);
+    throw new Error('Invalid JSON response from Bybit API');
+  }
 
   if (data.retCode !== 0) {
-    throw new Error(`Bybit API Error: ${data.retMsg}`);
+    throw new Error(`Bybit API Error: ${data.retMsg || 'Unknown error'}`);
   }
 
   return data.result;
