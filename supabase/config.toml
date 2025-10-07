@@ -1,1 +1,7 @@
 project_id = "uohdpxkfgxmtlosnmspf"
+
+[functions.ai-market-analysis]
+verify_jwt = false
+
+[functions.bybit-trading]
+verify_jwt = false
