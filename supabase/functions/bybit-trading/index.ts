@@ -81,12 +81,17 @@ async function makeBybitRequest(
   
   let queryString = '';
   if (method === 'GET' && Object.keys(params).length > 0) {
-    const sortedParams = Object.keys(params).sort().reduce((acc, key) => {
-      acc[key] = params[key];
-      return acc;
-    }, {} as any);
+    // Filter out undefined/null values and sort parameters
+    const sortedParams = Object.keys(params)
+      .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = params[key];
+        return acc;
+      }, {} as any);
+    
     queryString = Object.keys(sortedParams)
-      .map(key => `${key}=${sortedParams[key]}`)
+      .map(key => `${key}=${encodeURIComponent(sortedParams[key])}`)
       .join('&');
   }
   
