@@ -17,6 +17,9 @@ serve(async (req) => {
     const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY');
     const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET');
 
+    console.log('API Key configured:', BYBIT_API_KEY ? 'YES' : 'NO');
+    console.log('API Secret configured:', BYBIT_API_SECRET ? 'YES' : 'NO');
+
     if (!BYBIT_API_KEY || !BYBIT_API_SECRET) {
       throw new Error('Bybit API credentials not configured');
     }
@@ -89,6 +92,15 @@ async function makeBybitRequest(
   
   const paramsStr = method === 'POST' ? JSON.stringify(params) : queryString;
   const signature = generateSignature(timestamp, apiKey, apiSecret, recvWindow, paramsStr);
+  
+  console.log('Request details:', {
+    method,
+    endpoint,
+    timestamp,
+    recvWindow,
+    paramsStr: paramsStr.substring(0, 100),
+    signature: signature.substring(0, 20) + '...'
+  });
 
   const headers = {
     'X-BAPI-API-KEY': apiKey,
@@ -112,11 +124,13 @@ async function makeBybitRequest(
     options.body = paramsStr;
   }
 
+  console.log('Making request to:', url);
   const response = await fetch(url, options);
   
   if (!response.ok) {
     const errorText = await response.text();
     console.error('Bybit API HTTP Error:', response.status, errorText);
+    console.error('Request headers:', headers);
     throw new Error(`Bybit API HTTP ${response.status}: ${errorText || 'Unknown error'}`);
   }
 
