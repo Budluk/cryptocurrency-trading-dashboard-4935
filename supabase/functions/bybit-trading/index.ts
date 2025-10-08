@@ -61,7 +61,7 @@ serve(async (req) => {
 });
 
 function generateSignature(timestamp: number, apiKey: string, apiSecret: string, recvWindow: string, params: string): string {
-  const signaturePayload = timestamp + apiKey + recvWindow + params;
+  const signaturePayload = `${timestamp}${apiKey}${recvWindow}${params}`;
   return createHmac('sha256', apiSecret).update(signaturePayload).digest('hex');
 }
 
@@ -75,7 +75,19 @@ async function makeBybitRequest(
 ) {
   const timestamp = Date.now();
   const recvWindow = '5000';
-  const paramsStr = method === 'GET' ? '' : JSON.stringify(params);
+  
+  let queryString = '';
+  if (method === 'GET' && Object.keys(params).length > 0) {
+    const sortedParams = Object.keys(params).sort().reduce((acc, key) => {
+      acc[key] = params[key];
+      return acc;
+    }, {} as any);
+    queryString = Object.keys(sortedParams)
+      .map(key => `${key}=${sortedParams[key]}`)
+      .join('&');
+  }
+  
+  const paramsStr = method === 'POST' ? JSON.stringify(params) : queryString;
   const signature = generateSignature(timestamp, apiKey, apiSecret, recvWindow, paramsStr);
 
   const headers = {
@@ -87,8 +99,7 @@ async function makeBybitRequest(
   };
 
   let url = `${baseUrl}${endpoint}`;
-  if (method === 'GET' && Object.keys(params).length > 0) {
-    const queryString = new URLSearchParams(params).toString();
+  if (method === 'GET' && queryString) {
     url += `?${queryString}`;
   }
 
@@ -97,7 +108,7 @@ async function makeBybitRequest(
     headers,
   };
 
-  if (method !== 'GET') {
+  if (method === 'POST' && paramsStr) {
     options.body = paramsStr;
   }
 
