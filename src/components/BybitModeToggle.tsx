@@ -37,7 +37,11 @@ export const BybitModeToggle = () => {
 
   const testConnection = async () => {
     setIsChecking(true);
+    console.log('🔄 Testando conexão Bybit...', { isTestnet });
+    
     try {
+      console.log('📡 Invocando edge function bybit-trading...');
+      
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_balance',
@@ -46,9 +50,19 @@ export const BybitModeToggle = () => {
         }
       });
 
-      if (error) throw error;
+      console.log('📥 Resposta recebida:', { data, error });
+
+      if (error) {
+        console.error('❌ Erro do Supabase:', error);
+        throw new Error(`Erro ao chamar função: ${error.message}`);
+      }
+
+      if (!data) {
+        throw new Error('Nenhum dado retornado da API');
+      }
 
       if (data.success) {
+        console.log('✅ Conexão bem-sucedida!', data.data);
         setIsConnected(true);
         
         // Extract balance from response
@@ -60,14 +74,18 @@ export const BybitModeToggle = () => {
           description: `Modo: ${isTestnet ? 'TESTNET' : 'REAL'} | Saldo: $${parseFloat(walletBalance).toFixed(2)}`,
         });
       } else {
-        throw new Error(data.error);
+        console.error('❌ Erro da API Bybit:', data.error);
+        throw new Error(data.error || 'Erro desconhecido da API Bybit');
       }
-    } catch (error) {
-      console.error('Connection test failed:', error);
+    } catch (error: any) {
+      console.error('❌ Falha completa na conexão:', error);
       setIsConnected(false);
+      
+      const errorMessage = error?.message || 'Erro desconhecido ao conectar';
+      
       toast({
         title: "❌ Falha na conexão",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
