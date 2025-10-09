@@ -80,6 +80,8 @@ async function makeBybitRequest(
   const recvWindow = '5000';
   
   let queryString = '';
+  let queryStringForSignature = '';
+  
   if (method === 'GET' && Object.keys(params).length > 0) {
     // Filter out undefined/null values and sort parameters
     const sortedParams = Object.keys(params)
@@ -90,12 +92,18 @@ async function makeBybitRequest(
         return acc;
       }, {} as any);
     
+    // For signature: no encoding
+    queryStringForSignature = Object.keys(sortedParams)
+      .map(key => `${key}=${sortedParams[key]}`)
+      .join('&');
+    
+    // For URL: with encoding
     queryString = Object.keys(sortedParams)
       .map(key => `${key}=${encodeURIComponent(sortedParams[key])}`)
       .join('&');
   }
   
-  const paramsStr = method === 'POST' ? JSON.stringify(params) : queryString;
+  const paramsStr = method === 'POST' ? JSON.stringify(params) : queryStringForSignature;
   const signature = generateSignature(timestamp, apiKey, apiSecret, recvWindow, paramsStr);
   
   console.log('Request details:', {
