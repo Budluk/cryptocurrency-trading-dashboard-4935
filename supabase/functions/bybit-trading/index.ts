@@ -14,11 +14,17 @@ serve(async (req) => {
   try {
     const { action, isTestnet, params } = await req.json();
     
-    const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY');
-    const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET');
+    let BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY');
+    let BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET');
+
+    // Trim whitespace from credentials
+    if (BYBIT_API_KEY) BYBIT_API_KEY = BYBIT_API_KEY.trim();
+    if (BYBIT_API_SECRET) BYBIT_API_SECRET = BYBIT_API_SECRET.trim();
 
     console.log('API Key configured:', BYBIT_API_KEY ? 'YES' : 'NO');
+    console.log('API Key length:', BYBIT_API_KEY?.length);
     console.log('API Secret configured:', BYBIT_API_SECRET ? 'YES' : 'NO');
+    console.log('API Secret length:', BYBIT_API_SECRET?.length);
 
     if (!BYBIT_API_KEY || !BYBIT_API_SECRET) {
       throw new Error('Bybit API credentials not configured');
