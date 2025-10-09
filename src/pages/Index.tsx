@@ -1,6 +1,7 @@
 import CryptoChart from "@/components/CryptoChart";
 import AdvancedAISignals from "@/components/AdvancedAISignals";
 import { BybitModeToggle } from "@/components/BybitModeToggle";
+import { AutoTrader } from "@/components/AutoTrader";
 import { Badge } from "@/components/ui/badge";
 
 const Index = () => {
@@ -21,6 +22,7 @@ const Index = () => {
         
         <div className="space-y-8">
           <BybitModeToggle />
+          <AutoTrader />
           <AdvancedAISignals />
           <CryptoChart />
         </div>

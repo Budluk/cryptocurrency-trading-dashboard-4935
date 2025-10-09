@@ -52,6 +52,9 @@ serve(async (req) => {
       case 'get_ticker':
         result = await getTicker(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
+      case 'get_instruments':
+        result = await getInstruments(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -214,5 +217,20 @@ async function getTicker(baseUrl: string, apiKey: string, apiSecret: string, par
     apiSecret,
     'GET',
     { category: params.category || 'linear', symbol: params.symbol }
+  );
+}
+
+async function getInstruments(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/market/instruments-info',
+    apiKey,
+    apiSecret,
+    'GET',
+    { 
+      category: params.category || 'linear',
+      limit: params.limit || 1000,
+      status: 'Trading'
+    }
   );
 }
