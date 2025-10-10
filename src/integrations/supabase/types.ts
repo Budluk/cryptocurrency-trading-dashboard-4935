@@ -62,6 +62,247 @@ export type Database = {
         }
         Relationships: []
       }
+      auto_trader_config: {
+        Row: {
+          allowed_symbols: string[] | null
+          created_at: string
+          email_notifications: boolean
+          excluded_symbols: string[] | null
+          id: string
+          is_active: boolean
+          max_position_size: number
+          max_simultaneous_positions: number
+          min_confidence: number
+          notifications_enabled: boolean
+          operating_hours_end: number | null
+          operating_hours_start: number | null
+          risk_per_trade_percentage: number
+          timeframes: string[] | null
+          trailing_stop_percentage: number | null
+          updated_at: string
+          use_stop_loss: boolean
+          use_take_profit: boolean
+          user_id: string
+        }
+        Insert: {
+          allowed_symbols?: string[] | null
+          created_at?: string
+          email_notifications?: boolean
+          excluded_symbols?: string[] | null
+          id?: string
+          is_active?: boolean
+          max_position_size?: number
+          max_simultaneous_positions?: number
+          min_confidence?: number
+          notifications_enabled?: boolean
+          operating_hours_end?: number | null
+          operating_hours_start?: number | null
+          risk_per_trade_percentage?: number
+          timeframes?: string[] | null
+          trailing_stop_percentage?: number | null
+          updated_at?: string
+          use_stop_loss?: boolean
+          use_take_profit?: boolean
+          user_id: string
+        }
+        Update: {
+          allowed_symbols?: string[] | null
+          created_at?: string
+          email_notifications?: boolean
+          excluded_symbols?: string[] | null
+          id?: string
+          is_active?: boolean
+          max_position_size?: number
+          max_simultaneous_positions?: number
+          min_confidence?: number
+          notifications_enabled?: boolean
+          operating_hours_end?: number | null
+          operating_hours_start?: number | null
+          risk_per_trade_percentage?: number
+          timeframes?: string[] | null
+          trailing_stop_percentage?: number | null
+          updated_at?: string
+          use_stop_loss?: boolean
+          use_take_profit?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
+      auto_trader_logs: {
+        Row: {
+          created_at: string
+          id: string
+          log_type: string
+          message: string
+          metadata: Json | null
+          position_id: string | null
+          symbol: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          log_type: string
+          message: string
+          metadata?: Json | null
+          position_id?: string | null
+          symbol?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          log_type?: string
+          message?: string
+          metadata?: Json | null
+          position_id?: string | null
+          symbol?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auto_trader_logs_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "auto_trader_positions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      auto_trader_positions: {
+        Row: {
+          action: string
+          close_reason: string | null
+          closed_at: string | null
+          confidence: number
+          config_id: string | null
+          created_at: string
+          current_price: number | null
+          entry_price: number
+          exchange_order_id: string | null
+          id: string
+          opened_at: string
+          quantity: number
+          realized_pnl: number | null
+          reasoning: string | null
+          status: string
+          stop_loss: number | null
+          symbol: string
+          take_profit: number | null
+          unrealized_pnl: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          close_reason?: string | null
+          closed_at?: string | null
+          confidence: number
+          config_id?: string | null
+          created_at?: string
+          current_price?: number | null
+          entry_price: number
+          exchange_order_id?: string | null
+          id?: string
+          opened_at?: string
+          quantity: number
+          realized_pnl?: number | null
+          reasoning?: string | null
+          status?: string
+          stop_loss?: number | null
+          symbol: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          close_reason?: string | null
+          closed_at?: string | null
+          confidence?: number
+          config_id?: string | null
+          created_at?: string
+          current_price?: number | null
+          entry_price?: number
+          exchange_order_id?: string | null
+          id?: string
+          opened_at?: string
+          quantity?: number
+          realized_pnl?: number | null
+          reasoning?: string | null
+          status?: string
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auto_trader_positions_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "auto_trader_config"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      backtesting_results: {
+        Row: {
+          config_snapshot: Json
+          created_at: string
+          end_date: string
+          id: string
+          losing_trades: number
+          max_drawdown: number
+          profit_factor: number
+          sharpe_ratio: number | null
+          start_date: string
+          total_pnl: number
+          total_trades: number
+          trades_data: Json | null
+          user_id: string
+          win_rate: number
+          winning_trades: number
+        }
+        Insert: {
+          config_snapshot: Json
+          created_at?: string
+          end_date: string
+          id?: string
+          losing_trades?: number
+          max_drawdown?: number
+          profit_factor?: number
+          sharpe_ratio?: number | null
+          start_date: string
+          total_pnl?: number
+          total_trades?: number
+          trades_data?: Json | null
+          user_id: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Update: {
+          config_snapshot?: Json
+          created_at?: string
+          end_date?: string
+          id?: string
+          losing_trades?: number
+          max_drawdown?: number
+          profit_factor?: number
+          sharpe_ratio?: number | null
+          start_date?: string
+          total_pnl?: number
+          total_trades?: number
+          trades_data?: Json | null
+          user_id?: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Relationships: []
+      }
       demo_accounts: {
         Row: {
           created_at: string
@@ -251,6 +492,7 @@ export type Database = {
           message: string
           timestamp: string
           type: string
+          user_id: string | null
         }
         Insert: {
           asset_interval?: string | null
@@ -259,6 +501,7 @@ export type Database = {
           message: string
           timestamp?: string
           type: string
+          user_id?: string | null
         }
         Update: {
           asset_interval?: string | null
@@ -267,6 +510,7 @@ export type Database = {
           message?: string
           timestamp?: string
           type?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -1154,6 +1398,27 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -1170,9 +1435,16 @@ export type Database = {
           winning_trades: number
         }[]
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "trader" | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1299,6 +1571,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "trader", "viewer"],
+    },
   },
 } as const

@@ -1,0 +1,238 @@
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { TrendingUp, TrendingDown, X, Target, ShieldAlert } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Position {
+  id: string;
+  symbol: string;
+  action: string;
+  entry_price: number;
+  quantity: number;
+  stop_loss: number | null;
+  take_profit: number | null;
+  current_price: number | null;
+  unrealized_pnl: number;
+  confidence: number;
+  opened_at: string;
+  status: string;
+}
+
+export const OpenPositionsMonitor = () => {
+  const { toast } = useToast();
+  const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
+
+  const { data: positions, refetch } = useQuery({
+    queryKey: ['open-positions'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('auto_trader_positions')
+        .select('*')
+        .eq('status', 'OPEN')
+        .order('opened_at', { ascending: false });
+
+      if (error) throw error;
+      return data as Position[];
+    },
+    refetchInterval: 5000, // Atualizar a cada 5 segundos
+  });
+
+  const closePosition = async (positionId: string, reason: string) => {
+    try {
+      const position = positions?.find(p => p.id === positionId);
+      if (!position) return;
+
+      const realized_pnl = position.unrealized_pnl;
+      
+      const { error } = await supabase
+        .from('auto_trader_positions')
+        .update({
+          status: 'CLOSED',
+          closed_at: new Date().toISOString(),
+          close_reason: reason,
+          realized_pnl,
+        })
+        .eq('id', positionId);
+
+      if (error) throw error;
+
+      // Log do fechamento
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('auto_trader_logs').insert([{
+          user_id: user.id,
+          log_type: 'TRADE' as any,
+          position_id: positionId,
+          symbol: position.symbol,
+          message: `Posição fechada: ${reason}`,
+          metadata: { pnl: realized_pnl, reason } as any,
+        }]);
+      }
+
+      toast({
+        title: "✅ Posição fechada",
+        description: `${position.symbol} - P&L: $${realized_pnl.toFixed(2)}`,
+      });
+
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: "❌ Erro ao fechar posição",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getPnLColor = (pnl: number) => {
+    return pnl > 0 ? 'text-green-500' : pnl < 0 ? 'text-red-500' : 'text-muted-foreground';
+  };
+
+  const getPnLPercentage = (position: Position) => {
+    if (!position.current_price) return 0;
+    return ((position.unrealized_pnl / (position.entry_price * position.quantity)) * 100);
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-xl font-bold">Posições Abertas</h3>
+            <p className="text-sm text-muted-foreground">
+              {positions?.length || 0} posições ativas
+            </p>
+          </div>
+          <Badge variant="default" className="text-lg px-4 py-2">
+            {positions?.reduce((sum, p) => sum + p.unrealized_pnl, 0).toFixed(2)} USD
+          </Badge>
+        </div>
+
+        {positions && positions.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">
+            Nenhuma posição aberta no momento
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {positions?.map((position) => {
+            const pnlPercentage = getPnLPercentage(position);
+            const stopLossProgress = position.stop_loss 
+              ? Math.abs((position.current_price! - position.entry_price) / (position.stop_loss - position.entry_price)) * 100
+              : 0;
+            const takeProfitProgress = position.take_profit
+              ? Math.abs((position.current_price! - position.entry_price) / (position.take_profit - position.entry_price)) * 100
+              : 0;
+
+            return (
+              <div 
+                key={position.id}
+                className="p-4 bg-muted/30 rounded-lg border border-border hover:border-primary/50 transition-colors"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-full ${
+                      position.action === 'BUY' ? 'bg-green-500/20' : 'bg-red-500/20'
+                    }`}>
+                      {position.action === 'BUY' ? (
+                        <TrendingUp className="w-5 h-5 text-green-500" />
+                      ) : (
+                        <TrendingDown className="w-5 h-5 text-red-500" />
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-lg">{position.symbol}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(position.opened_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Badge variant={position.action === 'BUY' ? 'default' : 'destructive'}>
+                      {position.action}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => closePosition(position.id, 'Manual Close')}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Entrada</p>
+                    <p className="font-semibold">${position.entry_price.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Atual</p>
+                    <p className="font-semibold">${position.current_price?.toFixed(2) || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Quantidade</p>
+                    <p className="font-semibold">{position.quantity}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Confiança</p>
+                    <p className="font-semibold">{position.confidence}%</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-3">
+                  {position.stop_loss && (
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-red-500" />
+                      <div className="flex-1">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span>Stop Loss: ${position.stop_loss.toFixed(2)}</span>
+                          <span className="text-red-500">{stopLossProgress.toFixed(0)}%</span>
+                        </div>
+                        <Progress value={Math.min(stopLossProgress, 100)} className="h-1" />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {position.take_profit && (
+                    <div className="flex items-center gap-2">
+                      <Target className="w-4 h-4 text-green-500" />
+                      <div className="flex-1">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span>Take Profit: ${position.take_profit.toFixed(2)}</span>
+                          <span className="text-green-500">{takeProfitProgress.toFixed(0)}%</span>
+                        </div>
+                        <Progress value={Math.min(takeProfitProgress, 100)} className="h-1" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground">P&L não realizado</p>
+                    <p className={`text-xl font-bold ${getPnLColor(position.unrealized_pnl)}`}>
+                      ${position.unrealized_pnl.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Variação</p>
+                    <p className={`text-lg font-semibold ${getPnLColor(pnlPercentage)}`}>
+                      {pnlPercentage > 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+};
