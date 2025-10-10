@@ -21,6 +21,7 @@ interface Position {
   confidence: number;
   opened_at: string;
   status: string;
+  trailing_stop_percentage: number | null;
 }
 
 export const OpenPositionsMonitor = () => {

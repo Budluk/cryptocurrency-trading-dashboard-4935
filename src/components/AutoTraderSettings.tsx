@@ -39,7 +39,7 @@ export const AutoTraderSettings = () => {
     risk_per_trade_percentage: 2,
     use_stop_loss: true,
     use_take_profit: true,
-    trailing_stop_percentage: 2,
+    trailing_stop_percentage: 5, // Aumentar para 5% por padrão
     allowed_symbols: ['BTC/USD', 'ETH/USD'],
     excluded_symbols: [],
     timeframes: ['1h', '4h'],
