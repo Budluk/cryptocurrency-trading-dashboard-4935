@@ -1,0 +1,86 @@
+//@version=5
+indicator("SmartFlow Pro - Lovable Integration", overlay=true)
+
+// === CONFIGURAÇÕES ===
+ema1 = input.int(9, "EMA Rápida", minval=1)
+ema2 = input.int(21, "EMA Lenta", minval=1)
+rsi_len = input.int(14, "RSI Período", minval=1)
+atr_len = input.int(14, "ATR Período", minval=1)
+qty = input.float(0.01, "Quantidade", minval=0.001)
+conf_min = input.int(80, "Confiança Mínima (%)", minval=50, maxval=100)
+webhook_url = input.string("https://uohdpxkfgxmtlosnmspf.supabase.co/functions/v1/tradingview-webhook", "Webhook URL")
+
+// === INDICADORES ===
+ema_fast = ta.ema(close, ema1)
+ema_slow = ta.ema(close, ema2)
+rsi = ta.rsi(close, rsi_len)
+atr = ta.atr(atr_len)
+
+// === SINAIS ===
+buy_signal = ta.crossover(ema_fast, ema_slow) and rsi < 70
+sell_signal = ta.crossunder(ema_fast, ema_slow) and rsi > 30
+
+// === CÁLCULO DE CONFIANÇA ===
+var float conf = 0
+if buy_signal
+    conf := 60 // Base score
+    if rsi < 50
+        conf += 20 // RSI favorável
+    if close > ema_slow * 1.01
+        conf += 10 // Momentum forte
+    if volume > ta.sma(volume, 20)
+        conf += 10 // Volume aumentando
+
+if sell_signal
+    conf := 60 // Base score
+    if rsi > 50
+        conf += 20 // RSI favorável
+    if close < ema_slow * 0.99
+        conf += 10 // Momentum forte
+    if volume > ta.sma(volume, 20)
+        conf += 10 // Volume aumentando
+
+conf_pct = math.min(100, conf)
+
+// === PLOT ===
+plot(ema_fast, "EMA Rápida", color.blue, 2)
+plot(ema_slow, "EMA Lenta", color.orange, 2)
+plotshape(buy_signal and conf_pct >= conf_min, title="🟢 BUY", location=location.belowbar, color=color.new(color.green, 0), style=shape.triangleup, size=size.normal)
+plotshape(sell_signal and conf_pct >= conf_min, title="🔴 SELL", location=location.abovebar, color=color.new(color.red, 0), style=shape.triangledown, size=size.normal)
+
+// === ALERTAS PARA WEBHOOK ===
+if (buy_signal or sell_signal) and conf_pct >= conf_min
+    side = buy_signal ? "buy" : "sell"
+    sl = side == "buy" ? close - atr * 1.5 : close + atr * 1.5
+    tp = side == "buy" ? close + atr * 2.5 : close - atr * 2.5
+    
+    // JSON para webhook
+    msg = '{"action":"' + side + 
+          '","symbol":"' + syminfo.ticker + 
+          '","price":' + str.tostring(close, format.mintick) + 
+          ',"confidence":' + str.tostring(conf_pct) + 
+          ',"qty":' + str.tostring(qty) + 
+          ',"stop_loss":' + str.tostring(sl, format.mintick) + 
+          ',"take_profit":' + str.tostring(tp, format.mintick) + 
+          ',"rsi":' + str.tostring(rsi) + 
+          ',"atr":' + str.tostring(atr) + 
+          ',"ema_fast":' + str.tostring(ema_fast) + 
+          ',"ema_slow":' + str.tostring(ema_slow) + '}'
+    
+    alert(msg, alert.freq_once_per_bar_close)
+
+// === PAINEL DE INFO ===
+var table infoPanel = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 85), border_width=1)
+if barstate.islast
+    table.cell(infoPanel, 0, 0, "Confiança", text_color=color.white)
+    table.cell(infoPanel, 1, 0, str.tostring(conf_pct) + "%", text_color=conf_pct >= conf_min ? color.green : color.red)
+    table.cell(infoPanel, 0, 1, "RSI", text_color=color.white)
+    table.cell(infoPanel, 1, 1, str.tostring(rsi, "#.##"), text_color=rsi > 70 ? color.red : rsi < 30 ? color.green : color.gray)
+    table.cell(infoPanel, 0, 2, "ATR", text_color=color.white)
+    table.cell(infoPanel, 1, 2, str.tostring(atr, "#.##"), text_color=color.white)
+    table.cell(infoPanel, 0, 3, "EMA Δ", text_color=color.white)
+    ema_diff = ((ema_fast - ema_slow) / ema_slow) * 100
+    table.cell(infoPanel, 1, 3, str.tostring(ema_diff, "#.##") + "%", text_color=ema_diff > 0 ? color.green : color.red)
+    table.cell(infoPanel, 0, 4, "Status", text_color=color.white)
+    status_text = buy_signal ? "🟢 BUY" : sell_signal ? "🔴 SELL" : "⚪ HOLD"
+    table.cell(infoPanel, 1, 4, status_text, text_color=color.white)

@@ -6,6 +6,7 @@ import { OpenPositionsMonitor } from "@/components/OpenPositionsMonitor";
 import { AutoTraderSettings } from "@/components/AutoTraderSettings";
 import { BacktestingPanel } from "@/components/BacktestingPanel";
 import PerformanceDashboard from "@/components/PerformanceDashboard";
+import { TradingViewWebhookStatus } from "@/components/TradingViewWebhookStatus";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -33,17 +34,26 @@ const Index = () => {
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="trader">Auto Trader</TabsTrigger>
+              <TabsTrigger value="tradingview">TradingView</TabsTrigger>
               <TabsTrigger value="positions">Posições</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
-              <TabsTrigger value="settings">Configurações</TabsTrigger>
-              <TabsTrigger value="backtesting">Backtesting</TabsTrigger>
+              <TabsTrigger value="settings">Config</TabsTrigger>
+              <TabsTrigger value="backtesting">Backtest</TabsTrigger>
             </TabsList>
             
             <TabsContent value="trader" className="space-y-8">
               <AutoTrader />
               <AdvancedAISignals />
+            </TabsContent>
+
+            <TabsContent value="tradingview" className="space-y-8">
+              <TradingViewWebhookStatus />
+              <div className="grid gap-4 md:grid-cols-2">
+                <CryptoChart />
+                <AdvancedAISignals />
+              </div>
             </TabsContent>
             
             <TabsContent value="positions">
@@ -62,8 +72,6 @@ const Index = () => {
               <BacktestingPanel />
             </TabsContent>
           </Tabs>
-
-          <CryptoChart />
         </div>
       </div>
     </div>
