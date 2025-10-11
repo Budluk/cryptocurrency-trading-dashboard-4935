@@ -7,6 +7,7 @@ import { AutoTraderSettings } from "@/components/AutoTraderSettings";
 import { BacktestingPanel } from "@/components/BacktestingPanel";
 import PerformanceDashboard from "@/components/PerformanceDashboard";
 import { TradingViewWebhookStatus } from "@/components/TradingViewWebhookStatus";
+import { WebhookTester } from "@/components/WebhookTester";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -50,6 +51,7 @@ const Index = () => {
 
             <TabsContent value="tradingview" className="space-y-8">
               <TradingViewWebhookStatus />
+              <WebhookTester />
               <div className="grid gap-4 md:grid-cols-2">
                 <CryptoChart />
                 <AdvancedAISignals />

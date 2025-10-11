@@ -24,12 +24,12 @@ export const TradingViewWebhookStatus = () => {
         .eq('log_type', 'TRADINGVIEW_SIGNAL')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) throw error;
       return data as LastSignal | null;
     },
-    refetchInterval: 5000, // Atualizar a cada 5 segundos
+    refetchInterval: 5000,
   });
 
   const webhookUrl = "https://uohdpxkfgxmtlosnmspf.supabase.co/functions/v1/tradingview-webhook";

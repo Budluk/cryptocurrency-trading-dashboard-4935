@@ -170,11 +170,11 @@ serve(async (req) => {
 
     console.log("✅ Trade executed:", tradeResult);
 
-    // Salvar no histórico de learning
+    // Salvar no histórico de learning (sem user_id pois webhook é público)
     const { error: logError } = await supabase
       .from('auto_trader_logs')
       .insert({
-        log_type: 'TRADINGVIEW_SIGNAL',
+        log_type: 'TRADINGVIEW_SIGNAL' as any,
         symbol: data.symbol,
         message: `Signal from TradingView: ${data.action} @ ${data.price}`,
         metadata: {
@@ -188,7 +188,7 @@ serve(async (req) => {
             ema_slow: data.ema_slow
           },
           trade_result: tradeResult
-        }
+        } as any
       });
 
     if (logError) {
