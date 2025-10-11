@@ -12,7 +12,7 @@ interface Position {
   take_profit: number | null;
   current_price: number | null;
   unrealized_pnl: number;
-  trailing_stop_percentage: number | null;
+  trailing_stop_percentage?: number | null;
   status: string;
 }
 

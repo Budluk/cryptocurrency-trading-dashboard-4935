@@ -8,6 +8,7 @@ import { BacktestingPanel } from "@/components/BacktestingPanel";
 import PerformanceDashboard from "@/components/PerformanceDashboard";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePositionMonitor } from "@/hooks/usePositionMonitor";
 
 const Index = () => {
   // Ativar monitoramento automático de posições
