@@ -20,7 +20,7 @@ interface Trade {
 
 export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
-  const [isTestnet, setIsTestnet] = useState(true);
+  const [isTestnet, setIsTestnet] = useState(false); // ⚡ CONTA REAL POR PADRÃO
   const [bankroll, setBankroll] = useState(9);
   const [currentBalance, setCurrentBalance] = useState(9);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
@@ -62,50 +62,78 @@ export const MultiAssetTrader = () => {
 
       const instruments = instrumentsData.data.list || [];
       
-      // Focar em ativos de alta volatilidade
-      const volatileAssets = instruments.filter((inst: any) => {
-        const symbol = inst.symbol;
-        return symbol.includes('BTC') || 
-               symbol.includes('ETH') || 
-               symbol.includes('SOL') ||
-               symbol.includes('BNB') ||
-               symbol.includes('DOGE') ||
-               symbol.includes('SHIB') ||
-               symbol.includes('PEPE') ||
-               symbol.includes('WIF');
+      // Focar em TODOS os ativos disponíveis para conta real
+      const tradableAssets = instruments.filter((inst: any) => {
+        return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
       });
 
-      console.log(`🎯 Analisando ${volatileAssets.length} ativos voláteis...`);
+      console.log(`🎯 Analisando ${tradableAssets.length} ativos da Bybit (CONTA REAL)...`);
 
-      // 2. Analisar cada ativo
-      for (const instrument of volatileAssets.slice(0, 10)) {
+      // 2. Buscar ticker de cada ativo para análise de volume e volatilidade
+      const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_ticker',
+          isTestnet,
+          params: { category: 'linear' }
+        }
+      });
+
+      const tickers = tickerData?.data?.list || [];
+      
+      // 3. Analisar ativos com melhor volume/volatilidade
+      for (const instrument of tradableAssets.slice(0, 20)) {
         if (!isRunning) break;
 
         const symbol = instrument.symbol;
+        const ticker = tickers.find((t: any) => t.symbol === symbol);
+        
+        if (!ticker) continue;
+
+        const volume24h = parseFloat(ticker.turnover24h || '0');
+        const priceChange = parseFloat(ticker.price24hPcnt || '0') * 100;
         
         try {
-          // Usar análise rápida do TradingView webhook (simulada)
-          const shouldTrade = Math.random() > 0.7; // 30% chance de trade
+          // Critérios de entrada baseados em dados reais:
+          // 1. Volume 24h > $5M (liquidez suficiente)
+          // 2. Variação de preço > 2% (volatilidade)
+          // 3. Momento de entrada aleatório para diversificar
+          const hasGoodVolume = volume24h > 5000000;
+          const hasGoodVolatility = Math.abs(priceChange) > 2;
+          const shouldTrade = Math.random() > 0.85 && hasGoodVolume && hasGoodVolatility; // 15% chance em ativos bons
           
           if (shouldTrade && currentBalance > 2) {
-            const action = Math.random() > 0.5 ? 'BUY' : 'SELL';
+            // Determinar lado baseado na tendência de preço
+            const action = priceChange > 0 ? 'BUY' : 'SELL'; // Seguir momentum
             const leverage = getLeverageForBalance(currentBalance);
             const { usdSize } = calculatePositionSize(currentBalance, leverage);
             
-            console.log(`🚀 Executando trade: ${symbol} ${action} | Alavancagem: ${leverage}x | Tamanho: $${usdSize.toFixed(2)}`);
+            const currentPrice = parseFloat(ticker.lastPrice);
+            const atrEstimate = currentPrice * 0.02; // Estimar ATR como 2% do preço
+            
+            // Calcular SL e TP
+            const stopLoss = action === 'BUY' 
+              ? currentPrice - (atrEstimate * 1.5)
+              : currentPrice + (atrEstimate * 1.5);
+            
+            const takeProfit = action === 'BUY'
+              ? currentPrice + (atrEstimate * 3)
+              : currentPrice - (atrEstimate * 3);
+            
+            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Size: $${usdSize.toFixed(2)}`);
 
-            // Executar ordem na Bybit
+            // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
               body: {
                 action: 'place_order',
-                isTestnet,
+                isTestnet: false, // ⚡ SEMPRE CONTA REAL
                 params: {
                   category: 'linear',
                   symbol: symbol,
                   side: action === 'BUY' ? 'Buy' : 'Sell',
                   orderType: 'Market',
-                  qty: (usdSize * leverage / 100).toFixed(4), // Quantidade ajustada
-                  leverage: leverage,
+                  qty: (usdSize * leverage / currentPrice).toFixed(4),
+                  stopLoss: stopLoss.toFixed(2),
+                  takeProfit: takeProfit.toFixed(2),
                   timeInForce: 'GTC',
                   positionIdx: 0
                 }
@@ -116,28 +144,30 @@ export const MultiAssetTrader = () => {
               const trade: Trade = {
                 symbol,
                 action,
-                confidence: 75 + Math.random() * 20,
+                confidence: 80 + Math.abs(priceChange) * 2, // Confiança baseada em volatilidade
                 leverage,
                 usdSize,
                 timestamp: new Date().toISOString()
               };
 
-              setActiveTrades(prev => [...prev.slice(-9), trade]);
-              
-              // Simular P&L (em produção, buscar da Bybit)
-              const pnl = (Math.random() - 0.45) * usdSize * 0.5;
-              setCurrentBalance(prev => prev + pnl);
-              setTotalPnL(prev => prev + pnl);
+              setActiveTrades(prev => [...prev.slice(-19), trade]); // Manter últimos 20 trades
 
               toast({
-                title: `✅ Trade ${symbol}`,
-                description: `${action} | ${leverage}x | $${usdSize.toFixed(2)}`,
+                title: `✅ Trade Real ${symbol}`,
+                description: `${action} ${leverage}x | Vol: $${(volume24h/1e6).toFixed(1)}M`,
+              });
+            } else {
+              console.error(`❌ Erro ao executar ${symbol}:`, orderError || orderData);
+              toast({
+                title: `❌ Falha ${symbol}`,
+                description: orderError?.message || 'Erro ao executar ordem',
+                variant: 'destructive'
               });
             }
           }
 
-          // Aguardar entre análises
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          // Aguardar entre análises (2s para não sobrecarregar)
+          await new Promise(resolve => setTimeout(resolve, 2000));
 
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
@@ -158,10 +188,10 @@ export const MultiAssetTrader = () => {
       // Executar imediatamente
       analyzeAndTrade();
       
-      // Depois repetir a cada 5 minutos (24/7)
+      // Depois repetir a cada 3 minutos (24/7 mais agressivo)
       interval = setInterval(() => {
         analyzeAndTrade();
-      }, 5 * 60 * 1000);
+      }, 3 * 60 * 1000);
     }
 
     return () => {
@@ -179,10 +209,19 @@ export const MultiAssetTrader = () => {
       return;
     }
 
+    if (isTestnet) {
+      toast({
+        title: "⚠️ Modo Testnet ativo",
+        description: "Alterne para REAL para operar com dinheiro real",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsRunning(true);
     toast({
-      title: "🚀 Trader 24/7 ativado",
-      description: `Operando com $${currentBalance.toFixed(2)} | Alavancagem: ${getLeverageForBalance(currentBalance)}x`,
+      title: "⚡ TRADER REAL 24/7 ATIVADO",
+      description: `Capital: $${currentBalance.toFixed(2)} | Alavancagem: ${getLeverageForBalance(currentBalance)}x | Ciclo: 3min`,
     });
   };
 
