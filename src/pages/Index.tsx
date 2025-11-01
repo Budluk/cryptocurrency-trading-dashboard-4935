@@ -8,6 +8,7 @@ import { BacktestingPanel } from "@/components/BacktestingPanel";
 import PerformanceDashboard from "@/components/PerformanceDashboard";
 import { TradingViewWebhookStatus } from "@/components/TradingViewWebhookStatus";
 import { WebhookTester } from "@/components/WebhookTester";
+import { MultiAssetTrader } from "@/components/MultiAssetTrader";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -45,7 +46,11 @@ const Index = () => {
             </TabsList>
             
             <TabsContent value="trader" className="space-y-8">
-              <AutoTrader />
+              <MultiAssetTrader />
+              <div className="pt-8 border-t border-border">
+                <h3 className="text-lg font-semibold mb-4">Trader Clássico</h3>
+                <AutoTrader />
+              </div>
               <AdvancedAISignals />
             </TabsContent>
 

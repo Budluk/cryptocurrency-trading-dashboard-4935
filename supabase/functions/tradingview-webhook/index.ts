@@ -51,13 +51,13 @@ function scoreSignal(data: TradingViewAlert, minConfidence: number = 80): {
     };
   }
 
-  // RSI em zona extrema
-  if (data.action === "buy" && data.rsi && data.rsi > 70) {
-    score -= 15;
+  // RSI em zona extrema (menos restritivo para conta real)
+  if (data.action === "buy" && data.rsi && data.rsi > 78) {
+    score -= 10;
     reasons.push("RSI overbought");
   }
-  if (data.action === "sell" && data.rsi && data.rsi < 30) {
-    score -= 15;
+  if (data.action === "sell" && data.rsi && data.rsi < 22) {
+    score -= 10;
     reasons.push("RSI oversold");
   }
 
@@ -150,16 +150,21 @@ serve(async (req) => {
 
     console.log(`✅ Signal validated: ${validation.adjustedConfidence}% - ${validation.reason}`);
 
-    // Chamar edge function de trading do Bybit
+    // Chamar edge function de trading do Bybit - MODO REAL ATIVADO
     const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('bybit-trading', {
       body: {
-        action: 'create_order',
-        symbol: data.symbol,
-        side: data.action.toUpperCase(),
-        quantity: data.qty,
-        price: data.price,
-        stop_loss: data.stop_loss,
-        take_profit: data.take_profit
+        action: 'place_order',
+        isTestnet: false, // ⚡ CONTA REAL ATIVA
+        params: {
+          category: 'linear',
+          symbol: data.symbol,
+          side: data.action === 'buy' ? 'Buy' : 'Sell',
+          orderType: 'Market',
+          qty: data.qty.toString(),
+          stopLoss: data.stop_loss?.toString(),
+          takeProfit: data.take_profit?.toString(),
+          timeInForce: 'GTC'
+        }
       }
     });
 
