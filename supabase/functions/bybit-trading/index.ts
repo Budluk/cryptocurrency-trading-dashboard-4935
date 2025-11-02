@@ -188,13 +188,25 @@ async function getBalance(baseUrl: string, apiKey: string, apiSecret: string, pa
 }
 
 async function getPositions(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  // Bybit requires either 'symbol' OR 'settleCoin' to list positions
+  const positionParams: any = { 
+    category: params.category || 'linear'
+  };
+  
+  // Add symbol if provided, otherwise use settleCoin
+  if (params.symbol) {
+    positionParams.symbol = params.symbol;
+  } else if (params.settleCoin) {
+    positionParams.settleCoin = params.settleCoin;
+  }
+  
   return await makeBybitRequest(
     baseUrl,
     '/v5/position/list',
     apiKey,
     apiSecret,
     'GET',
-    { category: params.category || 'linear', symbol: params.symbol }
+    positionParams
   );
 }
 
