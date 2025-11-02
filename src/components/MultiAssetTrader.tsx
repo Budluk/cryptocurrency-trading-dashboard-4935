@@ -85,7 +85,10 @@ export const MultiAssetTrader = () => {
         body: {
           action: 'get_positions',
           isTestnet: false,
-          params: { category: 'linear' }
+          params: { 
+            category: 'linear',
+            settleCoin: 'USDT' 
+          }
         }
       });
 
@@ -219,16 +222,30 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
-            // Calcular SL e TP
+            // Calcular SL e TP com precisão correta
+            const priceDecimals = ticker.lastPrice.includes('.') 
+              ? ticker.lastPrice.split('.')[1].length 
+              : 2;
+            
             const stopLoss = action === 'BUY' 
-              ? currentPrice - (atrEstimate * 1.5)
-              : currentPrice + (atrEstimate * 1.5);
+              ? (currentPrice - (atrEstimate * 1.5)).toFixed(priceDecimals)
+              : (currentPrice + (atrEstimate * 1.5)).toFixed(priceDecimals);
             
             const takeProfit = action === 'BUY'
-              ? currentPrice + (atrEstimate * 3)
-              : currentPrice - (atrEstimate * 3);
+              ? (currentPrice + (atrEstimate * 3)).toFixed(priceDecimals)
+              : (currentPrice - (atrEstimate * 3)).toFixed(priceDecimals);
             
-            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qty} | Price: $${currentPrice.toFixed(2)}`);
+            // Validar que SL está correto para a direção
+            if (action === 'BUY' && parseFloat(stopLoss) >= currentPrice) {
+              console.log(`⚠️ ${symbol}: Stop Loss inválido para BUY (${stopLoss} >= ${currentPrice})`);
+              continue;
+            }
+            if (action === 'SELL' && parseFloat(stopLoss) <= currentPrice) {
+              console.log(`⚠️ ${symbol}: Stop Loss inválido para SELL (${stopLoss} <= ${currentPrice})`);
+              continue;
+            }
+            
+            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qty} | Price: $${currentPrice} | SL: ${stopLoss} | TP: ${takeProfit}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
@@ -241,8 +258,8 @@ export const MultiAssetTrader = () => {
                   side: action === 'BUY' ? 'Buy' : 'Sell',
                   orderType: 'Market',
                   qty: qty.toString(),
-                  stopLoss: stopLoss.toFixed(2),
-                  takeProfit: takeProfit.toFixed(2),
+                  stopLoss: stopLoss,
+                  takeProfit: takeProfit,
                   timeInForce: 'GTC',
                   positionIdx: 0
                 }
