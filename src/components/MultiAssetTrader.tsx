@@ -85,7 +85,7 @@ export const MultiAssetTrader = () => {
         body: {
           action: 'get_positions',
           isTestnet: false,
-          params: { category: 'linear', settleCoin: 'USDT' }
+          params: { category: 'linear' }
         }
       });
 
@@ -198,6 +198,27 @@ export const MultiAssetTrader = () => {
             const currentPrice = parseFloat(ticker.lastPrice);
             const atrEstimate = currentPrice * 0.02; // Estimar ATR como 2% do preço
             
+            // Pegar filtros do instrumento para calcular quantidade válida
+            const lotSizeFilter = instrument.lotSizeFilter || {};
+            const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.01');
+            const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.01');
+            const maxOrderQty = parseFloat(lotSizeFilter.maxOrderQty || '10000');
+            
+            // Calcular quantidade respeitando os limites do ativo
+            let rawQty = (usdSize * leverage) / currentPrice;
+            
+            // Arredondar para o step correto
+            rawQty = Math.floor(rawQty / qtyStep) * qtyStep;
+            
+            // Garantir que está dentro dos limites
+            const qty = Math.max(minOrderQty, Math.min(maxOrderQty, rawQty));
+            
+            // Validar se a quantidade é válida
+            if (qty < minOrderQty) {
+              console.log(`⚠️ ${symbol}: Quantidade muito baixa (${qty} < ${minOrderQty})`);
+              continue;
+            }
+            
             // Calcular SL e TP
             const stopLoss = action === 'BUY' 
               ? currentPrice - (atrEstimate * 1.5)
@@ -207,7 +228,7 @@ export const MultiAssetTrader = () => {
               ? currentPrice + (atrEstimate * 3)
               : currentPrice - (atrEstimate * 3);
             
-            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Size: $${usdSize.toFixed(2)}`);
+            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qty} | Price: $${currentPrice.toFixed(2)}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
@@ -219,7 +240,7 @@ export const MultiAssetTrader = () => {
                   symbol: symbol,
                   side: action === 'BUY' ? 'Buy' : 'Sell',
                   orderType: 'Market',
-                  qty: (usdSize * leverage / currentPrice).toFixed(4),
+                  qty: qty.toString(),
                   stopLoss: stopLoss.toFixed(2),
                   takeProfit: takeProfit.toFixed(2),
                   timeInForce: 'GTC',
