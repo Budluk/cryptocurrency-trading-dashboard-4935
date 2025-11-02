@@ -26,8 +26,17 @@ export const MultiAssetTrader = () => {
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [totalPnL, setTotalPnL] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
+  const [dailyPnL, setDailyPnL] = useState(0);
+  const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+  const [openPositionsCount, setOpenPositionsCount] = useState(0);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const { toast } = useToast();
 
+  // PROTEÇÕES INTELIGENTES
+  const DAILY_STOP_LOSS_PCT = 0.10; // -10% do bankroll
+  const MAX_OPEN_POSITIONS = 5;
+  const MAX_CONSECUTIVE_LOSSES = 3;
+  
   // Estratégia de alavancagem baseada no bankroll
   const getLeverageForBalance = (balance: number) => {
     if (balance < 5) return 20; // Máxima alavancagem quando muito baixo
@@ -44,8 +53,87 @@ export const MultiAssetTrader = () => {
     return { usdSize, quantity: (usdSize * leverage) };
   };
 
+  // 🔄 SINCRONIZAÇÃO AUTOMÁTICA - Buscar saldo real da Bybit
+  const syncBybitBalance = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_balance',
+          isTestnet: false,
+          params: { accountType: 'UNIFIED' }
+        }
+      });
+
+      if (!error && data?.success) {
+        const usdtCoin = data.data.list[0]?.coin?.find((c: any) => c.coin === 'USDT');
+        if (usdtCoin) {
+          const realBalance = parseFloat(usdtCoin.walletBalance);
+          setCurrentBalance(realBalance);
+          setLastSyncTime(new Date());
+          console.log(`💰 Saldo sincronizado: $${realBalance.toFixed(2)}`);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar saldo:', error);
+    }
+  };
+
+  // 📊 SINCRONIZAR POSIÇÕES ABERTAS
+  const syncOpenPositions = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_positions',
+          isTestnet: false,
+          params: { category: 'linear', settleCoin: 'USDT' }
+        }
+      });
+
+      if (!error && data?.success) {
+        const positions = data.data.list || [];
+        const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
+        setOpenPositionsCount(openPositions.length);
+        console.log(`📈 Posições abertas: ${openPositions.length}`);
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar posições:', error);
+    }
+  };
+
   const analyzeAndTrade = async () => {
     try {
+      // 🛡️ VERIFICAR PROTEÇÕES
+      if (dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT) {
+        console.log('🛑 STOP LOSS DIÁRIO ATINGIDO!');
+        toast({
+          title: "🛑 Stop Loss Diário Atingido",
+          description: `Perdeu ${(DAILY_STOP_LOSS_PCT * 100).toFixed(0)}% hoje. Sistema pausado até amanhã.`,
+          variant: "destructive",
+        });
+        setIsRunning(false);
+        return;
+      }
+
+      if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
+        console.log('⚠️ Muitas perdas consecutivas. Pausando...');
+        toast({
+          title: "⚠️ Sequência de Perdas",
+          description: `${MAX_CONSECUTIVE_LOSSES} perdas seguidas. Sistema pausado por segurança.`,
+          variant: "destructive",
+        });
+        setIsRunning(false);
+        return;
+      }
+
+      if (openPositionsCount >= MAX_OPEN_POSITIONS) {
+        console.log('📊 Máximo de posições abertas atingido');
+        return;
+      }
+
+      // 🔄 Sincronizar saldo e posições
+      await syncBybitBalance();
+      await syncOpenPositions();
+
       // 1. Buscar ativos mais voláteis da Bybit
       const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
         body: {
@@ -62,12 +150,12 @@ export const MultiAssetTrader = () => {
 
       const instruments = instrumentsData.data.list || [];
       
-      // Focar em TODOS os ativos disponíveis para conta real
+      // Focar em ativos com boa liquidez
       const tradableAssets = instruments.filter((inst: any) => {
         return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
       });
 
-      console.log(`🎯 Analisando ${tradableAssets.length} ativos da Bybit (CONTA REAL)...`);
+      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${MAX_OPEN_POSITIONS})`);
 
       // 2. Buscar ticker de cada ativo para análise de volume e volatilidade
       const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
@@ -93,13 +181,13 @@ export const MultiAssetTrader = () => {
         const priceChange = parseFloat(ticker.price24hPcnt || '0') * 100;
         
         try {
-          // Critérios de entrada baseados em dados reais:
-          // 1. Volume 24h > $5M (liquidez suficiente)
-          // 2. Variação de preço > 2% (volatilidade)
-          // 3. Momento de entrada aleatório para diversificar
-          const hasGoodVolume = volume24h > 5000000;
-          const hasGoodVolatility = Math.abs(priceChange) > 2;
-          const shouldTrade = Math.random() > 0.85 && hasGoodVolume && hasGoodVolatility; // 15% chance em ativos bons
+          // ⚡ CRITÉRIOS MAIS AGRESSIVOS:
+          // 1. Volume 24h > $2M (liquidez suficiente) - REDUZIDO
+          // 2. Variação de preço > 1.5% (volatilidade) - REDUZIDO
+          // 3. 40% chance de trade em ativos bons - AUMENTADO
+          const hasGoodVolume = volume24h > 2000000;
+          const hasGoodVolatility = Math.abs(priceChange) > 1.5;
+          const shouldTrade = Math.random() > 0.60 && hasGoodVolume && hasGoodVolatility; // 40% chance
           
           if (shouldTrade && currentBalance > 2) {
             // Determinar lado baseado na tendência de preço
@@ -144,20 +232,26 @@ export const MultiAssetTrader = () => {
               const trade: Trade = {
                 symbol,
                 action,
-                confidence: 80 + Math.abs(priceChange) * 2, // Confiança baseada em volatilidade
+                confidence: 80 + Math.abs(priceChange) * 2,
                 leverage,
                 usdSize,
                 timestamp: new Date().toISOString()
               };
 
-              setActiveTrades(prev => [...prev.slice(-19), trade]); // Manter últimos 20 trades
+              setActiveTrades(prev => [...prev.slice(-19), trade]);
+              setOpenPositionsCount(prev => prev + 1);
 
+              // 🔔 NOTIFICAÇÃO DE SUCESSO
               toast({
-                title: `✅ Trade Real ${symbol}`,
-                description: `${action} ${leverage}x | Vol: $${(volume24h/1e6).toFixed(1)}M`,
+                title: `✅ TRADE ABERTO - ${symbol}`,
+                description: `${action} ${leverage}x | $${usdSize.toFixed(2)} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange > 0 ? '+' : ''}${priceChange.toFixed(2)}%`,
               });
             } else {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError || orderData);
+              
+              // Incrementar perdas consecutivas em caso de erro
+              setConsecutiveLosses(prev => prev + 1);
+              
               toast({
                 title: `❌ Falha ${symbol}`,
                 description: orderError?.message || 'Erro ao executar ordem',
@@ -181,6 +275,22 @@ export const MultiAssetTrader = () => {
     }
   };
 
+  // Sincronizar saldo a cada 30 segundos quando ativo
+  useEffect(() => {
+    let syncInterval: NodeJS.Timeout;
+
+    if (isRunning) {
+      syncInterval = setInterval(() => {
+        syncBybitBalance();
+        syncOpenPositions();
+      }, 30 * 1000);
+    }
+
+    return () => {
+      if (syncInterval) clearInterval(syncInterval);
+    };
+  }, [isRunning]);
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
@@ -188,10 +298,10 @@ export const MultiAssetTrader = () => {
       // Executar imediatamente
       analyzeAndTrade();
       
-      // Depois repetir a cada 3 minutos (24/7 mais agressivo)
+      // Depois repetir a cada 2 minutos (mais agressivo)
       interval = setInterval(() => {
         analyzeAndTrade();
-      }, 3 * 60 * 1000);
+      }, 2 * 60 * 1000);
     }
 
     return () => {
@@ -199,7 +309,7 @@ export const MultiAssetTrader = () => {
     };
   }, [isRunning, currentBalance, isTestnet]);
 
-  const startTrading = () => {
+  const startTrading = async () => {
     if (currentBalance < 2) {
       toast({
         title: "❌ Saldo insuficiente",
@@ -218,10 +328,14 @@ export const MultiAssetTrader = () => {
       return;
     }
 
+    // Sincronizar antes de iniciar
+    await syncBybitBalance();
+    await syncOpenPositions();
+
     setIsRunning(true);
     toast({
       title: "⚡ TRADER REAL 24/7 ATIVADO",
-      description: `Capital: $${currentBalance.toFixed(2)} | Alavancagem: ${getLeverageForBalance(currentBalance)}x | Ciclo: 3min`,
+      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance)}x | Ciclo: 2min | Max Pos: ${MAX_OPEN_POSITIONS}`,
     });
   };
 
@@ -233,11 +347,17 @@ export const MultiAssetTrader = () => {
     });
   };
 
-  const resetBankroll = () => {
-    setCurrentBalance(bankroll);
+  const resetBankroll = async () => {
+    await syncBybitBalance();
     setTotalPnL(0);
+    setDailyPnL(0);
     setActiveTrades([]);
     setCycleCount(0);
+    setConsecutiveLosses(0);
+    toast({
+      title: "🔄 Reset Completo",
+      description: "Estatísticas resetadas e saldo sincronizado",
+    });
   };
 
   return (
@@ -264,12 +384,17 @@ export const MultiAssetTrader = () => {
           <Card className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
               <DollarSign className="h-4 w-4 text-green-500" />
-              <span className="text-xs text-muted-foreground">Bankroll</span>
+              <span className="text-xs text-muted-foreground">Saldo Real</span>
             </div>
             <div className="text-xl font-bold">${currentBalance.toFixed(2)}</div>
-            <div className={`text-xs ${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {totalPnL >= 0 ? '+' : ''}{totalPnL.toFixed(2)} ({((totalPnL/bankroll)*100).toFixed(1)}%)
+            <div className={`text-xs ${dailyPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              Hoje: {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)} ({((dailyPnL/currentBalance)*100).toFixed(1)}%)
             </div>
+            {lastSyncTime && (
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Sync: {lastSyncTime.toLocaleTimeString()}
+              </div>
+            )}
           </Card>
 
           <Card className="p-4 bg-background/50">
@@ -286,24 +411,45 @@ export const MultiAssetTrader = () => {
           <Card className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
               <Zap className="h-4 w-4 text-yellow-500" />
-              <span className="text-xs text-muted-foreground">Trades</span>
+              <span className="text-xs text-muted-foreground">Posições</span>
             </div>
-            <div className="text-xl font-bold">{activeTrades.length}</div>
+            <div className="text-xl font-bold">{openPositionsCount}/{MAX_OPEN_POSITIONS}</div>
             <div className="text-xs text-muted-foreground">
-              Executados
+              Abertas | {activeTrades.length} total
             </div>
           </Card>
 
           <Card className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="h-4 w-4 text-purple-500" />
-              <span className="text-xs text-muted-foreground">Ciclos</span>
+              <span className="text-xs text-muted-foreground">Proteção</span>
             </div>
-            <div className="text-xl font-bold">{cycleCount}</div>
+            <div className="text-xl font-bold">{consecutiveLosses}/{MAX_CONSECUTIVE_LOSSES}</div>
             <div className="text-xs text-muted-foreground">
-              Completos
+              Perdas seguidas
             </div>
           </Card>
+        </div>
+
+        {/* Proteções Ativas */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <div className="text-xs font-medium mb-1">🛡️ Stop Loss Diário</div>
+            <div className="text-sm">
+              <span className={dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT ? 'text-red-500 font-bold' : ''}>
+                {((DAILY_STOP_LOSS_PCT * 100).toFixed(0))}% = ${(currentBalance * DAILY_STOP_LOSS_PCT).toFixed(2)}
+              </span>
+            </div>
+          </div>
+          
+          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <div className="text-xs font-medium mb-1">📊 Posições Max</div>
+            <div className="text-sm">
+              <span className={openPositionsCount >= MAX_OPEN_POSITIONS ? 'text-yellow-500 font-bold' : ''}>
+                {openPositionsCount} de {MAX_OPEN_POSITIONS}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Mode Toggle */}
@@ -364,8 +510,15 @@ export const MultiAssetTrader = () => {
         {isRunning && (
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">Sistema operando...</span>
-              <span className="text-green-500 font-semibold animate-pulse">● ATIVO</span>
+              <div className="flex items-center gap-3">
+                <span className="text-green-500 font-semibold animate-pulse">● OPERANDO</span>
+                <span className="text-xs text-muted-foreground">
+                  Ciclo: {cycleCount} | Próx: 2min
+                </span>
+              </div>
+              <span className="text-xs">
+                {openPositionsCount < MAX_OPEN_POSITIONS ? '🎯 Buscando setups...' : '⏸️ Posições cheias'}
+              </span>
             </div>
             <Progress value={100} className="h-2 animate-pulse" />
           </div>
