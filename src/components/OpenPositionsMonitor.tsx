@@ -40,8 +40,31 @@ export const OpenPositionsMonitor = () => {
       if (error) throw error;
       return data as Position[];
     },
-    refetchInterval: 5000, // Atualizar a cada 5 segundos
+    refetchInterval: 3000, // Atualizar a cada 3 segundos
   });
+
+  // Realtime updates usando Supabase realtime
+  useEffect(() => {
+    const channel = supabase
+      .channel('positions-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'auto_trader_positions',
+          filter: 'status=eq.OPEN'
+        },
+        () => {
+          refetch();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refetch]);
 
   const closePosition = async (positionId: string, reason: string) => {
     try {
@@ -99,6 +122,16 @@ export const OpenPositionsMonitor = () => {
     return ((position.unrealized_pnl / (position.entry_price * position.quantity)) * 100);
   };
 
+  // Indicador de saúde da posição
+  const getHealthIndicator = (position: Position) => {
+    const pnlPercent = getPnLPercentage(position);
+    if (pnlPercent > 2) return { color: 'bg-green-500', status: 'Saudável' };
+    if (pnlPercent > 0) return { color: 'bg-green-400', status: 'Lucro' };
+    if (pnlPercent > -1) return { color: 'bg-yellow-500', status: 'Atenção' };
+    if (pnlPercent > -3) return { color: 'bg-orange-500', status: 'Risco' };
+    return { color: 'bg-red-500', status: 'Crítico' };
+  };
+
   return (
     <div className="space-y-4">
       <Card className="p-6">
@@ -130,11 +163,20 @@ export const OpenPositionsMonitor = () => {
               ? Math.abs((position.current_price! - position.entry_price) / (position.take_profit - position.entry_price)) * 100
               : 0;
 
+            const health = getHealthIndicator(position);
+            
             return (
               <div 
                 key={position.id}
-                className="p-4 bg-muted/30 rounded-lg border border-border hover:border-primary/50 transition-colors"
+                className="p-4 bg-muted/30 rounded-lg border-2 hover:border-primary/50 transition-colors relative overflow-hidden"
+                style={{ borderColor: `hsl(var(--${health.color === 'bg-green-500' ? 'green' : health.color === 'bg-red-500' ? 'red' : 'yellow'}-500) / 0.3)` }}
               >
+                {/* Indicador de Saúde */}
+                <div className="absolute top-0 right-0 px-3 py-1 rounded-bl-lg text-xs font-semibold bg-background/80 backdrop-blur-sm">
+                  <span className={`inline-block w-2 h-2 rounded-full ${health.color} mr-2`}></span>
+                  {health.status}
+                </div>
+                
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-full ${

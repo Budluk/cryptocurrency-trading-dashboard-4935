@@ -1,264 +1,296 @@
 import { useQuery } from "@tanstack/react-query";
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { ActivityIcon, TargetIcon, AlertCircleIcon, TrendingUpIcon } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { useState } from "react";
 
-interface PerformanceMetric {
-  timeframe: string;
-  accuracy: number;
-  profit: number;
-  trades: number;
-  winRate: number;
-}
+const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
 
-interface RiskMetric {
-  label: string;
-  value: number;
-  status: 'low' | 'medium' | 'high';
-  color: string;
-}
+export const AdvancedAnalytics = () => {
+  const [period, setPeriod] = useState('30d');
 
-const fetchAdvancedAnalytics = async () => {
-  // Simulando métricas avançadas de performance
-  const performanceData: PerformanceMetric[] = [
-    { timeframe: '1W', accuracy: 78, profit: 12.5, trades: 25, winRate: 72 },
-    { timeframe: '1M', accuracy: 75, profit: 45.2, trades: 120, winRate: 68 },
-    { timeframe: '3M', accuracy: 82, profit: 156.8, trades: 380, winRate: 74 },
-    { timeframe: '6M', accuracy: 79, profit: 298.4, trades: 720, winRate: 71 },
-    { timeframe: '1Y', accuracy: 76, profit: 524.6, trades: 1450, winRate: 69 }
-  ];
+  const { data: trades } = useQuery({
+    queryKey: ['analytics-trades', period],
+    queryFn: async () => {
+      const endDate = new Date();
+      const startDate = new Date();
+      
+      switch (period) {
+        case '7d':
+          startDate.setDate(endDate.getDate() - 7);
+          break;
+        case '30d':
+          startDate.setDate(endDate.getDate() - 30);
+          break;
+        case '90d':
+          startDate.setDate(endDate.getDate() - 90);
+          break;
+      }
 
-  const riskMetrics: RiskMetric[] = [
-    { label: 'Volatilidade', value: 35, status: 'medium', color: '#8884d8' },
-    { label: 'Correlação BTC', value: 78, status: 'high', color: '#82ca9d' },
-    { label: 'Drawdown Máximo', value: 15, status: 'low', color: '#ffc658' },
-    { label: 'Beta do Mercado', value: 1.2, status: 'medium', color: '#ff7300' },
-    { label: 'Sharpe Ratio', value: 2.4, status: 'high', color: '#00ff88' }
-  ];
+      const { data, error } = await supabase
+        .from('auto_trader_positions')
+        .select('*')
+        .eq('status', 'CLOSED')
+        .gte('closed_at', startDate.toISOString())
+        .order('closed_at', { ascending: true });
 
-  const confidenceData = [
-    { session: 'Abertura Asia', confidence: 85, volume: 2.1, trend: 'bullish' },
-    { session: 'Londres', confidence: 72, volume: 3.8, trend: 'bearish' },
-    { session: 'Nova York', confidence: 91, volume: 5.2, trend: 'bullish' },
-    { session: 'Fechamento', confidence: 67, volume: 1.9, trend: 'neutral' }
-  ];
-
-  const technicalLevels = [
-    { type: 'Resistência', price: 115500, confidence: 89, tests: 12 },
-    { type: 'Suporte', price: 108200, confidence: 92, tests: 18 },
-    { type: 'Resistência', price: 122000, confidence: 74, tests: 7 },
-    { type: 'Suporte', price: 102500, confidence: 85, tests: 15 }
-  ];
-
-  return { performanceData, riskMetrics, confidenceData, technicalLevels };
-};
-
-const chartConfig = {
-  accuracy: {
-    label: "Precisão",
-    color: "hsl(var(--primary))",
-  },
-  profit: {
-    label: "Lucro (%)",
-    color: "hsl(var(--chart-2))",
-  },
-  winRate: {
-    label: "Taxa de Acerto",
-    color: "hsl(var(--chart-3))",
-  },
-} as const;
-
-const AdvancedAnalytics = () => {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['advancedAnalytics'],
-    queryFn: fetchAdvancedAnalytics,
-    refetchInterval: 30000,
-    retry: 1,
-    retryOnMount: false
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 30000
   });
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-success';
-    if (confidence >= 60) return 'text-warning';
-    return 'text-destructive';
-  };
+  // 1. Performance por Símbolo
+  const symbolPerformance = trades?.reduce((acc, trade) => {
+    const symbol = trade.symbol;
+    if (!acc[symbol]) {
+      acc[symbol] = { symbol, trades: 0, wins: 0, totalPnl: 0, winRate: 0 };
+    }
+    acc[symbol].trades += 1;
+    const realizedPnl = (trade as any).realized_pnl || 0;
+    acc[symbol].wins += realizedPnl > 0 ? 1 : 0;
+    acc[symbol].totalPnl += realizedPnl;
+    acc[symbol].winRate = (acc[symbol].wins / acc[symbol].trades) * 100;
+    return acc;
+  }, {} as Record<string, any>);
 
-  const getTrendIcon = (trend: string) => {
-    if (trend === 'bullish') return <TrendingUpIcon className="w-4 h-4 text-success" />;
-    if (trend === 'bearish') return <TrendingUpIcon className="w-4 h-4 text-destructive rotate-180" />;
-    return <AlertCircleIcon className="w-4 h-4 text-warning" />;
-  };
+  const symbolData = Object.values(symbolPerformance || {}).sort((a: any, b: any) => b.totalPnl - a.totalPnl);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        {[1,2,3].map(i => (
-          <Card key={i} className="p-6 animate-pulse">
-            <div className="h-6 bg-muted rounded mb-4"></div>
-            <div className="h-32 bg-muted rounded"></div>
-          </Card>
-        ))}
-      </div>
-    );
-  }
+  // 2. Win Rate por Horário
+  const hourlyPerformance = trades?.reduce((acc, trade) => {
+    const hour = new Date(trade.opened_at).getHours();
+    if (!acc[hour]) {
+      acc[hour] = { hour, trades: 0, wins: 0, winRate: 0 };
+    }
+    acc[hour].trades += 1;
+    const realizedPnl = (trade as any).realized_pnl || 0;
+    acc[hour].wins += realizedPnl > 0 ? 1 : 0;
+    acc[hour].winRate = (acc[hour].wins / acc[hour].trades) * 100;
+    return acc;
+  }, {} as Record<number, any>);
+
+  const hourlyData = Object.values(hourlyPerformance || {}).sort((a: any, b: any) => a.hour - b.hour);
+
+  // 3. Distribuição de Leverage
+  const leverageDistribution = trades?.reduce((acc, trade) => {
+    const lev = (trade as any).leverage || 1;
+    const existing = acc.find(item => item.leverage === lev);
+    const realizedPnl = (trade as any).realized_pnl || 0;
+    if (existing) {
+      existing.count += 1;
+      existing.totalPnl += realizedPnl;
+    } else {
+      acc.push({ leverage: `${lev}x`, count: 1, totalPnl: realizedPnl });
+    }
+    return acc;
+  }, [] as any[]) || [];
+
+  // 4. Análise de Perdas Consecutivas
+  let maxConsecutiveLosses = 0;
+  let currentStreak = 0;
+
+  trades?.forEach(trade => {
+    const realizedPnl = (trade as any).realized_pnl || 0;
+    if (realizedPnl < 0) {
+      currentStreak += 1;
+      maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+  });
+
+  const consecutiveLosses = currentStreak;
+
+  // 5. Performance por Dia da Semana
+  const weekdayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const weekdayPerformance = trades?.reduce((acc, trade) => {
+    const day = new Date(trade.opened_at).getDay();
+    if (!acc[day]) {
+      acc[day] = { day: weekdayNames[day], trades: 0, totalPnl: 0 };
+    }
+    acc[day].trades += 1;
+    const realizedPnl = (trade as any).realized_pnl || 0;
+    acc[day].totalPnl += realizedPnl;
+    return acc;
+  }, {} as Record<number, any>);
+
+  const weekdayData = Object.values(weekdayPerformance || {});
 
   return (
     <div className="space-y-6">
-      {/* Performance Overview */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <ActivityIcon className="w-5 h-5" />
-          <h3 className="text-lg font-semibold">Performance dos Sinais</h3>
-          <Badge variant="outline" className="ml-auto">Backtest Histórico</Badge>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold mb-2">📊 Analytics Avançado</h2>
+          <p className="text-muted-foreground">Insights profundos sobre sua performance</p>
         </div>
-        
-        <ChartContainer config={chartConfig} className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data?.performanceData}>
-              <XAxis dataKey="timeframe" />
+        <Select value={period} onValueChange={setPeriod}>
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7d">7 Dias</SelectItem>
+            <SelectItem value="30d">30 Dias</SelectItem>
+            <SelectItem value="90d">90 Dias</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Métricas de Risco */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <AlertTriangle className="w-6 h-6 text-red-500" />
+            <h3 className="font-semibold">Perdas Consecutivas</h3>
+          </div>
+          <div className="text-3xl font-bold text-red-500">{consecutiveLosses}</div>
+          <p className="text-sm text-muted-foreground mt-2">
+            Máximo: {maxConsecutiveLosses} trades
+          </p>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <Target className="w-6 h-6 text-blue-500" />
+            <h3 className="font-semibold">Melhor Símbolo</h3>
+          </div>
+          <div className="text-2xl font-bold">{symbolData[0]?.symbol || 'N/A'}</div>
+          <p className="text-sm text-green-500 mt-2">
+            +${symbolData[0]?.totalPnl?.toFixed(2) || '0.00'}
+          </p>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <Clock className="w-6 h-6 text-purple-500" />
+            <h3 className="font-semibold">Melhor Horário</h3>
+          </div>
+          <div className="text-2xl font-bold">
+            {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.hour || 0}h
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">
+            {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.winRate?.toFixed(0) || 0}% win rate
+          </p>
+        </Card>
+      </div>
+
+      {/* Gráficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Performance por Símbolo */}
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">🎯 Performance por Símbolo</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={symbolData.slice(0, 8)}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="symbol" />
               <YAxis />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Line 
-                type="monotone" 
-                dataKey="accuracy" 
-                stroke="var(--color-accuracy)" 
-                strokeWidth={2}
-                name="Precisão (%)"
+              <Tooltip 
+                formatter={(value: any, name: string) => [
+                  name === 'totalPnl' ? `$${value.toFixed(2)}` : `${value.toFixed(1)}%`,
+                  name === 'totalPnl' ? 'P&L Total' : 'Win Rate'
+                ]}
               />
-              <Line 
-                type="monotone" 
-                dataKey="winRate" 
-                stroke="var(--color-winRate)" 
-                strokeWidth={2}
-                name="Taxa de Acerto (%)"
-              />
+              <Bar dataKey="totalPnl" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+
+        {/* Win Rate por Horário */}
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">⏰ Win Rate por Horário</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={hourlyData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="hour" label={{ value: 'Hora', position: 'insideBottom', offset: -5 }} />
+              <YAxis label={{ value: 'Win Rate %', angle: -90, position: 'insideLeft' }} />
+              <Tooltip formatter={(value: any) => `${value.toFixed(1)}%`} />
+              <Line type="monotone" dataKey="winRate" stroke="hsl(var(--primary))" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
-        </ChartContainer>
+        </Card>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-          {data?.performanceData.slice(-1)[0] && (
-            <>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-success">
-                  {data.performanceData.slice(-1)[0].accuracy}%
-                </div>
-                <div className="text-xs text-muted-foreground">Precisão</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-primary">
-                  +{data.performanceData.slice(-1)[0].profit}%
-                </div>
-                <div className="text-xs text-muted-foreground">Lucro Total</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold">
-                  {data.performanceData.slice(-1)[0].trades}
-                </div>
-                <div className="text-xs text-muted-foreground">Trades</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-chart-3">
-                  {data.performanceData.slice(-1)[0].winRate}%
-                </div>
-                <div className="text-xs text-muted-foreground">Win Rate</div>
-              </div>
-            </>
-          )}
-        </div>
-      </Card>
+        {/* Distribuição de Leverage */}
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">⚡ Distribuição de Leverage</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={leverageDistribution}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={(entry) => `${entry.leverage}: ${entry.count}`}
+                outerRadius={100}
+                fill="#8884d8"
+                dataKey="count"
+              >
+                {leverageDistribution.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </Card>
 
-      {/* Market Sessions Confidence */}
+        {/* Performance por Dia da Semana */}
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">📅 Performance por Dia da Semana</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={weekdayData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="day" />
+              <YAxis />
+              <Tooltip formatter={(value: any) => `$${value.toFixed(2)}`} />
+              <Bar dataKey="totalPnl" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]}>
+                {weekdayData.map((entry: any, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.totalPnl > 0 ? '#10b981' : '#ef4444'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
+      {/* Tabela Detalhada por Símbolo */}
       <Card className="p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <TargetIcon className="w-5 h-5" />
-          <h3 className="text-lg font-semibold">Confiança por Sessão de Mercado</h3>
-        </div>
-
-        <div className="space-y-4">
-          {data?.confidenceData.map((session, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-              <div className="flex items-center gap-3">
-                {getTrendIcon(session.trend)}
-                <div>
-                  <div className="font-medium text-sm">{session.session}</div>
-                  <div className="text-xs text-muted-foreground">
-                    Volume: ${session.volume}B
-                  </div>
-                </div>
-              </div>
-              
-              <div className="text-right">
-                <div className={`text-lg font-bold ${getConfidenceColor(session.confidence)}`}>
-                  {session.confidence}%
-                </div>
-                <Progress value={session.confidence} className="w-20 h-2" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Risk Metrics */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <AlertCircleIcon className="w-5 h-5" />
-          <h3 className="text-lg font-semibold">Métricas de Risco</h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {data?.riskMetrics.map((metric, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/20">
-              <span className="text-sm font-medium">{metric.label}</span>
-              <div className="text-right">
-                <span className="font-mono font-semibold">
-                  {metric.value}{metric.label.includes('Ratio') ? '' : '%'}
-                </span>
-                <Badge 
-                  variant={metric.status === 'high' ? 'default' : metric.status === 'medium' ? 'secondary' : 'outline'}
-                  className="ml-2 text-xs"
-                >
-                  {metric.status}
-                </Badge>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Technical Levels */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-6">Níveis Técnicos Críticos</h3>
-        
-        <div className="space-y-3">
-          {data?.technicalLevels.map((level, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/20">
-              <div className="flex items-center gap-3">
-                <Badge variant={level.type === 'Resistência' ? 'destructive' : 'default'}>
-                  {level.type}
-                </Badge>
-                <span className="font-mono font-semibold">
-                  ${level.price.toLocaleString()}
-                </span>
-              </div>
-              
-              <div className="text-right text-sm">
-                <div className={`font-semibold ${getConfidenceColor(level.confidence)}`}>
-                  {level.confidence}% confiança
-                </div>
-                <div className="text-muted-foreground">
-                  {level.tests} testes
-                </div>
-              </div>
-            </div>
-          ))}
+        <h3 className="font-semibold mb-4">📋 Análise Detalhada por Símbolo</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-3 px-4">Símbolo</th>
+                <th className="text-right py-3 px-4">Trades</th>
+                <th className="text-right py-3 px-4">Win Rate</th>
+                <th className="text-right py-3 px-4">P&L Total</th>
+                <th className="text-right py-3 px-4">P&L Médio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {symbolData.slice(0, 10).map((item: any) => (
+                <tr key={item.symbol} className="border-b hover:bg-muted/30 transition-colors">
+                  <td className="py-3 px-4 font-semibold">{item.symbol}</td>
+                  <td className="py-3 px-4 text-right">{item.trades}</td>
+                  <td className="py-3 px-4 text-right">
+                    <Badge variant={item.winRate > 50 ? 'default' : 'destructive'}>
+                      {item.winRate.toFixed(1)}%
+                    </Badge>
+                  </td>
+                  <td className={`py-3 px-4 text-right font-semibold ${item.totalPnl > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    ${item.totalPnl.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    ${(item.totalPnl / item.trades).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </Card>
     </div>
   );
 };
-
-export default AdvancedAnalytics;

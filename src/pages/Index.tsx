@@ -10,6 +10,7 @@ import { TradingViewWebhookStatus } from "@/components/TradingViewWebhookStatus"
 import { WebhookTester } from "@/components/WebhookTester";
 import { MultiAssetTrader } from "@/components/MultiAssetTrader";
 import { TradeHistory } from "@/components/TradeHistory";
+import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -37,12 +38,13 @@ const Index = () => {
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-8">
               <TabsTrigger value="trader">Auto Trader</TabsTrigger>
               <TabsTrigger value="tradingview">TradingView</TabsTrigger>
               <TabsTrigger value="positions">Posições</TabsTrigger>
               <TabsTrigger value="history">Histórico</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="settings">Config</TabsTrigger>
               <TabsTrigger value="backtesting">Backtest</TabsTrigger>
             </TabsList>
@@ -75,6 +77,10 @@ const Index = () => {
             
             <TabsContent value="performance">
               <PerformanceDashboard />
+            </TabsContent>
+            
+            <TabsContent value="analytics">
+              <AdvancedAnalytics />
             </TabsContent>
             
             <TabsContent value="settings">

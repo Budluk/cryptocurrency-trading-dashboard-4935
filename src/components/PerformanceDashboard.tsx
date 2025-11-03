@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUpIcon, TrendingDownIcon, ActivityIcon, TargetIcon, ShieldIcon, CalendarIcon } from "lucide-react";
+import { TrendingUpIcon, TrendingDownIcon, ActivityIcon, TargetIcon, ShieldIcon, DollarSignIcon, PercentIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts';
 
 interface PerformanceData {
   total_trades: number;
@@ -69,8 +69,9 @@ const PerformanceDashboard = () => {
     refetchInterval: 30000
   });
 
-  const { data: signalHistory } = useQuery({
-    queryKey: ['signal-history', period],
+  // Buscar histórico de trades do auto_trader_positions para equity curve
+  const { data: tradeHistory } = useQuery({
+    queryKey: ['trade-history-equity', period],
     queryFn: async () => {
       const endDate = new Date();
       const startDate = new Date();
@@ -91,36 +92,58 @@ const PerformanceDashboard = () => {
       }
 
       const { data, error } = await supabase
-        .from('signal_history')
+        .from('auto_trader_positions')
         .select('*')
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(50);
+        .eq('status', 'CLOSED')
+        .gte('closed_at', startDate.toISOString())
+        .lte('closed_at', endDate.toISOString())
+        .order('closed_at', { ascending: true });
 
       if (error) throw error;
-      return data as SignalHistory[];
+      return data;
     },
     refetchInterval: 30000
   });
 
-  // Preparar dados para gráficos
-  const chartData = signalHistory?.reduce((acc, signal, index) => {
-    const date = new Date(signal.created_at).toLocaleDateString();
-    const existingEntry = acc.find(entry => entry.date === date);
+  // Calcular equity curve (saldo cumulativo)
+  const equityCurve = tradeHistory?.reduce((acc, trade, index) => {
+    const date = new Date(trade.closed_at).toLocaleDateString();
+    const realizedPnl = (trade as any).realized_pnl || 0;
     
-    if (existingEntry) {
-      existingEntry.signals += 1;
-      existingEntry.cumulative_pnl += signal.pnl_percentage || 0;
+    const prevEquity = index > 0 ? acc[index - 1].equity : 10000; // Começar com saldo inicial
+    const newEquity = prevEquity + realizedPnl;
+    
+    acc.push({
+      date,
+      equity: newEquity,
+      pnl: realizedPnl,
+      drawdown: Math.min(0, newEquity - Math.max(...acc.map(d => d.equity || prevEquity), prevEquity))
+    });
+    
+    return acc;
+  }, [] as any[]) || [];
+
+  // Calcular ROI e Sharpe Ratio
+  const initialBalance = 10000;
+  const currentBalance = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : initialBalance;
+  const roi = ((currentBalance - initialBalance) / initialBalance) * 100;
+  
+  // Sharpe Ratio simplificado (retorno / volatilidade)
+  const returns = equityCurve.map(d => d.pnl);
+  const avgReturn = returns.reduce((a, b) => a + b, 0) / (returns.length || 1);
+  const stdDev = Math.sqrt(returns.reduce((sq, n) => sq + Math.pow(n - avgReturn, 2), 0) / (returns.length || 1));
+  const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0; // Anualizado
+
+  // Trades por símbolo para chart
+  const tradesBySymbol = tradeHistory?.reduce((acc, trade) => {
+    const existing = acc.find(item => item.symbol === trade.symbol);
+    const realizedPnl = (trade as any).realized_pnl || 0;
+    if (existing) {
+      existing.count += 1;
+      existing.totalPnl += realizedPnl;
     } else {
-      acc.push({
-        date,
-        signals: 1,
-        cumulative_pnl: signal.pnl_percentage || 0,
-        win_rate: signal.actual_outcome === 'WIN' ? 100 : 0
-      });
+      acc.push({ symbol: trade.symbol, count: 1, totalPnl: realizedPnl });
     }
-    
     return acc;
   }, [] as any[]) || [];
 
@@ -168,10 +191,34 @@ const PerformanceDashboard = () => {
       </div>
 
       {/* Métricas Principais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-sm text-muted-foreground">TOTAL DE SINAIS</h3>
+            <h3 className="font-semibold text-sm text-muted-foreground">SALDO ATUAL</h3>
+            <DollarSignIcon className="w-5 h-5 text-primary" />
+          </div>
+          <div className="text-3xl font-bold">${currentBalance.toFixed(2)}</div>
+          <p className="text-sm text-muted-foreground mt-2">
+            Inicial: ${initialBalance.toFixed(2)}
+          </p>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm text-muted-foreground">ROI</h3>
+            <PercentIcon className="w-5 h-5 text-green-500" />
+          </div>
+          <div className={`text-3xl font-bold ${getPerformanceColor(roi, 'pnl')}`}>
+            {roi > 0 ? '+' : ''}{roi.toFixed(2)}%
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">
+            Retorno total
+          </p>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm text-muted-foreground">TRADES</h3>
             <ActivityIcon className="w-5 h-5 text-primary" />
           </div>
           <div className="text-3xl font-bold">{performance?.total_trades || 0}</div>
@@ -209,98 +256,113 @@ const PerformanceDashboard = () => {
 
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-sm text-muted-foreground">PROFIT FACTOR</h3>
+            <h3 className="font-semibold text-sm text-muted-foreground">SHARPE RATIO</h3>
             <ShieldIcon className="w-5 h-5 text-blue-500" />
           </div>
-          <div className={`text-3xl font-bold ${getPerformanceColor(performance?.profit_factor || 0, 'pnl')}`}>
-            {performance?.profit_factor?.toFixed(2) || '0.00'}
+          <div className={`text-3xl font-bold ${getPerformanceColor(sharpeRatio, 'pnl')}`}>
+            {sharpeRatio.toFixed(2)}
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            Drawdown: {performance?.max_drawdown?.toFixed(1) || '0.0'}%
+            Risco ajustado
+          </p>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm text-muted-foreground">MAX DRAWDOWN</h3>
+            <TrendingDownIcon className="w-5 h-5 text-red-500" />
+          </div>
+          <div className="text-3xl font-bold text-red-500">
+            {performance?.max_drawdown?.toFixed(1) || '0.0'}%
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">
+            Maior queda
           </p>
         </Card>
       </div>
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico de P&L Cumulativo */}
+        {/* Equity Curve */}
         <Card className="p-6">
-          <h3 className="font-semibold mb-4">P&L Cumulativo</h3>
+          <h3 className="font-semibold mb-4">📈 Equity Curve (Evolução do Saldo)</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData}>
+            <AreaChart data={equityCurve}>
+              <defs>
+                <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
               <YAxis />
               <Tooltip 
-                formatter={(value: any, name: string) => [
-                  `${value.toFixed(2)}%`, 
-                  name === 'cumulative_pnl' ? 'P&L' : name
-                ]}
+                formatter={(value: any) => [`$${value.toFixed(2)}`, 'Saldo']}
               />
-              <Line 
+              <Area 
                 type="monotone" 
-                dataKey="cumulative_pnl" 
+                dataKey="equity" 
                 stroke="hsl(var(--primary))" 
                 strokeWidth={2}
-                dot={{ fill: 'hsl(var(--primary))' }}
+                fill="url(#equityGradient)"
               />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
         </Card>
 
-        {/* Gráfico de Distribuição de Sinais */}
+        {/* Performance por Símbolo */}
         <Card className="p-6">
-          <h3 className="font-semibold mb-4">Sinais por Dia</h3>
+          <h3 className="font-semibold mb-4">🎯 Performance por Símbolo</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
+            <BarChart data={tradesBySymbol.slice(0, 8)}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
+              <XAxis dataKey="symbol" />
               <YAxis />
-              <Tooltip />
-              <Bar dataKey="signals" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              <Tooltip 
+                formatter={(value: any, name: string) => [
+                  name === 'totalPnl' ? `$${value.toFixed(2)}` : value,
+                  name === 'totalPnl' ? 'P&L Total' : 'Trades'
+                ]}
+              />
+              <Bar dataKey="totalPnl" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
       </div>
 
-      {/* Histórico de Sinais */}
+      {/* Histórico de Trades */}
       <Card className="p-6">
-        <h3 className="font-semibold mb-4">Histórico Recente</h3>
+        <h3 className="font-semibold mb-4">📊 Histórico Recente de Trades</h3>
         <div className="space-y-3 max-h-80 overflow-y-auto">
-          {signalHistory?.slice(0, 10).map((signal) => (
-            <div key={signal.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+          {tradeHistory?.slice(0, 10).map((trade) => (
+            <div key={trade.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
               <div className="flex items-center gap-4">
                 <div className={`p-2 rounded-full ${
-                  signal.action === 'BUY' ? 'bg-green-500/20' : 
-                  signal.action === 'SELL' ? 'bg-red-500/20' : 'bg-yellow-500/20'
+                  trade.action === 'Buy' ? 'bg-green-500/20' : 'bg-red-500/20'
                 }`}>
-                  {signal.action === 'BUY' ? (
+                  {trade.action === 'Buy' ? (
                     <TrendingUpIcon className="w-4 h-4 text-green-500" />
-                  ) : signal.action === 'SELL' ? (
-                    <TrendingDownIcon className="w-4 h-4 text-red-500" />
                   ) : (
-                    <ActivityIcon className="w-4 h-4 text-yellow-500" />
+                    <TrendingDownIcon className="w-4 h-4 text-red-500" />
                   )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">{signal.action}</span>
-                    <Badge variant="outline" className="text-xs">{signal.signal_type}</Badge>
+                    <span className="font-semibold">{trade.symbol}</span>
+                    <Badge variant="outline" className="text-xs">{trade.action}</Badge>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    ${signal.entry_price.toFixed(2)} • {signal.confidence}% confiança
+                    ${trade.entry_price.toFixed(2)} → ${trade.current_price?.toFixed(2) || '-'}
                   </div>
                 </div>
               </div>
               <div className="text-right">
-                <div className={`font-semibold ${
-                  signal.actual_outcome === 'WIN' ? 'text-green-500' :
-                  signal.actual_outcome === 'LOSS' ? 'text-red-500' : 'text-muted-foreground'
-                }`}>
-                  {signal.pnl_percentage ? `${signal.pnl_percentage > 0 ? '+' : ''}${signal.pnl_percentage.toFixed(2)}%` : 'Pendente'}
+                <div className={`font-semibold ${getPerformanceColor((trade as any).realized_pnl || 0, 'pnl')}`}>
+                  ${((trade as any).realized_pnl || 0).toFixed(2)}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {new Date(signal.created_at).toLocaleDateString()}
+                  {new Date(trade.closed_at).toLocaleString()}
                 </div>
               </div>
             </div>
