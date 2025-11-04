@@ -40,7 +40,8 @@ export const OpenPositionsMonitor = () => {
       if (error) throw error;
       return data as Position[];
     },
-    refetchInterval: 3000, // Atualizar a cada 3 segundos
+    refetchInterval: 10000,
+    staleTime: 5000
   });
 
   // Realtime updates usando Supabase realtime

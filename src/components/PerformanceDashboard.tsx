@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,8 @@ const PerformanceDashboard = () => {
       if (error) throw error;
       return data?.[0] as PerformanceData;
     },
-    refetchInterval: 30000
+    refetchInterval: 60000,
+    staleTime: 30000
   });
 
   // Buscar histórico de trades do auto_trader_positions para equity curve
@@ -102,50 +103,63 @@ const PerformanceDashboard = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000
+    refetchInterval: 60000,
+    staleTime: 30000
   });
 
-  // Calcular equity curve (saldo cumulativo)
-  const equityCurve = tradeHistory?.reduce((acc, trade, index) => {
-    const date = new Date(trade.closed_at).toLocaleDateString();
-    const realizedPnl = (trade as any).realized_pnl || 0;
+  // Calcular equity curve (saldo cumulativo) - memoizado
+  const equityCurve = useMemo(() => {
+    if (!tradeHistory) return [];
     
-    const prevEquity = index > 0 ? acc[index - 1].equity : 10000; // Começar com saldo inicial
-    const newEquity = prevEquity + realizedPnl;
-    
-    acc.push({
-      date,
-      equity: newEquity,
-      pnl: realizedPnl,
-      drawdown: Math.min(0, newEquity - Math.max(...acc.map(d => d.equity || prevEquity), prevEquity))
-    });
-    
-    return acc;
-  }, [] as any[]) || [];
+    return tradeHistory.reduce((acc, trade, index) => {
+      const date = new Date(trade.closed_at).toLocaleDateString();
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      
+      const prevEquity = index > 0 ? acc[index - 1].equity : 10000;
+      const newEquity = prevEquity + realizedPnl;
+      
+      acc.push({
+        date,
+        equity: newEquity,
+        pnl: realizedPnl,
+        drawdown: Math.min(0, newEquity - Math.max(...acc.map(d => d.equity || prevEquity), prevEquity))
+      });
+      
+      return acc;
+    }, [] as any[]);
+  }, [tradeHistory]);
 
-  // Calcular ROI e Sharpe Ratio
+  // Calcular ROI e Sharpe Ratio - memoizado
   const initialBalance = 10000;
-  const currentBalance = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : initialBalance;
-  const roi = ((currentBalance - initialBalance) / initialBalance) * 100;
-  
-  // Sharpe Ratio simplificado (retorno / volatilidade)
-  const returns = equityCurve.map(d => d.pnl);
-  const avgReturn = returns.reduce((a, b) => a + b, 0) / (returns.length || 1);
-  const stdDev = Math.sqrt(returns.reduce((sq, n) => sq + Math.pow(n - avgReturn, 2), 0) / (returns.length || 1));
-  const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0; // Anualizado
+  const { roi, sharpeRatio, currentBalance } = useMemo(() => {
+    const currentBalance = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].equity : initialBalance;
+    const roi = ((currentBalance - initialBalance) / initialBalance) * 100;
+    
+    const returns = equityCurve.map(d => d.pnl);
+    const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+    const variance = returns.length > 0 ? returns.reduce((sq, n) => sq + Math.pow(n - avgReturn, 2), 0) / returns.length : 0;
+    const stdDev = Math.sqrt(variance);
+    const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0;
+    
+    return { roi, sharpeRatio, currentBalance };
+  }, [equityCurve]);
 
-  // Trades por símbolo para chart
-  const tradesBySymbol = tradeHistory?.reduce((acc, trade) => {
-    const existing = acc.find(item => item.symbol === trade.symbol);
-    const realizedPnl = (trade as any).realized_pnl || 0;
-    if (existing) {
-      existing.count += 1;
-      existing.totalPnl += realizedPnl;
-    } else {
-      acc.push({ symbol: trade.symbol, count: 1, totalPnl: realizedPnl });
-    }
-    return acc;
-  }, [] as any[]) || [];
+  // Trades por símbolo para chart - memoizado
+  const tradesBySymbol = useMemo(() => {
+    if (!tradeHistory) return [];
+    
+    return tradeHistory.reduce((acc, trade) => {
+      const existing = acc.find(item => item.symbol === trade.symbol);
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      if (existing) {
+        existing.count += 1;
+        existing.totalPnl += realizedPnl;
+      } else {
+        acc.push({ symbol: trade.symbol, count: 1, totalPnl: realizedPnl });
+      }
+      return acc;
+    }, [] as any[]);
+  }, [tradeHistory]);
 
   const getPerformanceColor = (value: number, type: 'pnl' | 'percentage') => {
     if (type === 'pnl') {

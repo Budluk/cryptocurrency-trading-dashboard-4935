@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,7 +29,8 @@ export const AdvancedPerformanceCharts = () => {
       if (error) throw error;
       return data as TradeData[];
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000,
+    staleTime: 30000
   });
 
   // Equity Curve - P&L cumulativo ao longo do tempo

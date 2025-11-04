@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -5,7 +6,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { useState } from "react";
 
 const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -40,84 +40,101 @@ export const AdvancedAnalytics = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000
+    refetchInterval: 60000,
+    staleTime: 30000
   });
 
-  // 1. Performance por Símbolo
-  const symbolPerformance = trades?.reduce((acc, trade) => {
-    const symbol = trade.symbol;
-    if (!acc[symbol]) {
-      acc[symbol] = { symbol, trades: 0, wins: 0, totalPnl: 0, winRate: 0 };
-    }
-    acc[symbol].trades += 1;
-    const realizedPnl = (trade as any).realized_pnl || 0;
-    acc[symbol].wins += realizedPnl > 0 ? 1 : 0;
-    acc[symbol].totalPnl += realizedPnl;
-    acc[symbol].winRate = (acc[symbol].wins / acc[symbol].trades) * 100;
-    return acc;
-  }, {} as Record<string, any>);
+  // 1. Performance por Símbolo - memoizado
+  const symbolPerformance = useMemo(() => {
+    return trades?.reduce((acc, trade) => {
+      const symbol = trade.symbol;
+      if (!acc[symbol]) {
+        acc[symbol] = { symbol, trades: 0, wins: 0, totalPnl: 0, winRate: 0 };
+      }
+      acc[symbol].trades += 1;
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      acc[symbol].wins += realizedPnl > 0 ? 1 : 0;
+      acc[symbol].totalPnl += realizedPnl;
+      acc[symbol].winRate = (acc[symbol].wins / acc[symbol].trades) * 100;
+      return acc;
+    }, {} as Record<string, any>);
+  }, [trades]);
 
-  const symbolData = Object.values(symbolPerformance || {}).sort((a: any, b: any) => b.totalPnl - a.totalPnl);
+  const symbolData = useMemo(() => {
+    return Object.values(symbolPerformance || {}).sort((a: any, b: any) => b.totalPnl - a.totalPnl);
+  }, [symbolPerformance]);
 
-  // 2. Win Rate por Horário
-  const hourlyPerformance = trades?.reduce((acc, trade) => {
-    const hour = new Date(trade.opened_at).getHours();
-    if (!acc[hour]) {
-      acc[hour] = { hour, trades: 0, wins: 0, winRate: 0 };
-    }
-    acc[hour].trades += 1;
-    const realizedPnl = (trade as any).realized_pnl || 0;
-    acc[hour].wins += realizedPnl > 0 ? 1 : 0;
-    acc[hour].winRate = (acc[hour].wins / acc[hour].trades) * 100;
-    return acc;
-  }, {} as Record<number, any>);
+  // 2. Win Rate por Horário - memoizado
+  const hourlyPerformance = useMemo(() => {
+    return trades?.reduce((acc, trade) => {
+      const hour = new Date(trade.opened_at).getHours();
+      if (!acc[hour]) {
+        acc[hour] = { hour, trades: 0, wins: 0, winRate: 0 };
+      }
+      acc[hour].trades += 1;
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      acc[hour].wins += realizedPnl > 0 ? 1 : 0;
+      acc[hour].winRate = (acc[hour].wins / acc[hour].trades) * 100;
+      return acc;
+    }, {} as Record<number, any>);
+  }, [trades]);
 
-  const hourlyData = Object.values(hourlyPerformance || {}).sort((a: any, b: any) => a.hour - b.hour);
+  const hourlyData = useMemo(() => {
+    return Object.values(hourlyPerformance || {}).sort((a: any, b: any) => a.hour - b.hour);
+  }, [hourlyPerformance]);
 
-  // 3. Distribuição de Leverage
-  const leverageDistribution = trades?.reduce((acc, trade) => {
-    const lev = (trade as any).leverage || 1;
-    const existing = acc.find(item => item.leverage === lev);
-    const realizedPnl = (trade as any).realized_pnl || 0;
-    if (existing) {
-      existing.count += 1;
-      existing.totalPnl += realizedPnl;
-    } else {
-      acc.push({ leverage: `${lev}x`, count: 1, totalPnl: realizedPnl });
-    }
-    return acc;
-  }, [] as any[]) || [];
+  // 3. Distribuição de Leverage - memoizado
+  const leverageDistribution = useMemo(() => {
+    return trades?.reduce((acc, trade) => {
+      const lev = (trade as any).leverage || 1;
+      const existing = acc.find(item => item.leverage === lev);
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      if (existing) {
+        existing.count += 1;
+        existing.totalPnl += realizedPnl;
+      } else {
+        acc.push({ leverage: `${lev}x`, count: 1, totalPnl: realizedPnl });
+      }
+      return acc;
+    }, [] as any[]) || [];
+  }, [trades]);
 
-  // 4. Análise de Perdas Consecutivas
-  let maxConsecutiveLosses = 0;
-  let currentStreak = 0;
+  // 4. Análise de Perdas Consecutivas - memoizado
+  const { maxConsecutiveLosses, consecutiveLosses } = useMemo(() => {
+    let maxConsecutiveLosses = 0;
+    let currentStreak = 0;
 
-  trades?.forEach(trade => {
-    const realizedPnl = (trade as any).realized_pnl || 0;
-    if (realizedPnl < 0) {
-      currentStreak += 1;
-      maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentStreak);
-    } else {
-      currentStreak = 0;
-    }
-  });
+    trades?.forEach(trade => {
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      if (realizedPnl < 0) {
+        currentStreak += 1;
+        maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentStreak);
+      } else {
+        currentStreak = 0;
+      }
+    });
 
-  const consecutiveLosses = currentStreak;
+    return { maxConsecutiveLosses, consecutiveLosses: currentStreak };
+  }, [trades]);
 
-  // 5. Performance por Dia da Semana
+  // 5. Performance por Dia da Semana - memoizado
   const weekdayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-  const weekdayPerformance = trades?.reduce((acc, trade) => {
-    const day = new Date(trade.opened_at).getDay();
-    if (!acc[day]) {
-      acc[day] = { day: weekdayNames[day], trades: 0, totalPnl: 0 };
-    }
-    acc[day].trades += 1;
-    const realizedPnl = (trade as any).realized_pnl || 0;
-    acc[day].totalPnl += realizedPnl;
-    return acc;
-  }, {} as Record<number, any>);
+  const weekdayPerformance = useMemo(() => {
+    return trades?.reduce((acc, trade) => {
+      const day = new Date(trade.opened_at).getDay();
+      if (!acc[day]) {
+        acc[day] = { day: weekdayNames[day], trades: 0, totalPnl: 0 };
+      }
+      acc[day].trades += 1;
+      const realizedPnl = (trade as any).realized_pnl || 0;
+      acc[day].totalPnl += realizedPnl;
+      return acc;
+    }, {} as Record<number, any>);
+  }, [trades]);
 
-  const weekdayData = Object.values(weekdayPerformance || {});
+  const weekdayData = useMemo(() => {
+    return Object.values(weekdayPerformance || {});
+  }, [weekdayPerformance]);
 
   return (
     <div className="space-y-6">
