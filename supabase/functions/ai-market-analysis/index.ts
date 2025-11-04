@@ -146,8 +146,18 @@ serve(async (req) => {
             model: 'google/gemini-2.5-flash',
             messages: [
               {
-                role: 'system',
-                content: `Você é um trader profissional especializado em análise técnica de Bitcoin. Analise os indicadores e gere sinais precisos de trading.`
+         role: 'system',
+         content: `Você é um trader profissional com 15 anos de experiência. Analise os indicadores e gere sinais ACIONÁVEIS de trading (menos HOLD, mais BUY/SELL quando há oportunidades).
+
+REGRAS CRÍTICAS:
+- RSI < 35: Forte sinal de COMPRA (oversold)
+- RSI > 65: Forte sinal de VENDA (overbought)  
+- MACD > 30 + RSI 40-60: COMPRA (momentum de alta)
+- MACD < -30 + RSI 40-60: VENDA (momentum de baixa)
+- Volume > 1.3: Aumenta confiança do sinal
+- HOLD somente se RSI 45-55 E MACD entre -20 e 20 (mercado lateral)
+
+Seja mais agressivo em sinais claros. Traders precisam de ações, não de espera.`
               },
               {
                 role: 'user',
@@ -200,34 +210,32 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
       console.log('Lovable API key not configured, using advanced ML scoring');
     }
 
-    // 4. Machine Learning Score ESTÁVEL e CONSISTENTE
+    // 4. Machine Learning Score APRIMORADO - Mais agressivo em sinais claros
     const mlFactors = {
-      // RSI - Com zonas mortas para evitar oscilação (peso: 30)
-      rsi_score: marketData.indicators.rsi < 35 ? 30 :        // Forte sobrevenda
-                 marketData.indicators.rsi < 42 ? 15 :         // Sobrevenda moderada
-                 marketData.indicators.rsi > 65 ? -30 :        // Forte sobrecompra
-                 marketData.indicators.rsi > 58 ? -15 :        // Sobrecompra moderada
-                 marketData.indicators.rsi >= 45 && marketData.indicators.rsi <= 55 ? 0 : // Zona neutra ampla
-                 marketData.indicators.rsi < 45 ? 5 : -5,      // Levemente bullish/bearish
+      // RSI - Sinais mais claros (peso: 30)
+      rsi_score: marketData.indicators.rsi < 35 ? 30 :        // Forte sobrevenda - COMPRA
+                 marketData.indicators.rsi < 45 ? 15 :        // Sobrevenda moderada
+                 marketData.indicators.rsi > 65 ? -30 :       // Forte sobrecompra - VENDA
+                 marketData.indicators.rsi > 60 ? -15 :       // Sobrecompra moderada
+                 0,                                           // Zona neutra 45-60
       
-      // MACD - Confirmação de tendência (peso: 25)
-      macd_score: marketData.indicators.macd > 100 ? 25 :     // Forte alta
-                  marketData.indicators.macd > 50 ? 15 :       // Tendência de alta
-                  marketData.indicators.macd > 0 ? 5 :         // Fraco positivo
-                  marketData.indicators.macd < -100 ? -25 :    // Forte baixa
-                  marketData.indicators.macd < -50 ? -15 : -5, // Tendência de baixa
+      // MACD - Momentum forte (peso: 25)
+      macd_score: marketData.indicators.macd > 30 ? 25 :      // Forte alta
+                  marketData.indicators.macd > 10 ? 15 :      // Alta moderada
+                  marketData.indicators.macd < -30 ? -25 :    // Forte baixa
+                  marketData.indicators.macd < -10 ? -15 :    // Baixa moderada
+                  0,                                          // Lateral
       
       // Volume - Confirmação crucial (peso: 20)
-      volume_score: marketData.indicators.volume_profile > 1.5 ? 20 :   // Volume muito alto
-                    marketData.indicators.volume_profile > 1.2 ? 12 :    // Volume alto
-                    marketData.indicators.volume_profile > 0.9 ? 5 :     // Volume normal
-                    marketData.indicators.volume_profile < 0.7 ? -15 : -8, // Volume baixo
+      volume_score: marketData.indicators.volume_profile > 1.3 ? 20 :   // Volume muito alto
+                    marketData.indicators.volume_profile > 1.1 ? 10 :    // Volume alto
+                    marketData.indicators.volume_profile > 0.9 ? 0 :     // Volume normal
+                    -10,                                                  // Volume baixo
       
-      // Força da Tendência - Necessário para sinal forte (peso: 20)
-      trend_score: marketData.indicators.trend_strength > 80 ? 20 :
-                   marketData.indicators.trend_strength > 60 ? 12 :
-                   marketData.indicators.trend_strength > 40 ? 5 :
-                   marketData.indicators.trend_strength < 20 ? -10 : -3,
+      // Força da Tendência (peso: 15)
+      trend_score: marketData.indicators.trend_strength > 60 ? 15 :
+                   marketData.indicators.trend_strength > 45 ? 8 :
+                   0,
       
       // Sentimento de Notícias (peso condicional)
       fundamental_score: newsAnalysis ? 
@@ -238,60 +246,56 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
       sentiment_confidence: newsAnalysis ? 
         (newsAnalysis.confidence - 50) / 10 : 0,
       
-      // Penalização por Alta Volatilidade (reduz risco)
-      volatility_penalty: Math.abs(marketData.indicators.macd) > 150 ? -15 :
-                          Math.abs(marketData.indicators.macd) > 100 ? -8 : 0
+      // Penalização por Alta Volatilidade
+      volatility_penalty: Math.abs(marketData.indicators.macd) > 150 ? -10 : 0
     };
 
-    // Verificação de Confluência RIGOROSA (TODOS os indicadores principais devem concordar)
+    // Sinais simplificados - mais acionáveis
     const strongBullishSignals = [
-      marketData.indicators.rsi < 40,
-      marketData.indicators.macd > 20,
-      marketData.indicators.volume_profile > 1.05,
-      marketData.indicators.trend_strength > 40
+      marketData.indicators.rsi < 45,           // RSI baixo
+      marketData.indicators.macd > 10,          // MACD positivo
+      marketData.indicators.volume_profile > 1.0 // Volume decente
     ];
     
     const strongBearishSignals = [
-      marketData.indicators.rsi > 60,
-      marketData.indicators.macd < -20,
-      marketData.indicators.volume_profile < 0.95,
-      marketData.indicators.trend_strength < 35
+      marketData.indicators.rsi > 60,           // RSI alto
+      marketData.indicators.macd < -10,         // MACD negativo
+      marketData.indicators.volume_profile > 1.0 // Volume decente
     ];
 
     const bullishCount = strongBullishSignals.filter(x => x).length;
     const bearishCount = strongBearishSignals.filter(x => x).length;
 
-    // Bônus APENAS se TODOS ou quase todos indicadores concordam
-    const confluenceBonus = bullishCount >= 4 ? 25 :  // Todos bullish
-                           bearishCount >= 4 ? -25 : // Todos bearish
-                           bullishCount >= 3 ? 12 :  // Forte bullish
-                           bearishCount >= 3 ? -12 : // Forte bearish
-                           0; // Sem bônus se não há confluência clara
+    // Bônus por confluência
+    const confluenceBonus = bullishCount >= 3 ? 20 :    // Todos bullish
+                           bearishCount >= 3 ? -20 :    // Todos bearish
+                           bullishCount >= 2 ? 10 :     // Maioria bullish
+                           bearishCount >= 2 ? -10 :    // Maioria bearish
+                           0;
 
     const mlScore = Object.values(mlFactors).reduce((sum, val) => sum + val, 0) + confluenceBonus;
     
-    // Normalização mais rigorosa - exige score maior para sinais
-    const normalizedScore = Math.max(0, Math.min(100, 50 + (mlScore * 0.6)));
+    // Normalização ajustada - mais agressivo em sinais claros
+    const normalizedScore = Math.max(0, Math.min(100, 50 + mlScore));
 
-    // 5. Geração de Sinal EXTREMAMENTE CONSERVADOR com ZONAS MORTAS
-    // Thresholds muito altos + zona morta ampla para evitar oscilações
-    const baseAction = normalizedScore > 75 ? 'BUY' :      // Score > 75 para BUY
-                       normalizedScore < 25 ? 'SELL' :     // Score < 25 para SELL
-                       'HOLD';                              // Zona morta grande 25-75
+    // 5. Geração de Sinal APRIMORADO - Menos conservador, mais acionável
+    const baseAction = normalizedScore > 60 ? 'BUY' :      // Score > 60 para BUY
+                       normalizedScore < 40 ? 'SELL' :     // Score < 40 para SELL
+                       'HOLD';                              // Zona neutra 40-60
     
     const action = aiPrediction?.action || baseAction;
-    const confidence = aiPrediction?.confidence || normalizedScore;
+    const confidence = aiPrediction?.confidence || Math.min(95, normalizedScore + 10);
     
-    // Alvos e Stop Loss mais realistas e conservadores
-    const volatilityFactor = Math.abs(marketData.indicators.macd) / 2000; // Reduzido pela metade
+    // Alvos e Stop Loss mais agressivos
+    const volatilityFactor = Math.abs(marketData.indicators.macd) / 1500;
     
     const targetMultiplier = action === 'BUY' ? 
-      1.008 + (confidence / 2000) + (volatilityFactor * 0.3) :  // Alvos menores
-      0.992 - (confidence / 2000) - (volatilityFactor * 0.3);
+      1.012 + (confidence / 1500) + (volatilityFactor * 0.4) :
+      0.988 - (confidence / 1500) - (volatilityFactor * 0.4);
     
     const stopMultiplier = action === 'BUY' ? 
-      0.985 - (volatilityFactor * 0.2) :  // Stop loss mais apertado
-      1.015 + (volatilityFactor * 0.2);
+      0.982 - (volatilityFactor * 0.25) :
+      1.018 + (volatilityFactor * 0.25);
     
     const signalData = {
       signal_type: 'AI_ADVANCED',

@@ -207,18 +207,41 @@ export const MultiAssetTrader = () => {
             const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.01');
             const maxOrderQty = parseFloat(lotSizeFilter.maxOrderQty || '10000');
             
-            // Calcular quantidade respeitando os limites do ativo
+            // CRÍTICO: Calcular quantidade garantindo valor mínimo de 5 USDT
+            const MIN_ORDER_VALUE = 5.5; // 5 USDT + margem de segurança
+            
+            // Calcular quantidade baseada no tamanho desejado
             let rawQty = (usdSize * leverage) / currentPrice;
             
+            // Garantir valor mínimo de 5 USDT
+            const minQtyForValue = MIN_ORDER_VALUE / currentPrice;
+            if (rawQty < minQtyForValue) {
+              rawQty = minQtyForValue;
+            }
+            
             // Arredondar para o step correto
-            rawQty = Math.floor(rawQty / qtyStep) * qtyStep;
+            rawQty = Math.ceil(rawQty / qtyStep) * qtyStep;
             
             // Garantir que está dentro dos limites
-            const qty = Math.max(minOrderQty, Math.min(maxOrderQty, rawQty));
+            let qty = Math.max(minOrderQty, Math.min(maxOrderQty, rawQty));
             
-            // Validar se a quantidade é válida
+            // Validação final: verificar se atinge o valor mínimo
+            const orderValue = qty * currentPrice;
+            if (orderValue < 5) {
+              console.log(`⚠️ ${symbol}: Valor da ordem muito baixo ($${orderValue.toFixed(2)} < $5.00) - ajustando...`);
+              qty = Math.ceil(MIN_ORDER_VALUE / currentPrice / qtyStep) * qtyStep;
+            }
+            
+            // Validar se a quantidade é válida após todos os ajustes
             if (qty < minOrderQty) {
-              console.log(`⚠️ ${symbol}: Quantidade muito baixa (${qty} < ${minOrderQty})`);
+              console.log(`⚠️ ${symbol}: Quantidade abaixo do mínimo (${qty} < ${minOrderQty})`);
+              continue;
+            }
+            
+            // Validação final de valor mínimo
+            const finalOrderValue = qty * currentPrice;
+            if (finalOrderValue < 5) {
+              console.log(`⚠️ ${symbol}: Ordem não atinge valor mínimo ($${finalOrderValue.toFixed(2)} < $5.00) - pulando`);
               continue;
             }
             
@@ -245,7 +268,8 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
-            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qty} | Price: $${currentPrice} | SL: ${stopLoss} | TP: ${takeProfit}`);
+            const orderValueUSD = (qty * currentPrice).toFixed(2);
+            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qty} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
@@ -278,14 +302,20 @@ export const MultiAssetTrader = () => {
 
               setActiveTrades(prev => [...prev.slice(-19), trade]);
               setOpenPositionsCount(prev => prev + 1);
-
-              // 🔔 NOTIFICAÇÃO DE SUCESSO
+              
               toast({
-                title: `✅ TRADE ABERTO - ${symbol}`,
-                description: `${action} ${leverage}x | $${usdSize.toFixed(2)} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange > 0 ? '+' : ''}${priceChange.toFixed(2)}%`,
+                title: "✅ Ordem Executada",
+                description: `${symbol} ${action} - Qty: ${qty} - Valor: $${orderValueUSD}`,
               });
             } else {
-              console.error(`❌ Erro ao executar ${symbol}:`, orderError || orderData);
+              console.error(`❌ Erro ao executar ${symbol}:`, orderError);
+              const errorMsg = orderData?.error || orderError?.message || 'Erro desconhecido';
+              
+              toast({
+                title: "❌ Falha na Ordem",
+                description: `${symbol}: ${errorMsg}`,
+                variant: "destructive"
+              });
               
               // Incrementar perdas consecutivas em caso de erro
               setConsecutiveLosses(prev => prev + 1);
