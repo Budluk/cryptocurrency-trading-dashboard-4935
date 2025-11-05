@@ -141,7 +141,7 @@ export const MultiAssetTrader = () => {
       const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_instruments',
-          isTestnet,
+          isTestnet: false, // ⚡ SEMPRE CONTA REAL
           params: { category: 'linear', limit: 100, status: 'Trading' }
         }
       });
@@ -164,7 +164,7 @@ export const MultiAssetTrader = () => {
       const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_ticker',
-          isTestnet,
+          isTestnet: false, // ⚡ SEMPRE CONTA REAL
           params: { category: 'linear' }
         }
       });

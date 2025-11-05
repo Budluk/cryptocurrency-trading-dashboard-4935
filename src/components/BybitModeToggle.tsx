@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 export const BybitModeToggle = () => {
-  const [isTestnet, setIsTestnet] = useState(true);
+  const [isTestnet, setIsTestnet] = useState(false); // ⚡ SEMPRE REAL
   const [isConnected, setIsConnected] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
@@ -37,7 +37,7 @@ export const BybitModeToggle = () => {
 
   const testConnection = async () => {
     setIsChecking(true);
-    console.log('🔄 Testando conexão Bybit...', { isTestnet });
+    console.log('🔄 Testando conexão Bybit REAL...');
     
     try {
       console.log('📡 Invocando edge function bybit-trading...');
@@ -45,7 +45,7 @@ export const BybitModeToggle = () => {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_balance',
-          isTestnet,
+          isTestnet: false, // ⚡ SEMPRE CONTA REAL
           params: { accountType: 'UNIFIED' }
         }
       });
@@ -71,7 +71,7 @@ export const BybitModeToggle = () => {
         
         toast({
           title: "✅ Conectado com sucesso!",
-          description: `Modo: ${isTestnet ? 'TESTNET' : 'REAL'} | Saldo: $${parseFloat(walletBalance).toFixed(2)}`,
+          description: `Modo: REAL | Saldo: $${parseFloat(walletBalance).toFixed(2)}`,
         });
       } else {
         console.error('❌ Erro da API Bybit:', data.error);
@@ -94,11 +94,10 @@ export const BybitModeToggle = () => {
   };
 
   const handleModeChange = (checked: boolean) => {
-    setIsTestnet(!checked);
-    setIsConnected(false);
     toast({
-      title: "Modo alterado",
-      description: `Agora em modo ${checked ? 'REAL' : 'TESTNET'}`,
+      title: "⚠️ Modo Fixado em REAL",
+      description: "Sistema configurado apenas para conta real",
+      variant: "destructive",
     });
   };
 
@@ -143,18 +142,19 @@ export const BybitModeToggle = () => {
         )}
 
         <div className="flex items-center gap-4">
-          <Badge variant={isTestnet ? "outline" : "destructive"}>
-            {isTestnet ? 'TESTNET' : 'REAL'}
+          <Badge variant="destructive" className="text-lg px-4 py-2">
+            ⚡ REAL
           </Badge>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 opacity-50" title="Modo fixado em REAL">
             <Label htmlFor="bybit-mode" className="text-xs">
               Testnet
             </Label>
             <Switch
               id="bybit-mode"
-              checked={!isTestnet}
+              checked={true}
               onCheckedChange={handleModeChange}
+              disabled
             />
             <Label htmlFor="bybit-mode" className="text-xs">
               Real
