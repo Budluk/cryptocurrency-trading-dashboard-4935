@@ -8,11 +8,22 @@ import { AlertCircle, CheckCircle2, Wallet, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
+// 🔒 PERSISTÊNCIA DO MODO REAL
+const STORAGE_KEY = 'bybit_real_mode_active';
+
 export const BybitModeToggle = () => {
   const [isTestnet, setIsTestnet] = useState(false); // ⚡ SEMPRE REAL
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(() => {
+    // Restaurar estado de conexão do localStorage
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === 'true';
+  });
   const [isChecking, setIsChecking] = useState(false);
-  const [balance, setBalance] = useState<number | null>(null);
+  const [balance, setBalance] = useState<number | null>(() => {
+    // Restaurar saldo do localStorage
+    const stored = localStorage.getItem('bybit_balance');
+    return stored ? parseFloat(stored) : null;
+  });
   const [totalTrades, setTotalTrades] = useState<number>(0);
   const { toast } = useToast();
 
@@ -65,13 +76,20 @@ export const BybitModeToggle = () => {
         console.log('✅ Conexão bem-sucedida!', data.data);
         setIsConnected(true);
         
+        // Salvar estado no localStorage
+        localStorage.setItem(STORAGE_KEY, 'true');
+        
         // Extract balance from response
         const walletBalance = data.data?.list?.[0]?.totalEquity || 0;
-        setBalance(parseFloat(walletBalance));
+        const balanceNum = parseFloat(walletBalance);
+        setBalance(balanceNum);
+        
+        // Salvar saldo no localStorage
+        localStorage.setItem('bybit_balance', balanceNum.toString());
         
         toast({
           title: "✅ Conectado com sucesso!",
-          description: `Modo: REAL | Saldo: $${parseFloat(walletBalance).toFixed(2)}`,
+          description: `Modo: REAL | Saldo: $${balanceNum.toFixed(2)}`,
         });
       } else {
         console.error('❌ Erro da API Bybit:', data.error);

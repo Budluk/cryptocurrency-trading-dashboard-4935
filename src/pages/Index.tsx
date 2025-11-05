@@ -3,6 +3,7 @@ import AdvancedAISignals from "@/components/AdvancedAISignals";
 import { BybitModeToggle } from "@/components/BybitModeToggle";
 import { AutoTrader } from "@/components/AutoTrader";
 import { OpenPositionsMonitor } from "@/components/OpenPositionsMonitor";
+import { FloatingPositionsWidget } from "@/components/FloatingPositionsWidget";
 import { AutoTraderSettings } from "@/components/AutoTraderSettings";
 import { BacktestingPanel } from "@/components/BacktestingPanel";
 import PerformanceDashboard from "@/components/PerformanceDashboard";
@@ -93,6 +94,9 @@ const Index = () => {
           </Tabs>
         </div>
       </div>
+      
+      {/* Widget Flutuante de Posições */}
+      <FloatingPositionsWidget />
     </div>
   );
 };
