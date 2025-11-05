@@ -219,17 +219,36 @@ export const MultiAssetTrader = () => {
               rawQty = minQtyForValue;
             }
             
-            // Arredondar para o step correto
+            // 🔧 CORREÇÃO: Arredondar com precisão para evitar erros de ponto flutuante
+            // Determinar número de casas decimais baseado no qtyStep
+            const decimals = qtyStep.toString().includes('.') 
+              ? qtyStep.toString().split('.')[1].length 
+              : 0;
+            
+            // Arredondar para cima respeitando o step
             rawQty = Math.ceil(rawQty / qtyStep) * qtyStep;
+            
+            // Aplicar arredondamento final para evitar 0.5700000000000001
+            rawQty = Number(rawQty.toFixed(decimals));
             
             // Garantir que está dentro dos limites
             let qty = Math.max(minOrderQty, Math.min(maxOrderQty, rawQty));
+            
+            // Aplicar arredondamento final novamente
+            qty = Number(qty.toFixed(decimals));
+            
+            // Validação: quantidade deve ser válida (não NaN, não Infinity)
+            if (!isFinite(qty) || qty <= 0) {
+              console.log(`⚠️ ${symbol}: Quantidade inválida (${qty})`);
+              continue;
+            }
             
             // Validação final: verificar se atinge o valor mínimo
             const orderValue = qty * currentPrice;
             if (orderValue < 5) {
               console.log(`⚠️ ${symbol}: Valor da ordem muito baixo ($${orderValue.toFixed(2)} < $5.00) - ajustando...`);
               qty = Math.ceil(MIN_ORDER_VALUE / currentPrice / qtyStep) * qtyStep;
+              qty = Number(qty.toFixed(decimals)); // Arredondar novamente
             }
             
             // Validar se a quantidade é válida após todos os ajustes
@@ -271,7 +290,11 @@ export const MultiAssetTrader = () => {
             }
             
             const orderValueUSD = (qty * currentPrice).toFixed(2);
-            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qty} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
+            
+            // 🔧 Converter qty para string com precisão correta
+            const qtyStr = qty.toFixed(decimals);
+            
+            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
@@ -283,7 +306,7 @@ export const MultiAssetTrader = () => {
                   symbol: symbol,
                   side: action === 'BUY' ? 'Buy' : 'Sell',
                   orderType: 'Market',
-                  qty: qty.toString(),
+                  qty: qtyStr, // Usar string com precisão correta
                   stopLoss: stopLoss,
                   takeProfit: takeProfit,
                   timeInForce: 'GTC',
