@@ -20,7 +20,7 @@ interface Trade {
 
 export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
-  const [isTestnet, setIsTestnet] = useState(false); // ⚡ CONTA REAL POR PADRÃO
+  const [isTestnet, setIsTestnet] = useState(false); // ⚡ CONTA REAL - TODOS OS ATIVOS
   const [bankroll, setBankroll] = useState(9);
   const [currentBalance, setCurrentBalance] = useState(9);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
@@ -153,7 +153,7 @@ export const MultiAssetTrader = () => {
 
       const instruments = instrumentsData.data.list || [];
       
-      // Focar em ativos com boa liquidez
+      // ⚡ TODOS OS ATIVOS BYBIT - Sem restrições
       const tradableAssets = instruments.filter((inst: any) => {
         return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
       });
@@ -171,8 +171,8 @@ export const MultiAssetTrader = () => {
 
       const tickers = tickerData?.data?.list || [];
       
-      // 3. Analisar ativos com melhor volume/volatilidade
-      for (const instrument of tradableAssets.slice(0, 20)) {
+      // 3. Analisar TODOS os ativos disponíveis (não limitar a 20)
+      for (const instrument of tradableAssets) {
         if (!isRunning) break;
 
         const symbol = instrument.symbol;
@@ -184,13 +184,13 @@ export const MultiAssetTrader = () => {
         const priceChange = parseFloat(ticker.price24hPcnt || '0') * 100;
         
         try {
-          // ⚡ CRITÉRIOS MAIS AGRESSIVOS:
-          // 1. Volume 24h > $2M (liquidez suficiente) - REDUZIDO
-          // 2. Variação de preço > 1.5% (volatilidade) - REDUZIDO
-          // 3. 40% chance de trade em ativos bons - AUMENTADO
-          const hasGoodVolume = volume24h > 2000000;
-          const hasGoodVolatility = Math.abs(priceChange) > 1.5;
-          const shouldTrade = Math.random() > 0.60 && hasGoodVolume && hasGoodVolatility; // 40% chance
+          // ⚡ CRITÉRIOS MAIS AGRESSIVOS - TODOS OS ATIVOS:
+          // 1. Volume 24h > $500K (liquidez mínima) - MUITO REDUZIDO
+          // 2. Variação de preço > 0.5% (qualquer volatilidade) - MUITO REDUZIDO
+          // 3. 80% chance de trade - MUITO AUMENTADO
+          const hasGoodVolume = volume24h > 500000;
+          const hasGoodVolatility = Math.abs(priceChange) > 0.5;
+          const shouldTrade = Math.random() > 0.20 && hasGoodVolume && hasGoodVolatility; // 80% chance
           
           if (shouldTrade && currentBalance > 2) {
             // Determinar lado baseado na tendência de preço
@@ -245,18 +245,20 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
-            // Calcular SL e TP com precisão correta
+            // 🛡️ CALCULAR SL E TP - STOPS OBRIGATÓRIOS
             const priceDecimals = ticker.lastPrice.includes('.') 
               ? ticker.lastPrice.split('.')[1].length 
               : 2;
             
+            // Stop Loss SEMPRE ativo - 2% de distância
             const stopLoss = action === 'BUY' 
-              ? (currentPrice - (atrEstimate * 1.5)).toFixed(priceDecimals)
-              : (currentPrice + (atrEstimate * 1.5)).toFixed(priceDecimals);
+              ? (currentPrice * 0.98).toFixed(priceDecimals) // -2% para BUY
+              : (currentPrice * 1.02).toFixed(priceDecimals); // +2% para SELL
             
+            // Take Profit - 4% de distância (risco/retorno 1:2)
             const takeProfit = action === 'BUY'
-              ? (currentPrice + (atrEstimate * 3)).toFixed(priceDecimals)
-              : (currentPrice - (atrEstimate * 3)).toFixed(priceDecimals);
+              ? (currentPrice * 1.04).toFixed(priceDecimals) // +4% para BUY
+              : (currentPrice * 0.96).toFixed(priceDecimals); // -4% para SELL
             
             // Validar que SL está correto para a direção
             if (action === 'BUY' && parseFloat(stopLoss) >= currentPrice) {
