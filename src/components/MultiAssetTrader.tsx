@@ -184,17 +184,61 @@ export const MultiAssetTrader = () => {
         const priceChange = parseFloat(ticker.price24hPcnt || '0') * 100;
         
         try {
-          // ⚡ CRITÉRIOS MAIS AGRESSIVOS - TODOS OS ATIVOS:
-          // 1. Volume 24h > $500K (liquidez mínima) - MUITO REDUZIDO
-          // 2. Variação de preço > 0.5% (qualquer volatilidade) - MUITO REDUZIDO
-          // 3. 80% chance de trade - MUITO AUMENTADO
-          const hasGoodVolume = volume24h > 500000;
-          const hasGoodVolatility = Math.abs(priceChange) > 0.5;
-          const shouldTrade = Math.random() > 0.20 && hasGoodVolume && hasGoodVolatility; // 80% chance
+          // ⚡ ANÁLISE TÉCNICA AVANÇADA PARA SINAIS DE QUALIDADE
           
-          if (shouldTrade && currentBalance > 2) {
-            // Determinar lado baseado na tendência de preço
-            const action = priceChange > 0 ? 'BUY' : 'SELL'; // Seguir momentum
+          // 1. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE
+          const hasGoodVolume = volume24h > 1000000; // $1M mínimo
+          const hasGoodVolatility = Math.abs(priceChange) > 0.8; // 0.8% mínimo
+          
+          // 2. ANÁLISE DE TENDÊNCIA (RSI-like baseado em price change)
+          const isBullishTrend = priceChange > 1.5; // Subindo forte
+          const isBearishTrend = priceChange < -1.5; // Caindo forte
+          const isOversold = priceChange < -3; // Possível reversão
+          const isOverbought = priceChange > 3; // Possível reversão
+          
+          // 3. VALIDAÇÃO DE VOLUME (compara com média)
+          const avgVolume = 3000000; // Média estimada
+          const volumeStrength = volume24h > avgVolume * 1.5; // Volume 50% acima da média
+          
+          // 4. SCORE DE QUALIDADE DO SINAL
+          let signalScore = 0;
+          let action: 'BUY' | 'SELL' | null = null;
+          
+          // Sinais de COMPRA
+          if (isBullishTrend && volumeStrength) {
+            signalScore = 80;
+            action = 'BUY';
+          } else if (isOversold && volumeStrength) {
+            signalScore = 75;
+            action = 'BUY'; // Reversão após queda
+          } else if (priceChange > 0.8 && priceChange < 2 && hasGoodVolume) {
+            signalScore = 65;
+            action = 'BUY'; // Movimento moderado
+          }
+          
+          // Sinais de VENDA
+          if (isBearishTrend && volumeStrength) {
+            signalScore = 80;
+            action = 'SELL';
+          } else if (isOverbought && volumeStrength) {
+            signalScore = 75;
+            action = 'SELL'; // Reversão após subida
+          } else if (priceChange < -0.8 && priceChange > -2 && hasGoodVolume) {
+            signalScore = 65;
+            action = 'SELL'; // Movimento moderado
+          }
+          
+          // 5. FILTRO FINAL: Apenas sinais com score >= 65 e validações OK
+          const shouldTrade = (
+            signalScore >= 65 &&
+            hasGoodVolume &&
+            hasGoodVolatility &&
+            action !== null &&
+            currentBalance > 2 &&
+            Math.random() > 0.70 // 30% chance final para não sobrecarregar
+          );
+          
+          if (shouldTrade && action) {
             const leverage = getLeverageForBalance(currentBalance);
             const { usdSize } = calculatePositionSize(currentBalance, leverage);
             
@@ -294,7 +338,7 @@ export const MultiAssetTrader = () => {
             // 🔧 Converter qty para string com precisão correta
             const qtyStr = qty.toFixed(decimals);
             
-            console.log(`🚀 REAL TRADE: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
+            console.log(`🎯 SINAL QUALIFICADO [Score: ${signalScore}]: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
@@ -319,7 +363,7 @@ export const MultiAssetTrader = () => {
               const trade: Trade = {
                 symbol,
                 action,
-                confidence: 80 + Math.abs(priceChange) * 2,
+                confidence: signalScore, // Usar score real do sinal
                 leverage,
                 usdSize,
                 timestamp: new Date().toISOString()
@@ -428,7 +472,7 @@ export const MultiAssetTrader = () => {
     setIsRunning(true);
     toast({
       title: "⚡ TRADER REAL 24/7 ATIVADO",
-      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance)}x | Ciclo: 2min | Max Pos: ${MAX_OPEN_POSITIONS}`,
+      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance)}x | Ciclo: 2min | Sinais Técnicos Avançados`,
     });
   };
 
