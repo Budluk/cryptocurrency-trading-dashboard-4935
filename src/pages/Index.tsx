@@ -15,10 +15,12 @@ import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
+import { usePriceUpdater } from "@/hooks/usePriceUpdater";
 
 const Index = () => {
-  // Ativar monitoramento automático de posições
+  // Ativar monitoramento automático de posições e atualização de preços
   usePositionMonitor();
+  usePriceUpdater();
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">

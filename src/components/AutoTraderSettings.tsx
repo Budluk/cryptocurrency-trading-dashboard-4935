@@ -65,7 +65,7 @@ export const AutoTraderSettings = () => {
 
   useEffect(() => {
     if (savedConfig) {
-      setConfig(savedConfig);
+      setConfig(savedConfig as unknown as Config);
     }
   }, [savedConfig]);
 

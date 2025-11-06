@@ -7,7 +7,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 interface TradeData {
   id: string;
   symbol: string;
-  action: string;
+  side: string; // Buy ou Sell
   entry_price: number;
   realized_pnl: number;
   opened_at: string;

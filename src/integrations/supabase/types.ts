@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_football_signals: {
+        Row: {
+          confidence: number
+          created_at: string
+          expected_value: number | null
+          expires_at: string | null
+          fixture_id: number
+          id: string
+          market: string
+          predicted_value: string | null
+          reasoning: Json | null
+          signal_type: string
+          suggested_stake: number | null
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          expected_value?: number | null
+          expires_at?: string | null
+          fixture_id: number
+          id?: string
+          market: string
+          predicted_value?: string | null
+          reasoning?: Json | null
+          signal_type: string
+          suggested_stake?: number | null
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          expected_value?: number | null
+          expires_at?: string | null
+          fixture_id?: number
+          id?: string
+          market?: string
+          predicted_value?: string | null
+          reasoning?: Json | null
+          signal_type?: string
+          suggested_stake?: number | null
+        }
+        Relationships: []
+      }
       ai_market_signals: {
         Row: {
           action: string
@@ -64,66 +106,45 @@ export type Database = {
       }
       auto_trader_config: {
         Row: {
-          allowed_symbols: string[] | null
           created_at: string
-          email_notifications: boolean
-          excluded_symbols: string[] | null
           id: string
           is_active: boolean
-          max_position_size: number
-          max_simultaneous_positions: number
+          leverage_max: number
+          max_consecutive_losses: number
+          min_balance: number
           min_confidence: number
-          notifications_enabled: boolean
-          operating_hours_end: number | null
-          operating_hours_start: number | null
-          risk_per_trade_percentage: number
-          timeframes: string[] | null
-          trailing_stop_percentage: number | null
+          min_qty: number
+          reinvest_profit_pct: number
+          risk_per_trade: number
           updated_at: string
-          use_stop_loss: boolean
-          use_take_profit: boolean
           user_id: string
         }
         Insert: {
-          allowed_symbols?: string[] | null
           created_at?: string
-          email_notifications?: boolean
-          excluded_symbols?: string[] | null
           id?: string
           is_active?: boolean
-          max_position_size?: number
-          max_simultaneous_positions?: number
+          leverage_max?: number
+          max_consecutive_losses?: number
+          min_balance?: number
           min_confidence?: number
-          notifications_enabled?: boolean
-          operating_hours_end?: number | null
-          operating_hours_start?: number | null
-          risk_per_trade_percentage?: number
-          timeframes?: string[] | null
-          trailing_stop_percentage?: number | null
+          min_qty?: number
+          reinvest_profit_pct?: number
+          risk_per_trade?: number
           updated_at?: string
-          use_stop_loss?: boolean
-          use_take_profit?: boolean
           user_id: string
         }
         Update: {
-          allowed_symbols?: string[] | null
           created_at?: string
-          email_notifications?: boolean
-          excluded_symbols?: string[] | null
           id?: string
           is_active?: boolean
-          max_position_size?: number
-          max_simultaneous_positions?: number
+          leverage_max?: number
+          max_consecutive_losses?: number
+          min_balance?: number
           min_confidence?: number
-          notifications_enabled?: boolean
-          operating_hours_end?: number | null
-          operating_hours_start?: number | null
-          risk_per_trade_percentage?: number
-          timeframes?: string[] | null
-          trailing_stop_percentage?: number | null
+          min_qty?: number
+          reinvest_profit_pct?: number
+          risk_per_trade?: number
           updated_at?: string
-          use_stop_loss?: boolean
-          use_take_profit?: boolean
           user_id?: string
         }
         Relationships: []
@@ -171,83 +192,78 @@ export type Database = {
       }
       auto_trader_positions: {
         Row: {
-          action: string
           close_reason: string | null
           closed_at: string | null
-          confidence: number
-          config_id: string | null
-          created_at: string
+          confidence: number | null
           current_price: number | null
           entry_price: number
           exchange_order_id: string | null
+          exit_price: number | null
+          highest_price: number | null
           id: string
+          leverage: number | null
           opened_at: string
-          quantity: number
+          pnl: number | null
+          qty: number
           realized_pnl: number | null
-          reasoning: string | null
+          side: string
           status: string
           stop_loss: number | null
           symbol: string
           take_profit: number | null
+          trailing_stop_percentage: number | null
           unrealized_pnl: number | null
-          updated_at: string
           user_id: string
         }
         Insert: {
-          action: string
           close_reason?: string | null
           closed_at?: string | null
-          confidence: number
-          config_id?: string | null
-          created_at?: string
+          confidence?: number | null
           current_price?: number | null
           entry_price: number
           exchange_order_id?: string | null
+          exit_price?: number | null
+          highest_price?: number | null
           id?: string
+          leverage?: number | null
           opened_at?: string
-          quantity: number
+          pnl?: number | null
+          qty: number
           realized_pnl?: number | null
-          reasoning?: string | null
-          status?: string
+          side: string
+          status: string
           stop_loss?: number | null
           symbol: string
           take_profit?: number | null
+          trailing_stop_percentage?: number | null
           unrealized_pnl?: number | null
-          updated_at?: string
           user_id: string
         }
         Update: {
-          action?: string
           close_reason?: string | null
           closed_at?: string | null
-          confidence?: number
-          config_id?: string | null
-          created_at?: string
+          confidence?: number | null
           current_price?: number | null
           entry_price?: number
           exchange_order_id?: string | null
+          exit_price?: number | null
+          highest_price?: number | null
           id?: string
+          leverage?: number | null
           opened_at?: string
-          quantity?: number
+          pnl?: number | null
+          qty?: number
           realized_pnl?: number | null
-          reasoning?: string | null
+          side?: string
           status?: string
           stop_loss?: number | null
           symbol?: string
           take_profit?: number | null
+          trailing_stop_percentage?: number | null
           unrealized_pnl?: number | null
-          updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "auto_trader_positions_config_id_fkey"
-            columns: ["config_id"]
-            isOneToOne: false
-            referencedRelation: "auto_trader_config"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       backtesting_results: {
         Row: {
@@ -300,6 +316,186 @@ export type Database = {
           user_id?: string
           win_rate?: number
           winning_trades?: number
+        }
+        Relationships: []
+      }
+      bankroll_settings: {
+        Row: {
+          created_at: string
+          current_bankroll: number
+          current_daily_loss: number
+          daily_loss_limit: number
+          id: string
+          initial_bankroll: number
+          kelly_fraction: number
+          last_reset_date: string
+          max_bet: number
+          min_bet: number
+          risk_level: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_bankroll?: number
+          current_daily_loss?: number
+          daily_loss_limit?: number
+          id?: string
+          initial_bankroll?: number
+          kelly_fraction?: number
+          last_reset_date?: string
+          max_bet?: number
+          min_bet?: number
+          risk_level?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_bankroll?: number
+          current_daily_loss?: number
+          daily_loss_limit?: number
+          id?: string
+          initial_bankroll?: number
+          kelly_fraction?: number
+          last_reset_date?: string
+          max_bet?: number
+          min_bet?: number
+          risk_level?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      bet_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string | null
+          enabled: boolean | null
+          fixture_id: number
+          id: string
+          market: string
+          threshold: number | null
+          triggered_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string | null
+          enabled?: boolean | null
+          fixture_id: number
+          id?: string
+          market: string
+          threshold?: number | null
+          triggered_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string | null
+          enabled?: boolean | null
+          fixture_id?: number
+          id?: string
+          market?: string
+          threshold?: number | null
+          triggered_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      bet_slips: {
+        Row: {
+          away_team: string | null
+          country: string | null
+          created_at: string
+          estimated_prob: number | null
+          ev: number | null
+          fixture_id: number
+          home_team: string | null
+          id: string
+          league: string | null
+          market: string
+          model_prob: number | null
+          odd: number
+          odds_snapshot: Json | null
+          player_name: string | null
+          profit: number | null
+          result: number | null
+          stake: number | null
+          sub_market: string | null
+          tags: string[] | null
+          team: string | null
+          user_id: string
+        }
+        Insert: {
+          away_team?: string | null
+          country?: string | null
+          created_at?: string
+          estimated_prob?: number | null
+          ev?: number | null
+          fixture_id: number
+          home_team?: string | null
+          id?: string
+          league?: string | null
+          market: string
+          model_prob?: number | null
+          odd: number
+          odds_snapshot?: Json | null
+          player_name?: string | null
+          profit?: number | null
+          result?: number | null
+          stake?: number | null
+          sub_market?: string | null
+          tags?: string[] | null
+          team?: string | null
+          user_id: string
+        }
+        Update: {
+          away_team?: string | null
+          country?: string | null
+          created_at?: string
+          estimated_prob?: number | null
+          ev?: number | null
+          fixture_id?: number
+          home_team?: string | null
+          id?: string
+          league?: string | null
+          market?: string
+          model_prob?: number | null
+          odd?: number
+          odds_snapshot?: Json | null
+          player_name?: string | null
+          profit?: number | null
+          result?: number | null
+          stake?: number | null
+          sub_market?: string | null
+          tags?: string[] | null
+          team?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      bet_tags: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          tag_name: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          tag_name: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          tag_name?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -441,6 +637,111 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      favorites: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          item_name: string
+          item_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          item_name: string
+          item_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          item_name?: string
+          item_type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      football_fixtures: {
+        Row: {
+          away_score: number | null
+          away_team: string
+          cached_at: string
+          fixture_id: number
+          home_score: number | null
+          home_team: string
+          id: string
+          league_country: string | null
+          league_name: string
+          match_date: string
+          minute: number | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          away_score?: number | null
+          away_team: string
+          cached_at?: string
+          fixture_id: number
+          home_score?: number | null
+          home_team: string
+          id?: string
+          league_country?: string | null
+          league_name: string
+          match_date: string
+          minute?: number | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          away_score?: number | null
+          away_team?: string
+          cached_at?: string
+          fixture_id?: number
+          home_score?: number | null
+          home_team?: string
+          id?: string
+          league_country?: string | null
+          league_name?: string
+          match_date?: string
+          minute?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      football_odds: {
+        Row: {
+          bookmaker: string
+          cached_at: string
+          fixture_id: number
+          id: string
+          label: string
+          market_type: string
+          odd_value: number
+        }
+        Insert: {
+          bookmaker: string
+          cached_at?: string
+          fixture_id: number
+          id?: string
+          label: string
+          market_type: string
+          odd_value: number
+        }
+        Update: {
+          bookmaker?: string
+          cached_at?: string
+          fixture_id?: number
+          id?: string
+          label?: string
+          market_type?: string
+          odd_value?: number
+        }
+        Relationships: []
       }
       image_analysis: {
         Row: {
@@ -601,6 +902,69 @@ export type Database = {
         }
         Relationships: []
       }
+      multi_asset_trades: {
+        Row: {
+          closed_at: string | null
+          confidence: number
+          created_at: string
+          entry_price: number
+          exit_price: number | null
+          id: string
+          leverage: number
+          opened_at: string
+          quantity: number
+          realized_pnl: number | null
+          reason: string | null
+          side: string
+          status: string
+          stop_loss: number
+          symbol: string
+          take_profit: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          confidence: number
+          created_at?: string
+          entry_price: number
+          exit_price?: number | null
+          id?: string
+          leverage: number
+          opened_at?: string
+          quantity: number
+          realized_pnl?: number | null
+          reason?: string | null
+          side: string
+          status?: string
+          stop_loss: number
+          symbol: string
+          take_profit: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          confidence?: number
+          created_at?: string
+          entry_price?: number
+          exit_price?: number | null
+          id?: string
+          leverage?: number
+          opened_at?: string
+          quantity?: number
+          realized_pnl?: number | null
+          reason?: string | null
+          side?: string
+          status?: string
+          stop_loss?: number
+          symbol?: string
+          take_profit?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       news_analysis: {
         Row: {
           category: string | null
@@ -648,6 +1012,164 @@ export type Database = {
           url?: string | null
         }
         Relationships: []
+      }
+      odds_comparison: {
+        Row: {
+          bookmaker: string
+          fixture_id: number
+          id: string
+          is_best: boolean | null
+          label: string
+          market: string
+          odd: number
+          timestamp: string | null
+        }
+        Insert: {
+          bookmaker: string
+          fixture_id: number
+          id?: string
+          is_best?: boolean | null
+          label: string
+          market: string
+          odd: number
+          timestamp?: string | null
+        }
+        Update: {
+          bookmaker?: string
+          fixture_id?: number
+          id?: string
+          is_best?: boolean | null
+          label?: string
+          market?: string
+          odd?: number
+          timestamp?: string | null
+        }
+        Relationships: []
+      }
+      odds_history: {
+        Row: {
+          bookmaker: string | null
+          created_at: string
+          fixture_id: number
+          id: string
+          label: string | null
+          market: string
+          odd: number
+        }
+        Insert: {
+          bookmaker?: string | null
+          created_at?: string
+          fixture_id: number
+          id?: string
+          label?: string | null
+          market: string
+          odd: number
+        }
+        Update: {
+          bookmaker?: string | null
+          created_at?: string
+          fixture_id?: number
+          id?: string
+          label?: string | null
+          market?: string
+          odd?: number
+        }
+        Relationships: []
+      }
+      odds_movements: {
+        Row: {
+          bookmaker: string
+          change_percentage: number | null
+          fixture_id: number
+          id: string
+          label: string
+          market: string
+          odd_value: number
+          previous_value: number | null
+          recorded_at: string
+        }
+        Insert: {
+          bookmaker: string
+          change_percentage?: number | null
+          fixture_id: number
+          id?: string
+          label: string
+          market: string
+          odd_value: number
+          previous_value?: number | null
+          recorded_at?: string
+        }
+        Update: {
+          bookmaker?: string
+          change_percentage?: number | null
+          fixture_id?: number
+          id?: string
+          label?: string
+          market?: string
+          odd_value?: number
+          previous_value?: number | null
+          recorded_at?: string
+        }
+        Relationships: []
+      }
+      open_positions: {
+        Row: {
+          entry_price: number
+          exchange_order_id: string | null
+          id: string
+          opened_at: string
+          quantity: number
+          side: string
+          status: string
+          stop_loss: number | null
+          strategy_id: string | null
+          symbol: string
+          take_profit: number | null
+          unrealized_pnl: number | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          entry_price: number
+          exchange_order_id?: string | null
+          id?: string
+          opened_at?: string
+          quantity: number
+          side: string
+          status?: string
+          stop_loss?: number | null
+          strategy_id?: string | null
+          symbol: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          entry_price?: number
+          exchange_order_id?: string | null
+          id?: string
+          opened_at?: string
+          quantity?: number
+          side?: string
+          status?: string
+          stop_loss?: number | null
+          strategy_id?: string | null
+          symbol?: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "open_positions_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       paper_trades: {
         Row: {
@@ -757,55 +1279,44 @@ export type Database = {
         }
         Relationships: []
       }
-      risk_management: {
+      push_notifications_config: {
         Row: {
-          created_at: string | null
-          current_daily_loss: number | null
-          daily_loss_limit: number
+          created_at: string
+          daily_limit_warning: boolean
+          enabled: boolean
+          favorite_match_started: boolean
           id: string
-          is_active: boolean | null
-          last_reset_date: string | null
-          max_position_size: number
-          risk_per_trade: number
-          strategy_id: string | null
-          updated_at: string | null
-          volatility_threshold: number
+          odds_movement_threshold: number
+          profit_goal_amount: number | null
+          updated_at: string
+          user_id: string
+          value_bet_threshold: number
         }
         Insert: {
-          created_at?: string | null
-          current_daily_loss?: number | null
-          daily_loss_limit: number
+          created_at?: string
+          daily_limit_warning?: boolean
+          enabled?: boolean
+          favorite_match_started?: boolean
           id?: string
-          is_active?: boolean | null
-          last_reset_date?: string | null
-          max_position_size: number
-          risk_per_trade: number
-          strategy_id?: string | null
-          updated_at?: string | null
-          volatility_threshold: number
+          odds_movement_threshold?: number
+          profit_goal_amount?: number | null
+          updated_at?: string
+          user_id: string
+          value_bet_threshold?: number
         }
         Update: {
-          created_at?: string | null
-          current_daily_loss?: number | null
-          daily_loss_limit?: number
+          created_at?: string
+          daily_limit_warning?: boolean
+          enabled?: boolean
+          favorite_match_started?: boolean
           id?: string
-          is_active?: boolean | null
-          last_reset_date?: string | null
-          max_position_size?: number
-          risk_per_trade?: number
-          strategy_id?: string | null
-          updated_at?: string | null
-          volatility_threshold?: number
+          odds_movement_threshold?: number
+          profit_goal_amount?: number | null
+          updated_at?: string
+          user_id?: string
+          value_bet_threshold?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "risk_management_strategy_id_fkey"
-            columns: ["strategy_id"]
-            isOneToOne: false
-            referencedRelation: "trading_strategies"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       signal_history: {
         Row: {
@@ -989,55 +1500,50 @@ export type Database = {
           },
         ]
       }
-      trades: {
+      team_statistics: {
         Row: {
-          exchange_order_id: string | null
-          exit_price: number | null
+          away_goals_avg: number | null
+          away_goals_conceded_avg: number | null
+          h2h_data: Json | null
+          home_goals_avg: number | null
+          home_goals_conceded_avg: number | null
           id: string
-          pnl: number | null
-          price: number
-          quantity: number
-          status: string
-          strategy_id: string | null
-          symbol: string
-          timestamp: string | null
-          trade_type: string
+          last_5_matches: Json | null
+          recent_form_away: string | null
+          recent_form_home: string | null
+          team_id: number
+          team_name: string
+          updated_at: string
         }
         Insert: {
-          exchange_order_id?: string | null
-          exit_price?: number | null
+          away_goals_avg?: number | null
+          away_goals_conceded_avg?: number | null
+          h2h_data?: Json | null
+          home_goals_avg?: number | null
+          home_goals_conceded_avg?: number | null
           id?: string
-          pnl?: number | null
-          price: number
-          quantity: number
-          status: string
-          strategy_id?: string | null
-          symbol: string
-          timestamp?: string | null
-          trade_type: string
+          last_5_matches?: Json | null
+          recent_form_away?: string | null
+          recent_form_home?: string | null
+          team_id: number
+          team_name: string
+          updated_at?: string
         }
         Update: {
-          exchange_order_id?: string | null
-          exit_price?: number | null
+          away_goals_avg?: number | null
+          away_goals_conceded_avg?: number | null
+          h2h_data?: Json | null
+          home_goals_avg?: number | null
+          home_goals_conceded_avg?: number | null
           id?: string
-          pnl?: number | null
-          price?: number
-          quantity?: number
-          status?: string
-          strategy_id?: string | null
-          symbol?: string
-          timestamp?: string | null
-          trade_type?: string
+          last_5_matches?: Json | null
+          recent_form_away?: string | null
+          recent_form_home?: string | null
+          team_id?: number
+          team_name?: string
+          updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "trades_strategy_id_fkey"
-            columns: ["strategy_id"]
-            isOneToOne: false
-            referencedRelation: "strategies"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trading_alerts: {
         Row: {
@@ -1117,41 +1623,6 @@ export type Database = {
         }
         Relationships: []
       }
-      trading_logs: {
-        Row: {
-          context: Json | null
-          id: string
-          level: string
-          message: string
-          strategy_id: string | null
-          timestamp: string | null
-        }
-        Insert: {
-          context?: Json | null
-          id?: string
-          level: string
-          message: string
-          strategy_id?: string | null
-          timestamp?: string | null
-        }
-        Update: {
-          context?: Json | null
-          id?: string
-          level?: string
-          message?: string
-          strategy_id?: string | null
-          timestamp?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "trading_logs_strategy_id_fkey"
-            columns: ["strategy_id"]
-            isOneToOne: false
-            referencedRelation: "trading_strategies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       trading_performance: {
         Row: {
           avg_loss: number
@@ -1217,65 +1688,6 @@ export type Database = {
           winning_trades?: number
         }
         Relationships: []
-      }
-      trading_positions: {
-        Row: {
-          closed_at: string | null
-          entry_price: number
-          exchange_order_id: string | null
-          exit_price: number | null
-          id: string
-          opened_at: string | null
-          pnl: number | null
-          quantity: number
-          side: string
-          status: string
-          stop_loss: number | null
-          strategy_id: string | null
-          symbol: string
-          take_profit: number | null
-        }
-        Insert: {
-          closed_at?: string | null
-          entry_price: number
-          exchange_order_id?: string | null
-          exit_price?: number | null
-          id?: string
-          opened_at?: string | null
-          pnl?: number | null
-          quantity: number
-          side: string
-          status?: string
-          stop_loss?: number | null
-          strategy_id?: string | null
-          symbol: string
-          take_profit?: number | null
-        }
-        Update: {
-          closed_at?: string | null
-          entry_price?: number
-          exchange_order_id?: string | null
-          exit_price?: number | null
-          id?: string
-          opened_at?: string | null
-          pnl?: number | null
-          quantity?: number
-          side?: string
-          status?: string
-          stop_loss?: number | null
-          strategy_id?: string | null
-          symbol?: string
-          take_profit?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "trading_positions_strategy_id_fkey"
-            columns: ["strategy_id"]
-            isOneToOne: false
-            referencedRelation: "trading_strategies"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       trading_signals: {
         Row: {
@@ -1398,6 +1810,84 @@ export type Database = {
           },
         ]
       }
+      user_preferences: {
+        Row: {
+          auto_tracking: boolean | null
+          created_at: string | null
+          favorite_leagues: string[] | null
+          id: string
+          push_notifications: boolean | null
+          sound_enabled: boolean | null
+          theme: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          auto_tracking?: boolean | null
+          created_at?: string | null
+          favorite_leagues?: string[] | null
+          id?: string
+          push_notifications?: boolean | null
+          sound_enabled?: boolean | null
+          theme?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          auto_tracking?: boolean | null
+          created_at?: string | null
+          favorite_leagues?: string[] | null
+          id?: string
+          push_notifications?: boolean | null
+          sound_enabled?: boolean | null
+          theme?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_risk_settings: {
+        Row: {
+          created_at: string
+          id: string
+          max_daily_loss_percent: number | null
+          max_leverage: number | null
+          max_open_positions: number | null
+          max_position_size_percent: number | null
+          time_stop_hours: number | null
+          trailing_stop_enabled: boolean | null
+          trailing_stop_percent: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          max_daily_loss_percent?: number | null
+          max_leverage?: number | null
+          max_open_positions?: number | null
+          max_position_size_percent?: number | null
+          time_stop_hours?: number | null
+          trailing_stop_enabled?: boolean | null
+          trailing_stop_percent?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          max_daily_loss_percent?: number | null
+          max_leverage?: number | null
+          max_open_positions?: number | null
+          max_position_size_percent?: number | null
+          time_stop_hours?: number | null
+          trailing_stop_enabled?: boolean | null
+          trailing_stop_percent?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -1435,6 +1925,7 @@ export type Database = {
           winning_trades: number
         }[]
       }
+      clean_old_football_cache: { Args: never; Returns: undefined }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

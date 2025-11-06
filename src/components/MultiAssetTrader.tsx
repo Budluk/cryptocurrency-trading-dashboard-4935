@@ -372,9 +372,38 @@ export const MultiAssetTrader = () => {
               setActiveTrades(prev => [...prev.slice(-19), trade]);
               setOpenPositionsCount(prev => prev + 1);
               
+              // 💾 SALVAR POSIÇÃO NA TABELA PARA MONITORAMENTO AUTOMÁTICO
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                  await supabase.from('auto_trader_positions').insert({
+                    user_id: user.id,
+                    symbol: symbol,
+                    side: action,
+                    qty: qty,
+                    entry_price: currentPrice,
+                    current_price: currentPrice,
+                    highest_price: currentPrice, // Iniciar com preço de entrada
+                    stop_loss: parseFloat(stopLoss),
+                    take_profit: parseFloat(takeProfit),
+                    leverage: leverage,
+                    status: 'OPEN',
+                    confidence: signalScore,
+                    trailing_stop_percentage: 1.5, // 1.5% trailing stop padrão
+                    unrealized_pnl: 0,
+                    exchange_order_id: orderData.data?.orderId,
+                    opened_at: new Date().toISOString()
+                  });
+                  
+                  console.log(`💾 Posição salva: ${symbol} ${action} @ ${currentPrice}`);
+                }
+              } catch (dbError) {
+                console.error('Erro ao salvar posição no DB:', dbError);
+              }
+              
               toast({
                 title: "✅ Ordem Executada",
-                description: `${symbol} ${action} - Qty: ${qty} - Valor: $${orderValueUSD}`,
+                description: `${symbol} ${action} - Qty: ${qty} - Valor: $${orderValueUSD} | 🎯 Trailing Stop: 1.5%`,
               });
             } else {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError);

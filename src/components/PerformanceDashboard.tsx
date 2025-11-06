@@ -353,9 +353,9 @@ const PerformanceDashboard = () => {
             <div key={trade.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
               <div className="flex items-center gap-4">
                 <div className={`p-2 rounded-full ${
-                  trade.action === 'Buy' ? 'bg-green-500/20' : 'bg-red-500/20'
+                  trade.side === 'Buy' ? 'bg-green-500/20' : 'bg-red-500/20'
                 }`}>
-                  {trade.action === 'Buy' ? (
+                  {trade.side === 'Buy' ? (
                     <TrendingUpIcon className="w-4 h-4 text-green-500" />
                   ) : (
                     <TrendingDownIcon className="w-4 h-4 text-red-500" />
@@ -364,7 +364,7 @@ const PerformanceDashboard = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold">{trade.symbol}</span>
-                    <Badge variant="outline" className="text-xs">{trade.action}</Badge>
+                    <Badge variant="outline" className="text-xs">{trade.side}</Badge>
                   </div>
                   <div className="text-sm text-muted-foreground">
                     ${trade.entry_price.toFixed(2)} → ${trade.current_price?.toFixed(2) || '-'}

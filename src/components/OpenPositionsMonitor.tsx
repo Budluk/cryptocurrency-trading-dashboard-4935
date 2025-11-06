@@ -11,9 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 interface Position {
   id: string;
   symbol: string;
-  action: string;
+  side: string; // BUY ou SELL
   entry_price: number;
-  quantity: number;
+  qty: number;
   stop_loss: number | null;
   take_profit: number | null;
   current_price: number | null;
@@ -120,7 +120,7 @@ export const OpenPositionsMonitor = () => {
 
   const getPnLPercentage = (position: Position) => {
     if (!position.current_price) return 0;
-    return ((position.unrealized_pnl / (position.entry_price * position.quantity)) * 100);
+    return ((position.unrealized_pnl / (position.entry_price * position.qty)) * 100);
   };
 
   // Indicador de saúde da posição
@@ -181,9 +181,9 @@ export const OpenPositionsMonitor = () => {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-full ${
-                      position.action === 'BUY' ? 'bg-green-500/20' : 'bg-red-500/20'
+                      position.side === 'Buy' ? 'bg-green-500/20' : 'bg-red-500/20'
                     }`}>
-                      {position.action === 'BUY' ? (
+                      {position.side === 'Buy' ? (
                         <TrendingUp className="w-5 h-5 text-green-500" />
                       ) : (
                         <TrendingDown className="w-5 h-5 text-red-500" />
@@ -198,8 +198,8 @@ export const OpenPositionsMonitor = () => {
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <Badge variant={position.action === 'BUY' ? 'default' : 'destructive'}>
-                      {position.action}
+                    <Badge variant={position.side === 'Buy' ? 'default' : 'destructive'}>
+                      {position.side}
                     </Badge>
                     <Button
                       size="sm"
@@ -222,7 +222,7 @@ export const OpenPositionsMonitor = () => {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Quantidade</p>
-                    <p className="font-semibold">{position.quantity}</p>
+                    <p className="font-semibold">{position.qty}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Confiança</p>

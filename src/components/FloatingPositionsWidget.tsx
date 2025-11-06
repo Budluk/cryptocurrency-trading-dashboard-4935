@@ -9,9 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 interface Position {
   id: string;
   symbol: string;
-  action: string;
+  side: string; // BUY ou SELL
   entry_price: number;
-  quantity: number;
+  qty: number;
   current_price: number | null;
   unrealized_pnl: number;
   opened_at: string;
@@ -104,7 +104,7 @@ export const FloatingPositionsWidget = () => {
             {positions.map((position) => {
               const pnl = position.unrealized_pnl || 0;
               const pnlPercent = position.entry_price 
-                ? ((pnl / (position.entry_price * position.quantity)) * 100)
+                ? ((pnl / (position.entry_price * position.qty)) * 100)
                 : 0;
               const isProfit = pnl >= 0;
 
@@ -121,10 +121,10 @@ export const FloatingPositionsWidget = () => {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold">{position.symbol}</span>
                       <Badge 
-                        variant={position.action === 'BUY' ? 'default' : 'destructive'}
+                        variant={position.side === 'Buy' ? 'default' : 'destructive'}
                         className="text-xs px-1 py-0"
                       >
-                        {position.action}
+                        {position.side}
                       </Badge>
                     </div>
                     {isProfit ? (

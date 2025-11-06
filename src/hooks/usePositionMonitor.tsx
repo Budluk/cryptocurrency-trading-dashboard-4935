@@ -5,20 +5,21 @@ import { useToast } from "@/hooks/use-toast";
 interface Position {
   id: string;
   symbol: string;
-  action: string;
+  side: string; // 'BUY' ou 'SELL'
   entry_price: number;
-  quantity: number;
+  qty: number;
   stop_loss: number | null;
   take_profit: number | null;
   current_price: number | null;
+  highest_price: number | null;
   unrealized_pnl: number;
-  trailing_stop_percentage?: number | null;
+  trailing_stop_percentage: number | null;
   status: string;
+  exchange_order_id: string | null;
 }
 
 export const usePositionMonitor = () => {
   const { toast } = useToast();
-  const trailingStopPrices = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     const monitorPositions = async () => {
@@ -29,109 +30,148 @@ export const usePositionMonitor = () => {
           .eq('status', 'OPEN');
 
         if (error) throw error;
+        if (!positions || positions.length === 0) return;
 
         for (const position of positions as Position[]) {
           if (!position.current_price) continue;
 
-          const { id, action, entry_price, current_price, stop_loss, take_profit } = position;
+          const { 
+            id, 
+            side, 
+            entry_price, 
+            current_price, 
+            highest_price,
+            stop_loss, 
+            take_profit,
+            qty,
+            trailing_stop_percentage
+          } = position;
+          
           let shouldClose = false;
           let closeReason = '';
+          let exit_price = current_price;
           let realized_pnl = position.unrealized_pnl;
+          let updatedHighestPrice = highest_price || entry_price;
 
-          // Verificar Stop Loss
-          if (stop_loss) {
-            if (action === 'BUY' && current_price <= stop_loss) {
+          // 🎯 TRAILING STOP AUTOMÁTICO
+          if (trailing_stop_percentage && trailing_stop_percentage > 0) {
+            if (side === 'BUY') {
+              // Para posições de compra: acompanhar o máximo preço
+              if (current_price > updatedHighestPrice) {
+                updatedHighestPrice = current_price;
+                
+                // Atualizar highest_price no banco imediatamente
+                await supabase
+                  .from('auto_trader_positions')
+                  .update({ highest_price: updatedHighestPrice })
+                  .eq('id', id);
+                
+                console.log(`📈 ${position.symbol} BUY: Novo máximo $${updatedHighestPrice.toFixed(2)} | Trailing: $${(updatedHighestPrice * (1 - trailing_stop_percentage / 100)).toFixed(2)}`);
+              }
+
+              // Calcular trailing stop baseado no highest price
+              const trailingStopPrice = updatedHighestPrice * (1 - trailing_stop_percentage / 100);
+              
+              if (current_price <= trailingStopPrice) {
+                shouldClose = true;
+                closeReason = `Trailing Stop ${trailing_stop_percentage}%`;
+                realized_pnl = (current_price - entry_price) * qty;
+                console.log(`🛑 ${position.symbol} BUY: Trailing stop acionado! Max: $${updatedHighestPrice.toFixed(2)} → Atual: $${current_price.toFixed(2)}`);
+              }
+            } else if (side === 'SELL') {
+              // Para posições de venda: acompanhar o mínimo preço
+              if (current_price < updatedHighestPrice) {
+                updatedHighestPrice = current_price;
+                
+                // Atualizar highest_price no banco
+                await supabase
+                  .from('auto_trader_positions')
+                  .update({ highest_price: updatedHighestPrice })
+                  .eq('id', id);
+                
+                console.log(`📉 ${position.symbol} SELL: Novo mínimo $${updatedHighestPrice.toFixed(2)} | Trailing: $${(updatedHighestPrice * (1 + trailing_stop_percentage / 100)).toFixed(2)}`);
+              }
+
+              const trailingStopPrice = updatedHighestPrice * (1 + trailing_stop_percentage / 100);
+              
+              if (current_price >= trailingStopPrice) {
+                shouldClose = true;
+                closeReason = `Trailing Stop ${trailing_stop_percentage}%`;
+                realized_pnl = (entry_price - current_price) * qty;
+                console.log(`🛑 ${position.symbol} SELL: Trailing stop acionado! Min: $${updatedHighestPrice.toFixed(2)} → Atual: $${current_price.toFixed(2)}`);
+              }
+            }
+          }
+
+          // Verificar Stop Loss tradicional (apenas se não foi trailing)
+          if (stop_loss && !shouldClose) {
+            if (side === 'BUY' && current_price <= stop_loss) {
               shouldClose = true;
               closeReason = 'Stop Loss Atingido';
-            } else if (action === 'SELL' && current_price >= stop_loss) {
+              realized_pnl = (current_price - entry_price) * qty;
+            } else if (side === 'SELL' && current_price >= stop_loss) {
               shouldClose = true;
               closeReason = 'Stop Loss Atingido';
+              realized_pnl = (entry_price - current_price) * qty;
             }
           }
 
           // Verificar Take Profit
           if (take_profit && !shouldClose) {
-            if (action === 'BUY' && current_price >= take_profit) {
+            if (side === 'BUY' && current_price >= take_profit) {
               shouldClose = true;
               closeReason = 'Take Profit Atingido';
-            } else if (action === 'SELL' && current_price <= take_profit) {
+              realized_pnl = (current_price - entry_price) * qty;
+            } else if (side === 'SELL' && current_price <= take_profit) {
               shouldClose = true;
               closeReason = 'Take Profit Atingido';
+              realized_pnl = (entry_price - current_price) * qty;
             }
           }
 
-          // Implementar Trailing Stop
-          if (position.trailing_stop_percentage && !shouldClose) {
-            const trailingStopKey = id;
-            let highestPrice = trailingStopPrices.current.get(trailingStopKey) || entry_price;
-
-            if (action === 'BUY') {
-              // Atualizar highest price se necessário
-              if (current_price > highestPrice) {
-                highestPrice = current_price;
-                trailingStopPrices.current.set(trailingStopKey, highestPrice);
-              }
-
-              // Calcular trailing stop
-              const trailingStopPrice = highestPrice * (1 - position.trailing_stop_percentage / 100);
-              
-              if (current_price <= trailingStopPrice) {
-                shouldClose = true;
-                closeReason = 'Trailing Stop Acionado';
-                realized_pnl = (current_price - entry_price) * position.quantity;
-              }
-            } else if (action === 'SELL') {
-              // Para vendas, acompanhar o preço mais baixo
-              if (current_price < highestPrice) {
-                highestPrice = current_price;
-                trailingStopPrices.current.set(trailingStopKey, highestPrice);
-              }
-
-              const trailingStopPrice = highestPrice * (1 + position.trailing_stop_percentage / 100);
-              
-              if (current_price >= trailingStopPrice) {
-                shouldClose = true;
-                closeReason = 'Trailing Stop Acionado';
-                realized_pnl = (entry_price - current_price) * position.quantity;
-              }
-            }
-          }
-
-          // Fechar posição se necessário
+          // 🔥 FECHAR POSIÇÃO AUTOMATICAMENTE
           if (shouldClose) {
+            console.log(`💰 Fechando ${position.symbol} ${side}: ${closeReason} | P&L: $${realized_pnl.toFixed(2)}`);
+            
+            // Atualizar no banco
             const { error: closeError } = await supabase
               .from('auto_trader_positions')
               .update({
                 status: 'CLOSED',
                 closed_at: new Date().toISOString(),
                 close_reason: closeReason,
-                realized_pnl,
+                exit_price: exit_price,
+                realized_pnl: realized_pnl,
               })
               .eq('id', id);
 
             if (!closeError) {
-              // Log do fechamento
+              // Criar log
               const { data: { user } } = await supabase.auth.getUser();
               if (user) {
-                await supabase.from('auto_trader_logs').insert([{
+                await supabase.from('auto_trader_logs').insert({
                   user_id: user.id,
-                  log_type: 'AUTO_CLOSE' as any,
+                  log_type: 'AUTO_CLOSE',
                   position_id: id,
                   symbol: position.symbol,
-                  message: `Fechamento automático: ${closeReason}`,
-                  metadata: { pnl: realized_pnl, reason: closeReason, price: current_price } as any,
-                }]);
+                  message: `${closeReason} - Entry: $${entry_price.toFixed(2)} → Exit: $${exit_price.toFixed(2)}`,
+                  metadata: { 
+                    pnl: realized_pnl, 
+                    reason: closeReason, 
+                    entry_price,
+                    exit_price,
+                    highest_price: updatedHighestPrice
+                  },
+                });
               }
 
               // Notificação
+              const isProfitable = realized_pnl > 0;
               toast({
-                title: realized_pnl > 0 ? "🎯 Lucro garantido!" : "⚠️ Posição fechada",
-                description: `${position.symbol}: ${closeReason} - P&L: $${realized_pnl.toFixed(2)}`,
-                variant: realized_pnl > 0 ? "default" : "destructive",
+                title: isProfitable ? "🎯 Lucro Garantido!" : "⚠️ Posição Fechada",
+                description: `${position.symbol}: ${closeReason}\nP&L: ${isProfitable ? '+' : ''}$${realized_pnl.toFixed(2)}`,
+                variant: isProfitable ? "default" : "destructive",
               });
-
-              // Limpar trailing stop armazenado
-              trailingStopPrices.current.delete(id);
             }
           }
         }
