@@ -16,6 +16,8 @@ import { TrailingStopConfig } from "@/components/TrailingStopConfig";
 import { AdvancedPerformanceMetrics } from "@/components/AdvancedPerformanceMetrics";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { CorrelationHeatmap } from "@/components/CorrelationHeatmap";
+import { VolatilityDashboard } from "@/components/VolatilityDashboard";
+import { ActiveTradesPanel } from "@/components/ActiveTradesPanel";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -48,10 +50,11 @@ const Index = () => {
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-10">
+            <TabsList className="grid w-full grid-cols-11">
               <TabsTrigger value="trader">Auto Trader</TabsTrigger>
               <TabsTrigger value="tradingview">TradingView</TabsTrigger>
               <TabsTrigger value="positions">Posições</TabsTrigger>
+              <TabsTrigger value="volatility">Volatilidade</TabsTrigger>
               <TabsTrigger value="correlation">Correlação</TabsTrigger>
               <TabsTrigger value="trailing">Trailing Stop</TabsTrigger>
               <TabsTrigger value="history">Histórico</TabsTrigger>
@@ -63,6 +66,7 @@ const Index = () => {
             
             <TabsContent value="trader" className="space-y-8">
               <MultiAssetTrader />
+              <ActiveTradesPanel />
               <OpenPositionsMonitor />
               <div className="pt-8 border-t border-border">
                 <h3 className="text-lg font-semibold mb-4">Trader Clássico</h3>
@@ -81,7 +85,14 @@ const Index = () => {
             </TabsContent>
             
             <TabsContent value="positions">
-              <OpenPositionsMonitor />
+              <ActiveTradesPanel />
+              <div className="mt-8">
+                <OpenPositionsMonitor />
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="volatility">
+              <VolatilityDashboard />
             </TabsContent>
             
             <TabsContent value="correlation">
