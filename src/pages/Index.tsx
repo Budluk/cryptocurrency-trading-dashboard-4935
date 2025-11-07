@@ -14,30 +14,12 @@ import { ActiveTradesPanel } from "@/components/ActiveTradesPanel";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { usePositionMonitor } from "@/hooks/usePositionMonitor";
-import { usePriceUpdater } from "@/hooks/usePriceUpdater";
-import { useSuspiciousPatternDetector } from "@/hooks/useSuspiciousPatternDetector";
-import { useReversalMonitor } from "@/hooks/useReversalMonitor";
-import { useBybitSync } from "@/hooks/useBybitSync";
+import { useRealtimePrice } from "@/hooks/useRealtimePrice";
 import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 const Index = () => {
-  const { patterns } = useSuspiciousPatternDetector();
-  
-  // Filtrar apenas padrões de reversão de alta severidade
-  const reversalPatterns = patterns
-    .filter(p => p.type === 'REVERSAL_SIGNAL' && p.severity === 'HIGH')
-    .map(p => ({
-      symbol: p.symbol,
-      direction: p.reversal_direction!,
-      severity: p.severity as 'HIGH' | 'MEDIUM',
-      timestamp: p.detected_at,
-    }));
-
-  usePositionMonitor(reversalPatterns);
-  useReversalMonitor(reversalPatterns);
-  usePriceUpdater();
-  useBybitSync(true); // Sincronizar com Bybit a cada 30 segundos
+  // Hook para preços em tempo real
+  useRealtimePrice();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">

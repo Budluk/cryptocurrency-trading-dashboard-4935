@@ -175,7 +175,7 @@ export const MultiAssetTrader = () => {
     }
   };
 
-  // 📊 SINCRONIZAR POSIÇÕES ABERTAS E IMPORTAR PARA O BANCO
+  // 📊 SINCRONIZAR POSIÇÕES ABERTAS DA BYBIT
   const syncOpenPositions = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
@@ -194,58 +194,6 @@ export const MultiAssetTrader = () => {
         const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
         setOpenPositionsCount(openPositions.length);
         console.log(`📈 Posições Bybit: ${openPositions.length}`);
-
-        // 🔄 IMPORTAR POSIÇÕES QUE NÃO EXISTEM NO BANCO
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        // Buscar posições já existentes no banco
-        const { data: dbPositions } = await supabase
-          .from('auto_trader_positions')
-          .select('symbol, side')
-          .eq('status', 'OPEN')
-          .eq('user_id', user.id);
-
-        const existingPositions = new Set(
-          (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
-        );
-
-        // Importar posições da Bybit que não estão no banco
-        for (const position of openPositions) {
-          const symbol = position.symbol;
-          const side = position.side;
-          const posKey = `${symbol}-${side}`;
-
-          if (!existingPositions.has(posKey)) {
-            const entryPrice = parseFloat(position.avgPrice);
-            const qty = parseFloat(position.size);
-            const leverage = parseInt(position.leverage);
-            const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
-            const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
-            const currentPrice = parseFloat(position.markPrice);
-            const unrealizedPnl = parseFloat(position.unrealisedPnl);
-
-            console.log(`💾 Importando posição: ${symbol} ${side} @ ${entryPrice}`);
-
-            await supabase.from('auto_trader_positions').insert({
-              user_id: user.id,
-              symbol: symbol,
-              side: side,
-              qty: qty,
-              entry_price: entryPrice,
-              current_price: currentPrice,
-              highest_price: side === 'Buy' ? currentPrice : currentPrice,
-              stop_loss: stopLoss,
-              take_profit: takeProfit,
-              leverage: leverage,
-              status: 'OPEN',
-              confidence: 85, // Estimado para posições importadas
-              trailing_stop_percentage: 1.5,
-              unrealized_pnl: unrealizedPnl,
-              opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
-            });
-          }
-        }
       }
     } catch (error) {
       console.error('Erro ao sincronizar posições:', error);
@@ -258,18 +206,8 @@ export const MultiAssetTrader = () => {
       await syncBybitBalance();
       await syncOpenPositions();
 
-      // Contar posições ABERTAS no BANCO (não da Bybit)
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: dbPositions, error: dbError } = await supabase
-        .from('auto_trader_positions')
-        .select('id', { count: 'exact' })
-        .eq('status', 'OPEN')
-        .eq('user_id', user.id);
-
-      const dbOpenCount = dbPositions?.length || 0;
-      console.log(`📊 Posições ABERTAS no banco: ${dbOpenCount}/${MAX_OPEN_POSITIONS}`);
+      // Contar posições abertas diretamente da Bybit (sem banco)
+      console.log(`📊 Posições abertas na Bybit: ${openPositionsCount}/${MAX_OPEN_POSITIONS}`);
 
       // 🛡️ VERIFICAR PROTEÇÕES
       if (dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT) {
@@ -294,8 +232,8 @@ export const MultiAssetTrader = () => {
         return;
       }
 
-      if (dbOpenCount >= MAX_OPEN_POSITIONS) {
-        console.log('📊 Máximo de posições abertas atingido no banco');
+      if (openPositionsCount >= MAX_OPEN_POSITIONS) {
+        console.log('📊 Máximo de posições abertas atingido');
         return;
       }
 
@@ -320,7 +258,7 @@ export const MultiAssetTrader = () => {
         return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
       });
 
-      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${dbOpenCount}/${MAX_OPEN_POSITIONS})`);
+      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${MAX_OPEN_POSITIONS})`);
 
       // 2. Buscar ticker de cada ativo para análise de volume e volatilidade
       const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
@@ -571,70 +509,23 @@ export const MultiAssetTrader = () => {
             });
 
             if (!orderError && orderData?.success) {
+              console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)}`);
+              
               const trade: Trade = {
                 symbol,
                 action,
-                confidence: signalScore, // Usar score real do sinal
+                confidence: signalScore,
                 leverage,
                 usdSize,
                 timestamp: new Date().toISOString()
               };
 
               setActiveTrades(prev => [...prev.slice(-19), trade]);
-              
-              // 💾 SALVAR POSIÇÃO NA TABELA PARA MONITORAMENTO AUTOMÁTICO
-              try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                  const { data: insertedPosition } = await supabase.from('auto_trader_positions').insert({
-                    user_id: user.id,
-                    symbol: symbol,
-                    side: action === 'BUY' ? 'Buy' : 'Sell', // Corrigir formato
-                    qty: qty,
-                    entry_price: currentPrice,
-                    current_price: currentPrice,
-                    highest_price: currentPrice, // Iniciar com preço de entrada
-                    stop_loss: parseFloat(stopLoss),
-                    take_profit: parseFloat(takeProfit),
-                    leverage: leverage,
-                    status: 'OPEN',
-                    confidence: signalScore,
-                    trailing_stop_percentage: 1.5, // 1.5% trailing stop padrão
-                    unrealized_pnl: 0,
-                    exchange_order_id: orderData.data?.orderId,
-                    opened_at: new Date().toISOString()
-                  }).select().single();
-                  
-                  console.log(`💾 Posição salva no banco: ${symbol} ${action} @ ${currentPrice}`);
-
-                  // 🔄 COPY TRADING: Notificar seguidores sobre novo trade
-                  try {
-                    await supabase.functions.invoke('copy-trading-sync', {
-                      body: {
-                        trader_user_id: user.id,
-                        symbol,
-                        side: action,
-                        qty,
-                        entry_price: currentPrice,
-                        stop_loss: parseFloat(stopLoss),
-                        take_profit: parseFloat(takeProfit),
-                        leverage,
-                        confidence: signalScore,
-                      }
-                    });
-                    console.log('✅ Copy trading sync enviado');
-                  } catch (copyError) {
-                    console.error('⚠️ Erro no copy trading sync:', copyError);
-                    // Não bloquear o trade principal por falha no copy
-                  }
-                }
-              } catch (dbError) {
-                console.error('Erro ao salvar posição no DB:', dbError);
-              }
+              setOpenPositionsCount(prev => prev + 1);
               
               toast({
-                title: "✅ Ordem Executada",
-                description: `${symbol} ${action} - Qty: ${qty} - Valor: $${orderValueUSD} | 🎯 Trailing Stop: 1.5%`,
+                title: `✅ Trade Executado: ${symbol}`,
+                description: `${action} | Leverage: ${leverage}x | Risco: $${usdSize.toFixed(2)} | Score: ${signalScore}`,
               });
             } else {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError);
