@@ -18,6 +18,7 @@ import { usePositionMonitor } from "@/hooks/usePositionMonitor";
 import { usePriceUpdater } from "@/hooks/usePriceUpdater";
 import { useSuspiciousPatternDetector } from "@/hooks/useSuspiciousPatternDetector";
 import { useReversalMonitor } from "@/hooks/useReversalMonitor";
+import { useBybitSync } from "@/hooks/useBybitSync";
 import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 const Index = () => {
@@ -36,6 +37,7 @@ const Index = () => {
   usePositionMonitor(reversalPatterns);
   useReversalMonitor(reversalPatterns);
   usePriceUpdater();
+  useBybitSync(true); // Sincronizar com Bybit a cada 30 segundos
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
