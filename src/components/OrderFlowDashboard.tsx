@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, ArrowDownCircle, Activity, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowUpCircle, ArrowDownCircle, Activity, AlertTriangle, Bell, BellOff } from "lucide-react";
+import { useWebNotifications } from "@/hooks/useWebNotifications";
+import { toast } from "sonner";
 
 interface OrderFlowData {
   symbol: string;
@@ -25,6 +28,9 @@ interface OrderFlowData {
 export function OrderFlowDashboard() {
   const [flowData, setFlowData] = useState<OrderFlowData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const { permission, isSupported, requestPermission, sendNotification } = useWebNotifications();
+  const previousOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const projectRef = 'uohdpxkfgxmtlosnmspf';
@@ -44,6 +50,45 @@ export function OrderFlowDashboard() {
       
       if (message.type === 'order_flow_update') {
         setFlowData(message.data);
+        
+        // Check for new large institutional orders and send notifications
+        if (notificationsEnabled && permission === 'granted') {
+          message.data.forEach((data: OrderFlowData) => {
+            data.large_orders.forEach((order) => {
+              if (order.is_institutional) {
+                const orderId = `${data.symbol}-${order.value_usd}-${order.side}`;
+                
+                // Only notify for new orders
+                if (!previousOrdersRef.current.has(orderId)) {
+                  previousOrdersRef.current.add(orderId);
+                  
+                  const emoji = order.side === 'BUY' ? '🟢' : '🔴';
+                  const action = order.side === 'BUY' ? 'COMPRA' : 'VENDA';
+                  
+                  sendNotification(
+                    `${emoji} Ordem Institucional Detectada`,
+                    {
+                      body: `${action} de ${formatVolume(order.value_usd)} em ${data.symbol}\nImpacto: ${order.impact_score.toFixed(1)}%`,
+                      tag: orderId,
+                      requireInteraction: true,
+                    }
+                  );
+                  
+                  toast.success(
+                    `Ordem institucional detectada: ${action} de ${formatVolume(order.value_usd)} em ${data.symbol}`,
+                    { duration: 5000 }
+                  );
+                }
+              }
+            });
+          });
+          
+          // Clean up old order IDs (keep only last 100)
+          if (previousOrdersRef.current.size > 100) {
+            const entries = Array.from(previousOrdersRef.current);
+            previousOrdersRef.current = new Set(entries.slice(-100));
+          }
+        }
       } else if (message.type === 'error') {
         console.error('Order Flow Error:', message.message);
       }
@@ -81,6 +126,29 @@ export function OrderFlowDashboard() {
     return `$${(volume / 1000).toFixed(0)}K`;
   };
 
+  const handleToggleNotifications = async () => {
+    if (!notificationsEnabled) {
+      // Enable notifications
+      if (permission === 'default') {
+        const granted = await requestPermission();
+        if (granted) {
+          setNotificationsEnabled(true);
+          toast.success('Notificações de grandes ordens ativadas!');
+        }
+      } else if (permission === 'granted') {
+        setNotificationsEnabled(true);
+        toast.success('Notificações de grandes ordens ativadas!');
+      } else {
+        toast.error('Permissão para notificações foi negada. Verifique as configurações do navegador.');
+      }
+    } else {
+      // Disable notifications
+      setNotificationsEnabled(false);
+      previousOrdersRef.current.clear();
+      toast.info('Notificações de grandes ordens desativadas');
+    }
+  };
+
   return (
     <Card className="border-primary/20">
       <CardHeader>
@@ -94,9 +162,31 @@ export function OrderFlowDashboard() {
               Detecção de movimentações institucionais em tempo real
             </CardDescription>
           </div>
-          <Badge variant={isConnected ? "default" : "secondary"}>
-            {isConnected ? '🟢 Live' : '🔴 Offline'}
-          </Badge>
+          <div className="flex items-center gap-3">
+            {isSupported && (
+              <Button
+                variant={notificationsEnabled ? "default" : "outline"}
+                size="sm"
+                onClick={handleToggleNotifications}
+                className="gap-2"
+              >
+                {notificationsEnabled ? (
+                  <>
+                    <Bell className="h-4 w-4" />
+                    Notificações On
+                  </>
+                ) : (
+                  <>
+                    <BellOff className="h-4 w-4" />
+                    Notificações Off
+                  </>
+                )}
+              </Button>
+            )}
+            <Badge variant={isConnected ? "default" : "secondary"}>
+              {isConnected ? '🟢 Live' : '🔴 Offline'}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
