@@ -38,7 +38,7 @@ export const FloatingPositionsWidget = () => {
       if (error) throw error;
       return data as Position[];
     },
-    refetchInterval: 5000,
+    refetchInterval: 15000, // Otimizado de 5s para 15s
   });
 
   // Realtime updates

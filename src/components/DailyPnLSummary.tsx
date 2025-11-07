@@ -50,7 +50,7 @@ export const DailyPnLSummary = () => {
         totalRealized: totalRealized + currentUnrealized,
       };
     },
-    refetchInterval: 10000,
+    refetchInterval: 20000, // Otimizado de 10s para 20s
   });
 
   const getDailyColor = (value: number) => {

@@ -63,6 +63,42 @@ export const MultiAssetTrader = () => {
     fetchWinRate();
   }, [cycleCount]);
 
+  // 💾 RESTAURAR ESTADO AUTOMATICAMENTE AO CARREGAR
+  useEffect(() => {
+    const restoreTraderState = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: config } = await supabase
+        .from('auto_trader_config')
+        .select('trader_is_running, last_activity_at')
+        .eq('user_id', user.id)
+        .single();
+
+      if (config?.trader_is_running) {
+        const lastActivity = new Date(config.last_activity_at || Date.now()).getTime();
+        const now = Date.now();
+        const fiveMinutes = 5 * 60 * 1000;
+
+        if (now - lastActivity < fiveMinutes) {
+          console.log('🔄 Restaurando trader automaticamente...');
+          setIsRunning(true);
+          toast({
+            title: "🔄 Trader Restaurado",
+            description: "Suas operações continuam automaticamente",
+          });
+        } else {
+          await supabase
+            .from('auto_trader_config')
+            .update({ trader_is_running: false })
+            .eq('user_id', user.id);
+        }
+      }
+    };
+
+    restoreTraderState();
+  }, []);
+
   // Estratégia de alavancagem baseada no bankroll E win rate
   const getLeverageForBalance = (balance: number, winRate: number) => {
     // Base de alavancagem pelo saldo
@@ -556,15 +592,16 @@ export const MultiAssetTrader = () => {
     }
   };
 
-  // Sincronizar saldo a cada 30 segundos quando ativo
+  // Sincronizar saldo a cada 30 segundos quando ativo (OTIMIZADO)
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
 
     if (isRunning) {
+      // Sincronização menos frequente para melhor performance
       syncInterval = setInterval(() => {
         syncBybitBalance();
         syncOpenPositions();
-      }, 30 * 1000);
+      }, 60 * 1000); // Mudado de 30s para 60s
     }
 
     return () => {
@@ -574,6 +611,7 @@ export const MultiAssetTrader = () => {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
+    let activityInterval: NodeJS.Timeout;
 
     if (isRunning) {
       console.log("🤖 Multi-Asset Trader iniciado - Operação 24/7");
@@ -581,14 +619,26 @@ export const MultiAssetTrader = () => {
       // Executar imediatamente
       analyzeAndTrade();
       
-      // Depois repetir a cada 45 segundos (operação 24h mais agressiva)
+      // Ciclo principal de trading a cada 60 segundos (otimizado de 45s)
       interval = setInterval(() => {
         analyzeAndTrade();
-      }, 45 * 1000);
+      }, 60 * 1000);
+
+      // Atualizar timestamp de atividade a cada 2 minutos
+      activityInterval = setInterval(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from('auto_trader_config')
+            .update({ last_activity_at: new Date().toISOString() })
+            .eq('user_id', user.id);
+        }
+      }, 2 * 60 * 1000);
     }
 
     return () => {
       if (interval) clearInterval(interval);
+      if (activityInterval) clearInterval(activityInterval);
     };
   }, [isRunning, currentBalance, isTestnet]);
 
@@ -616,6 +666,19 @@ export const MultiAssetTrader = () => {
     await syncOpenPositions();
 
     setIsRunning(true);
+
+    // 💾 SALVAR ESTADO NO BANCO
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase
+        .from('auto_trader_config')
+        .upsert({
+          user_id: user.id,
+          trader_is_running: true,
+          last_activity_at: new Date().toISOString(),
+        });
+    }
+
     toast({
       title: "⚡ TRADER REAL 24/7 ATIVADO",
       description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance, historicalWinRate)}x | Win Rate: ${historicalWinRate.toFixed(0)}%
@@ -623,12 +686,26 @@ export const MultiAssetTrader = () => {
 🎯 Fechamento Progressivo:
 • 25% em +1% de lucro
 • 25% em +2% (Stop → Breakeven)
-• 50% livre com Trailing Stop`,
+• 50% livre com Trailing Stop
+🔄 Restauração automática habilitada`,
     });
   };
 
-  const stopTrading = () => {
+  const stopTrading = async () => {
     setIsRunning(false);
+
+    // 💾 SALVAR ESTADO NO BANCO
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase
+        .from('auto_trader_config')
+        .update({
+          trader_is_running: false,
+          last_activity_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+    }
+
     toast({
       title: "⏸️ Trader pausado",
       description: `P&L Total: $${totalPnL.toFixed(2)}`,
@@ -827,7 +904,7 @@ export const MultiAssetTrader = () => {
               <div className="flex items-center gap-3">
                 <span className="text-green-500 font-semibold animate-pulse">● OPERANDO</span>
                 <span className="text-xs text-muted-foreground">
-                  Ciclo: {cycleCount} | Próx: 45s | 24/7
+                  Ciclo: {cycleCount} | Próx: 60s | 24/7 | Auto-restaura
                 </span>
               </div>
               <span className="text-xs">

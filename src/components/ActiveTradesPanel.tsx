@@ -27,7 +27,7 @@ export const ActiveTradesPanel = () => {
       console.log('📊 Posições abertas carregadas:', data?.length || 0);
       return data;
     },
-    refetchInterval: 5000, // Atualizar a cada 5 segundos
+    refetchInterval: 10000, // Otimizado de 5s para 10s
   });
 
   const closePosition = async (positionId: string, symbol: string) => {

@@ -109,6 +109,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          last_activity_at: string | null
           leverage_max: number
           max_consecutive_losses: number
           min_balance: number
@@ -116,6 +117,7 @@ export type Database = {
           min_qty: number
           reinvest_profit_pct: number
           risk_per_trade: number
+          trader_is_running: boolean
           updated_at: string
           user_id: string
         }
@@ -123,6 +125,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_activity_at?: string | null
           leverage_max?: number
           max_consecutive_losses?: number
           min_balance?: number
@@ -130,6 +133,7 @@ export type Database = {
           min_qty?: number
           reinvest_profit_pct?: number
           risk_per_trade?: number
+          trader_is_running?: boolean
           updated_at?: string
           user_id: string
         }
@@ -137,6 +141,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_activity_at?: string | null
           leverage_max?: number
           max_consecutive_losses?: number
           min_balance?: number
@@ -144,6 +149,7 @@ export type Database = {
           min_qty?: number
           reinvest_profit_pct?: number
           risk_per_trade?: number
+          trader_is_running?: boolean
           updated_at?: string
           user_id?: string
         }
