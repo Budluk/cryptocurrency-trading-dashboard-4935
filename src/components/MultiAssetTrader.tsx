@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
@@ -580,7 +580,12 @@ export const MultiAssetTrader = () => {
     setIsRunning(true);
     toast({
       title: "⚡ TRADER REAL 24/7 ATIVADO",
-      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance, historicalWinRate)}x | Win Rate: ${historicalWinRate.toFixed(0)}% | Ciclo: 2min`,
+      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance, historicalWinRate)}x | Win Rate: ${historicalWinRate.toFixed(0)}%
+      
+🎯 Fechamento Progressivo:
+• 25% em +1% de lucro
+• 25% em +2% (Stop → Breakeven)
+• 50% livre com Trailing Stop`,
     });
   };
 
@@ -661,6 +666,17 @@ export const MultiAssetTrader = () => {
             <div className="text-xl font-bold">{openPositionsCount}/{MAX_OPEN_POSITIONS}</div>
             <div className="text-xs text-muted-foreground">
               Abertas | {activeTrades.length} total
+            </div>
+          </Card>
+
+          <Card className="p-4 bg-background/50">
+            <div className="flex items-center gap-2 mb-1">
+              <Target className="h-4 w-4 text-green-500" />
+              <span className="text-xs text-muted-foreground">Sistema de Saída</span>
+            </div>
+            <div className="text-sm font-semibold text-green-500">Progressivo</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              25% +1% | 25% +2% | 50% trailing
             </div>
           </Card>
 

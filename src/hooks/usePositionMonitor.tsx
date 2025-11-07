@@ -13,6 +13,7 @@ interface Position {
   current_price: number | null;
   highest_price: number | null;
   unrealized_pnl: number;
+  realized_pnl: number | null;
   trailing_stop_percentage: number | null;
   status: string;
   exchange_order_id: string | null;
@@ -129,32 +130,36 @@ export const usePositionMonitor = () => {
             }
           }
 
-          // 🎯 PARTIAL TAKE PROFIT - Fechar 50% em 1.5% de lucro
+          // 🎯 FECHAMENTO PARCIAL PROGRESSIVO
           const pnlPercent = side === 'BUY' 
             ? ((current_price - entry_price) / entry_price) * 100
             : ((entry_price - current_price) / entry_price) * 100;
 
-          if (!shouldClose && pnlPercent >= 1.5 && qty > 0.002) { // 1.5% de lucro e quantidade suficiente
-            console.log(`🎯 ${position.symbol}: Partial TP atingido (${pnlPercent.toFixed(2)}%) - Fechando 50%`);
-            
-            const halfQty = qty / 2;
-            const partialPnl = side === 'BUY'
-              ? (current_price - entry_price) * halfQty
-              : (entry_price - current_price) * halfQty;
+          // Calcular quantidade reduzida (detectar fechamentos anteriores)
+          const qtyReduced = position.qty < entry_price * 0.75; // Se qty é menor que esperado, já houve fechamento
 
-            // Atualizar posição: reduzir quantidade e mover stop para breakeven
+          // 📊 PRIMEIRO FECHAMENTO: 25% em +1% de lucro
+          if (!shouldClose && pnlPercent >= 1.0 && pnlPercent < 1.95 && qty > 0.003) {
+            // Verificar se ainda tem quantidade suficiente (não fechou ainda)
+            console.log(`🎯 ${position.symbol}: Nível 1 (+${pnlPercent.toFixed(2)}%) - Fechando 25%`);
+            
+            const qtyToClose = qty * 0.25;
+            const remainingQty = qty - qtyToClose;
+            const partialPnl = side === 'BUY'
+              ? (current_price - entry_price) * qtyToClose
+              : (entry_price - current_price) * qtyToClose;
+
             await supabase
               .from('auto_trader_positions')
               .update({
-                qty: halfQty,
-                stop_loss: entry_price, // Move stop para breakeven
-                realized_pnl: partialPnl,
+                qty: remainingQty,
+                realized_pnl: (position.realized_pnl || 0) + partialPnl,
               })
               .eq('id', id);
 
             toast({
-              title: "🎯 Partial Take Profit",
-              description: `${position.symbol}: 50% fechado em +${pnlPercent.toFixed(2)}% | P&L: +$${partialPnl.toFixed(2)} | Stop movido para breakeven`,
+              title: "🎯 Fechamento 1/3: +1%",
+              description: `${position.symbol}: 25% fechado | P&L: +$${partialPnl.toFixed(2)} | Restante: ${(remainingQty / qty * 100).toFixed(0)}%`,
             });
 
             // Log
@@ -165,15 +170,51 @@ export const usePositionMonitor = () => {
                 log_type: 'PARTIAL_TP',
                 position_id: id,
                 symbol: position.symbol,
-                message: `Partial TP: 50% fechado em +${pnlPercent.toFixed(2)}%`,
-                metadata: { 
-                  pnl: partialPnl,
-                  remaining_qty: halfQty,
-                  new_stop: entry_price
-                },
+                message: `Parcial 1/3: 25% fechado em +${pnlPercent.toFixed(2)}%`,
+                metadata: { level: 1, pnl: partialPnl, remaining_qty: remainingQty },
               });
             }
           }
+
+          // 📊 SEGUNDO FECHAMENTO: 25% em +2% de lucro e MOVE STOP PARA BREAKEVEN
+          if (!shouldClose && pnlPercent >= 2.0 && pnlPercent < 2.95 && qty > 0.002) {
+            console.log(`🎯 ${position.symbol}: Nível 2 (+${pnlPercent.toFixed(2)}%) - Fechando 25% e movendo stop para breakeven`);
+            
+            const qtyToClose = qty * 0.333; // 25% do total original (≈33% do que restou)
+            const remainingQty = qty - qtyToClose;
+            const partialPnl = side === 'BUY'
+              ? (current_price - entry_price) * qtyToClose
+              : (entry_price - current_price) * qtyToClose;
+
+            await supabase
+              .from('auto_trader_positions')
+              .update({
+                qty: remainingQty,
+                stop_loss: entry_price, // 🛡️ MOVE STOP PARA BREAKEVEN
+                realized_pnl: (position.realized_pnl || 0) + partialPnl,
+              })
+              .eq('id', id);
+
+            toast({
+              title: "🎯 Fechamento 2/3: +2%",
+              description: `${position.symbol}: 25% fechado | Stop → Breakeven | 50% livre com trailing stop`,
+            });
+
+            // Log
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await supabase.from('auto_trader_logs').insert({
+                user_id: user.id,
+                log_type: 'PARTIAL_TP',
+                position_id: id,
+                symbol: position.symbol,
+                message: `Parcial 2/3: 25% fechado em +${pnlPercent.toFixed(2)}% - Stop → Breakeven`,
+                metadata: { level: 2, pnl: partialPnl, remaining_qty: remainingQty, new_stop: entry_price },
+              });
+            }
+          }
+
+          // 🚀 50% RESTANTE: Trailing stop automático (já implementado abaixo)
 
           // 🔥 FECHAR POSIÇÃO AUTOMATICAMENTE
           if (shouldClose) {

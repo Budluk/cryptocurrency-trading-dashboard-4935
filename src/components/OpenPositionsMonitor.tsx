@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { TrendingUp, TrendingDown, X, Target, ShieldAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ProgressiveClosureIndicator } from "./ProgressiveClosureIndicator";
 
 interface Position {
   id: string;
@@ -257,6 +258,18 @@ export const OpenPositionsMonitor = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Indicador de Fechamento Progressivo */}
+                {position.current_price && (
+                  <div className="mb-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                    <ProgressiveClosureIndicator
+                      entryPrice={position.entry_price}
+                      currentPrice={position.current_price}
+                      side={position.side}
+                      qty={position.qty}
+                    />
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between pt-3 border-t border-border">
                   <div>
