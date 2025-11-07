@@ -14,12 +14,13 @@ interface LargeOrder {
 
 interface SuspiciousPattern {
   id: string;
-  type: 'CLUSTER_ORDERS' | 'PRE_MOVEMENT';
+  type: 'CLUSTER_ORDERS' | 'PRE_MOVEMENT' | 'REVERSAL_SIGNAL';
   symbol: string;
   description: string;
   severity: 'HIGH' | 'MEDIUM' | 'LOW';
   orders: LargeOrder[];
   detected_at: number;
+  reversal_direction?: 'BULLISH' | 'BEARISH';
 }
 
 interface PatternAlertsPanelProps {
@@ -55,6 +56,8 @@ export function PatternAlertsPanel({ patterns }: PatternAlertsPanelProps) {
         return 'Cluster de Ordens';
       case 'PRE_MOVEMENT':
         return 'Ordem Pré-Movimento';
+      case 'REVERSAL_SIGNAL':
+        return 'Sinal de Reversão';
       default:
         return 'Padrão Suspeito';
     }

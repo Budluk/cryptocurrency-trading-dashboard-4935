@@ -16,10 +16,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
 import { usePriceUpdater } from "@/hooks/usePriceUpdater";
+import { useSuspiciousPatternDetector } from "@/hooks/useSuspiciousPatternDetector";
+import { useReversalMonitor } from "@/hooks/useReversalMonitor";
 import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 const Index = () => {
-  usePositionMonitor();
+  const { patterns } = useSuspiciousPatternDetector();
+  
+  // Filtrar apenas padrões de reversão de alta severidade
+  const reversalPatterns = patterns
+    .filter(p => p.type === 'REVERSAL_SIGNAL' && p.severity === 'HIGH')
+    .map(p => ({
+      symbol: p.symbol,
+      direction: p.reversal_direction!,
+      severity: p.severity as 'HIGH' | 'MEDIUM',
+      timestamp: p.detected_at,
+    }));
+
+  usePositionMonitor(reversalPatterns);
+  useReversalMonitor(reversalPatterns);
   usePriceUpdater();
 
   return (

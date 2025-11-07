@@ -2,13 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, X, Clock, Target, ShieldAlert } from "lucide-react";
+import { TrendingUp, TrendingDown, X, Clock, Target, ShieldAlert, Radio } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
+import { useRealtimePrice } from "@/hooks/useRealtimePrice";
 
 export const ActiveTradesPanel = () => {
   const { toast } = useToast();
+  const { getPrice, isConnected } = useRealtimePrice();
 
   const { data: positions, refetch } = useQuery({
     queryKey: ['active-trades-panel'],
@@ -89,7 +91,15 @@ export const ActiveTradesPanel = () => {
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-xl font-bold">Operações em Andamento</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold">Operações em Andamento</h3>
+            {isConnected && (
+              <Badge variant="outline" className="gap-1">
+                <Radio className="h-3 w-3 text-green-500 animate-pulse" />
+                Preços ao Vivo
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             {positions?.length || 0} posições ativas
           </p>
@@ -116,18 +126,26 @@ export const ActiveTradesPanel = () => {
       ) : (
         <div className="space-y-4">
           {positions.map((position) => {
-            const pnlPercentage = position.current_price 
-              ? ((position.unrealized_pnl || 0) / (position.entry_price * position.qty)) * 100
-              : 0;
+            // Tentar obter preço ao vivo da Bybit
+            const symbol = position.symbol.replace('/', '').replace('USD', 'USDT');
+            const livePrice = getPrice(symbol);
+            const displayPrice = livePrice || position.current_price || position.entry_price;
+            
+            // Recalcular P&L com preço ao vivo
+            const livePnl = position.side === 'Buy'
+              ? (displayPrice - position.entry_price) * position.qty
+              : (position.entry_price - displayPrice) * position.qty;
+            
+            const pnlPercentage = ((livePnl || 0) / (position.entry_price * position.qty)) * 100;
             
             const distanceToStop = calculateDistanceToStop(
-              position.current_price || position.entry_price,
+              displayPrice,
               position.stop_loss || 0,
               position.entry_price
             );
             
             const distanceToTarget = calculateDistanceToTarget(
-              position.current_price || position.entry_price,
+              displayPrice,
               position.take_profit || 0,
               position.entry_price
             );
@@ -181,8 +199,8 @@ export const ActiveTradesPanel = () => {
                     <p className="font-semibold">${position.entry_price.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Atual</p>
-                    <p className="font-semibold">${position.current_price?.toFixed(2) || position.entry_price.toFixed(2)}</p>
+                    <p className="text-xs text-muted-foreground">Atual {livePrice && '🟢'}</p>
+                    <p className="font-semibold">${displayPrice.toFixed(2)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Quantidade</p>
@@ -230,12 +248,12 @@ export const ActiveTradesPanel = () => {
                 {/* P&L */}
                 <div className="flex items-center justify-between pt-4 border-t border-border">
                   <div>
-                    <p className="text-xs text-muted-foreground">P&L não realizado</p>
+                    <p className="text-xs text-muted-foreground">P&L não realizado {livePrice && '(ao vivo)'}</p>
                     <p className={`text-2xl font-bold ${
-                      (position.unrealized_pnl || 0) > 0 ? 'text-green-500' : 
-                      (position.unrealized_pnl || 0) < 0 ? 'text-red-500' : 'text-muted-foreground'
+                      livePnl > 0 ? 'text-green-500' : 
+                      livePnl < 0 ? 'text-red-500' : 'text-muted-foreground'
                     }`}>
-                      ${(position.unrealized_pnl || 0).toFixed(2)}
+                      ${livePnl.toFixed(2)}
                     </p>
                   </div>
                   <div className="text-right">

@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimePrice } from "./useRealtimePrice";
 
 interface Position {
   id: string;
@@ -19,8 +20,10 @@ interface Position {
   exchange_order_id: string | null;
 }
 
-export const usePositionMonitor = () => {
+export const usePositionMonitor = (reversalPatterns: any[] = []) => {
   const { toast } = useToast();
+  const { getPrice } = useRealtimePrice();
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<number>(Date.now());
 
   useEffect(() => {
     const monitorPositions = async () => {
@@ -33,7 +36,40 @@ export const usePositionMonitor = () => {
         if (error) throw error;
         if (!positions || positions.length === 0) return;
 
-        for (const position of positions as Position[]) {
+        // Atualizar preços em tempo real antes de processar posições
+        const now = Date.now();
+        if (now - lastPriceUpdate > 5000) { // Atualizar a cada 5 segundos
+          for (const position of positions as Position[]) {
+            const symbol = position.symbol.replace('/', '').replace('USD', 'USDT');
+            const realtimePrice = getPrice(symbol);
+            
+            if (realtimePrice && realtimePrice !== position.current_price) {
+              // Calcular P&L atualizado
+              const unrealizedPnl = position.side === 'BUY'
+                ? (realtimePrice - position.entry_price) * position.qty
+                : (position.entry_price - realtimePrice) * position.qty;
+
+              await supabase
+                .from('auto_trader_positions')
+                .update({
+                  current_price: realtimePrice,
+                  unrealized_pnl: unrealizedPnl,
+                })
+                .eq('id', position.id);
+            }
+          }
+          setLastPriceUpdate(now);
+        }
+
+        // Recarregar posições com preços atualizados
+        const { data: updatedPositions } = await supabase
+          .from('auto_trader_positions')
+          .select('*')
+          .eq('status', 'OPEN');
+
+        if (!updatedPositions) return;
+
+        for (const position of updatedPositions as Position[]) {
           if (!position.current_price) continue;
 
           const { 
