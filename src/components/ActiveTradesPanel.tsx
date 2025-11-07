@@ -18,6 +18,20 @@ export const ActiveTradesPanel = () => {
     try {
       console.log('🔄 Iniciando sincronização com Bybit...');
       
+      // Verificar autenticação primeiro
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('❌ Usuário não autenticado:', userError);
+        toast({
+          title: "❌ Erro de autenticação",
+          description: "Faça login para sincronizar posições",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('✅ Usuário autenticado:', user.id);
+      
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_positions',
@@ -29,39 +43,62 @@ export const ActiveTradesPanel = () => {
         }
       });
 
+      console.log('📡 Resposta da Bybit:', { success: data?.success, error });
+
       if (error) {
         console.error('❌ Erro ao buscar posições da Bybit:', error);
+        toast({
+          title: "❌ Erro ao buscar posições",
+          description: error.message || "Erro desconhecido",
+          variant: "destructive",
+        });
         return;
       }
 
       if (!data?.success) {
-        console.error('❌ Bybit retornou erro:', data?.error);
+        console.error('❌ Bybit retornou erro:', data?.error || data);
+        toast({
+          title: "❌ Erro da Bybit",
+          description: data?.error || "Erro desconhecido",
+          variant: "destructive",
+        });
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.log('⚠️ Usuário não autenticado');
-        return;
-      }
-
-      const positions = data.data.list || [];
-      const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
+      const positions = data.data?.list || [];
+      const openPositions = positions.filter((p: any) => parseFloat(p.size || 0) > 0);
       
-      console.log(`📊 Encontradas ${openPositions.length} posições abertas na Bybit`);
+      console.log(`📊 Total de posições: ${positions.length}, Abertas: ${openPositions.length}`);
+      console.log('📋 Posições abertas:', openPositions.map((p: any) => `${p.symbol} ${p.side} ${p.size}`));
+
+      if (openPositions.length === 0) {
+        console.log('ℹ️ Nenhuma posição aberta na Bybit');
+        toast({
+          title: "ℹ️ Nenhuma posição",
+          description: "Não há posições abertas na Bybit",
+        });
+        return;
+      }
 
       // Buscar posições já existentes no banco
-      const { data: dbPositions } = await supabase
+      const { data: dbPositions, error: dbError } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side')
         .eq('status', 'OPEN')
         .eq('user_id', user.id);
+
+      if (dbError) {
+        console.error('❌ Erro ao buscar posições do banco:', dbError);
+      }
+
+      console.log(`💾 Posições no banco: ${dbPositions?.length || 0}`);
 
       const existingPositions = new Set(
         (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
       );
 
       let imported = 0;
+      let skipped = 0;
 
       // Importar posições que não estão no banco
       for (const position of openPositions) {
@@ -69,57 +106,79 @@ export const ActiveTradesPanel = () => {
         const side = position.side;
         const posKey = `${symbol}-${side}`;
 
-        if (!existingPositions.has(posKey)) {
-          const entryPrice = parseFloat(position.avgPrice);
-          const qty = parseFloat(position.size);
-          const leverage = parseInt(position.leverage);
-          const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
-          const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
-          const currentPrice = parseFloat(position.markPrice);
-          const unrealizedPnl = parseFloat(position.unrealisedPnl);
+        if (existingPositions.has(posKey)) {
+          console.log(`⏭️ Posição já existe: ${posKey}`);
+          skipped++;
+          continue;
+        }
 
-          console.log(`💾 Importando: ${symbol} ${side} - Entry: ${entryPrice} - PnL: ${unrealizedPnl}`);
+        const entryPrice = parseFloat(position.avgPrice || 0);
+        const qty = parseFloat(position.size || 0);
+        const leverage = parseInt(position.leverage || 1);
+        const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
+        const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
+        const currentPrice = parseFloat(position.markPrice || entryPrice);
+        const unrealizedPnl = parseFloat(position.unrealisedPnl || 0);
 
-          const { error: insertError } = await supabase.from('auto_trader_positions').insert({
-            user_id: user.id,
-            symbol: symbol,
-            side: side,
-            qty: qty,
-            entry_price: entryPrice,
-            current_price: currentPrice,
-            highest_price: side === 'Buy' ? currentPrice : currentPrice,
-            stop_loss: stopLoss,
-            take_profit: takeProfit,
-            leverage: leverage,
-            status: 'OPEN',
-            confidence: 85,
-            trailing_stop_percentage: 1.5,
-            unrealized_pnl: unrealizedPnl,
-            opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
+        console.log(`💾 Importando: ${symbol} ${side} - Entry: $${entryPrice} - Qty: ${qty} - PnL: $${unrealizedPnl}`);
+
+        const newPosition = {
+          user_id: user.id,
+          symbol: symbol,
+          side: side,
+          qty: qty,
+          entry_price: entryPrice,
+          current_price: currentPrice,
+          highest_price: currentPrice,
+          stop_loss: stopLoss,
+          take_profit: takeProfit,
+          leverage: leverage,
+          status: 'OPEN',
+          confidence: 85,
+          trailing_stop_percentage: 1.5,
+          unrealized_pnl: unrealizedPnl,
+          opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
+        };
+
+        console.log('📝 Dados da posição a inserir:', newPosition);
+
+        const { data: insertData, error: insertError } = await supabase
+          .from('auto_trader_positions')
+          .insert(newPosition)
+          .select();
+        
+        if (insertError) {
+          console.error(`❌ Erro ao importar ${symbol}:`, insertError);
+          toast({
+            title: "❌ Erro ao importar posição",
+            description: `${symbol}: ${insertError.message}`,
+            variant: "destructive",
           });
-          
-          if (insertError) {
-            console.error(`❌ Erro ao importar ${symbol}:`, insertError);
-          } else {
-            imported++;
-          }
+        } else {
+          console.log(`✅ Posição importada com sucesso:`, insertData);
+          imported++;
         }
       }
+
+      console.log(`📊 Resumo: ${imported} importadas, ${skipped} já existiam`);
 
       if (imported > 0) {
         toast({
           title: "✅ Posições Sincronizadas",
-          description: `${imported} posições da Bybit importadas`,
+          description: `${imported} posições importadas da Bybit`,
         });
         refetch();
-      } else {
-        console.log('✓ Todas as posições já estão sincronizadas');
+      } else if (skipped > 0) {
+        toast({
+          title: "✓ Já sincronizado",
+          description: "Todas as posições já estão no sistema",
+        });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Erro ao sincronizar:', error);
       toast({
         title: "❌ Erro na sincronização",
-        description: "Não foi possível sincronizar com a Bybit",
+        description: error?.message || "Erro desconhecido",
         variant: "destructive",
       });
     }
