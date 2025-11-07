@@ -21,6 +21,8 @@ import { ActiveTradesPanel } from "@/components/ActiveTradesPanel";
 import { CopyTradingDashboard } from "@/components/CopyTradingDashboard";
 import { TraderProfileSettings } from "@/components/TraderProfileSettings";
 import { MLAdaptiveSettings } from "@/components/MLAdaptiveSettings";
+import { SentimentDashboard } from "@/components/SentimentDashboard";
+import { PortfolioRebalancer } from "@/components/PortfolioRebalancer";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -125,8 +127,10 @@ const Index = () => {
               </div>
             </TabsContent>
             
-            <TabsContent value="analytics">
+            <TabsContent value="analytics" className="space-y-4">
               <AdvancedAnalytics />
+              <SentimentDashboard />
+              <PortfolioRebalancer />
             </TabsContent>
             
             <TabsContent value="settings" className="space-y-4">

@@ -1378,6 +1378,81 @@ export type Database = {
           },
         ]
       }
+      portfolio_rebalance_config: {
+        Row: {
+          auto_execute: boolean
+          created_at: string
+          id: string
+          is_enabled: boolean
+          max_position_drift_pct: number
+          min_correlation_threshold: number
+          rebalance_frequency: string
+          target_allocations: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_execute?: boolean
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          max_position_drift_pct?: number
+          min_correlation_threshold?: number
+          rebalance_frequency?: string
+          target_allocations?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_execute?: boolean
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          max_position_drift_pct?: number
+          min_correlation_threshold?: number
+          rebalance_frequency?: string
+          target_allocations?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      portfolio_rebalance_history: {
+        Row: {
+          created_at: string
+          executed: boolean
+          executed_at: string | null
+          id: string
+          performance_after: Json | null
+          performance_before: Json | null
+          rebalance_type: string
+          recommendations: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          executed?: boolean
+          executed_at?: string | null
+          id?: string
+          performance_after?: Json | null
+          performance_before?: Json | null
+          rebalance_type: string
+          recommendations: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          executed?: boolean
+          executed_at?: string | null
+          id?: string
+          performance_after?: Json | null
+          performance_before?: Json | null
+          rebalance_type?: string
+          recommendations?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1441,6 +1516,48 @@ export type Database = {
           updated_at?: string
           user_id?: string
           value_bet_threshold?: number
+        }
+        Relationships: []
+      }
+      sentiment_analysis: {
+        Row: {
+          analyzed_at: string
+          confidence: number
+          content: string | null
+          created_at: string
+          id: string
+          impact_prediction: Json | null
+          keywords: string[] | null
+          sentiment_score: number
+          source: string
+          symbol: string
+          url: string | null
+        }
+        Insert: {
+          analyzed_at?: string
+          confidence: number
+          content?: string | null
+          created_at?: string
+          id?: string
+          impact_prediction?: Json | null
+          keywords?: string[] | null
+          sentiment_score: number
+          source: string
+          symbol: string
+          url?: string | null
+        }
+        Update: {
+          analyzed_at?: string
+          confidence?: number
+          content?: string | null
+          created_at?: string
+          id?: string
+          impact_prediction?: Json | null
+          keywords?: string[] | null
+          sentiment_score?: number
+          source?: string
+          symbol?: string
+          url?: string | null
         }
         Relationships: []
       }

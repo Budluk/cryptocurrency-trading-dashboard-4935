@@ -14,3 +14,9 @@ verify_jwt = true
 
 [functions.copy-trading-sync]
 verify_jwt = false
+
+[functions.sentiment-analysis]
+verify_jwt = false
+
+[functions.portfolio-rebalancer]
+verify_jwt = true
