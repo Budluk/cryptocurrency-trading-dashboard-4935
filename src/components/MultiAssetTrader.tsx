@@ -38,7 +38,7 @@ export const MultiAssetTrader = () => {
 
   // PROTEÇÕES INTELIGENTES
   const DAILY_STOP_LOSS_PCT = 0.10; // -10% do bankroll
-  const MAX_OPEN_POSITIONS = 5;
+  const [maxOpenPositions, setMaxOpenPositions] = useState(5); // Agora configurável
   const MAX_CONSECUTIVE_LOSSES = 3;
   
   // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
@@ -358,7 +358,7 @@ export const MultiAssetTrader = () => {
       await syncOpenPositions();
 
       // Contar posições abertas diretamente da Bybit (sem banco)
-      console.log(`📊 Posições abertas na Bybit: ${openPositionsCount}/${MAX_OPEN_POSITIONS}`);
+      console.log(`📊 Posições abertas na Bybit: ${openPositionsCount}/${maxOpenPositions}`);
 
       // 🛡️ VERIFICAR PROTEÇÕES
       if (dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT) {
@@ -383,8 +383,18 @@ export const MultiAssetTrader = () => {
         return;
       }
 
-      if (openPositionsCount >= MAX_OPEN_POSITIONS) {
-        console.log('📊 Máximo de posições abertas atingido');
+      // 🚨 VERIFICAR LIMITE DE POSIÇÕES ABERTAS
+      if (openPositionsCount >= maxOpenPositions) {
+        console.log(`🚫 LIMITE DE POSIÇÕES: ${openPositionsCount}/${maxOpenPositions} - Aguardando fechamento de posições`);
+        
+        // Mostrar toast informativo a cada 5 ciclos
+        if (cycleCount % 5 === 0) {
+          toast({
+            title: "⚠️ Limite de Posições Atingido",
+            description: `Você tem ${openPositionsCount} posições abertas. Limite: ${maxOpenPositions}. Aguardando fechamento para novas entradas.`,
+            variant: "destructive",
+          });
+        }
         return;
       }
       
@@ -423,7 +433,7 @@ export const MultiAssetTrader = () => {
         return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
       });
 
-      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${MAX_OPEN_POSITIONS})`);
+      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
 
       // 2. Buscar ticker de cada ativo para análise de volume e volatilidade
       const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
@@ -456,7 +466,7 @@ export const MultiAssetTrader = () => {
         .sort((a, b) => b.volatility - a.volatility)
         .slice(0, 30);
       
-      console.log(`🔥 Analisando Top ${topVolatileAssets.length} ativos mais voláteis (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${MAX_OPEN_POSITIONS})`);
+      console.log(`🔥 Analisando Top ${topVolatileAssets.length} ativos mais voláteis (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
       if (topVolatileAssets.length > 0) {
         console.log(`📊 Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
       }
@@ -1315,7 +1325,7 @@ export const MultiAssetTrader = () => {
               <Zap className="h-4 w-4 text-yellow-500" />
               <span className="text-xs text-muted-foreground">Posições</span>
             </div>
-            <div className="text-xl font-bold">{openPositionsCount}/{MAX_OPEN_POSITIONS}</div>
+            <div className="text-xl font-bold">{openPositionsCount}/{maxOpenPositions}</div>
             <div className="text-xs text-muted-foreground">
               Abertas | {activeTrades.length} total
             </div>
@@ -1357,10 +1367,28 @@ export const MultiAssetTrader = () => {
           
           <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <div className="text-xs font-medium mb-1">📊 Posições Max</div>
-            <div className="text-sm">
-              <span className={openPositionsCount >= MAX_OPEN_POSITIONS ? 'text-yellow-500 font-bold' : ''}>
-                {openPositionsCount} de {MAX_OPEN_POSITIONS}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => setMaxOpenPositions(Math.max(1, maxOpenPositions - 1))}
+                disabled={isRunning}
+              >
+                -
+              </Button>
+              <span className={`text-sm font-bold ${openPositionsCount >= maxOpenPositions ? 'text-yellow-500' : ''}`}>
+                {openPositionsCount} de {maxOpenPositions}
               </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => setMaxOpenPositions(Math.min(20, maxOpenPositions + 1))}
+                disabled={isRunning}
+              >
+                +
+              </Button>
             </div>
           </div>
         </div>
@@ -1436,7 +1464,7 @@ export const MultiAssetTrader = () => {
                 </span>
               </div>
               <span className="text-xs">
-                {openPositionsCount < MAX_OPEN_POSITIONS ? '🎯 Buscando setups...' : '⏸️ Posições cheias'}
+                {openPositionsCount < maxOpenPositions ? '🎯 Buscando setups...' : '⏸️ Posições cheias'}
               </span>
             </div>
             <Progress value={100} className="h-2 animate-pulse" />
