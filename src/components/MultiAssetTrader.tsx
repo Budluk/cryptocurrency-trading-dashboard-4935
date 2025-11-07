@@ -436,20 +436,40 @@ export const MultiAssetTrader = () => {
 
       const tickers = tickerData?.data?.list || [];
       
+      // 🔥 FILTRAR APENAS OS ATIVOS MAIS VOLÁTEIS
+      const assetsWithVolatility = tradableAssets.map((instrument: any) => {
+        const ticker = tickers.find((t: any) => t.symbol === instrument.symbol);
+        const priceChange = parseFloat(ticker?.price24hPcnt || '0') * 100;
+        const volume24h = parseFloat(ticker?.turnover24h || '0');
+        
+        return {
+          instrument,
+          ticker,
+          volatility: Math.abs(priceChange),
+          priceChange,
+          volume24h
+        };
+      }).filter(a => a.volatility > 0.5 && a.volume24h > 100000); // Volatilidade mínima 0.5% e volume mínimo $100K
+      
+      // 📊 ORDENAR POR VOLATILIDADE (descendente) e pegar Top 30
+      const topVolatileAssets = assetsWithVolatility
+        .sort((a, b) => b.volatility - a.volatility)
+        .slice(0, 30);
+      
+      console.log(`🔥 Analisando Top ${topVolatileAssets.length} ativos mais voláteis (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${MAX_OPEN_POSITIONS})`);
+      if (topVolatileAssets.length > 0) {
+        console.log(`📊 Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
+      }
+      
       // 🛑 FLAG para parar processamento em caso de saldo insuficiente
       let shouldStopTrading = false;
       
-      // 3. Analisar TODOS os ativos disponíveis (não limitar a 20)
-      for (const instrument of tradableAssets) {
+      // 3. Analisar apenas os ativos mais voláteis
+      for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
 
+        const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
-        const ticker = tickers.find((t: any) => t.symbol === symbol);
-        
-        if (!ticker) continue;
-
-        const volume24h = parseFloat(ticker.turnover24h || '0');
-        const priceChange = parseFloat(ticker.price24hPcnt || '0') * 100;
         
         try {
           // ⚡ ANÁLISE TÉCNICA AVANÇADA PARA SINAIS DE QUALIDADE
