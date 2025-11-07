@@ -19,9 +19,13 @@ import { usePriceUpdater } from "@/hooks/usePriceUpdater";
 import { useSuspiciousPatternDetector } from "@/hooks/useSuspiciousPatternDetector";
 import { useReversalMonitor } from "@/hooks/useReversalMonitor";
 import { useBybitSync } from "@/hooks/useBybitSync";
-import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Settings, TrendingUp, LogOut } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 
 const Index = () => {
+  const { toast } = useToast();
   const { patterns } = useSuspiciousPatternDetector();
   
   // Filtrar apenas padrões de reversão de alta severidade
@@ -39,6 +43,14 @@ const Index = () => {
   usePriceUpdater();
   useBybitSync(true); // Sincronizar com Bybit a cada 30 segundos
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast({
+      title: "👋 Logout realizado",
+      description: "Até logo!",
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="max-w-[1600px] mx-auto p-6">
@@ -51,10 +63,16 @@ const Index = () => {
               </h1>
               <p className="text-muted-foreground mt-1">Sistema profissional de trading com IA avançada</p>
             </div>
-            <Badge variant="default" className="h-8 px-4">
-              <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
-              AO VIVO
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Badge variant="default" className="h-8 px-4">
+                <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
+                AO VIVO
+              </Badge>
+              <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+                <LogOut className="h-4 w-4" />
+                Sair
+              </Button>
+            </div>
           </div>
         </header>
         
