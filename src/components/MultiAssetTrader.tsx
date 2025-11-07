@@ -348,9 +348,9 @@ export const MultiAssetTrader = () => {
         try {
           // ⚡ ANÁLISE TÉCNICA AVANÇADA PARA SINAIS DE QUALIDADE
           
-          // 1. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE
-          const hasGoodVolume = volume24h > 1000000; // $1M mínimo
-          const hasGoodVolatility = Math.abs(priceChange) > 0.8; // 0.8% mínimo
+          // 1. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (AJUSTADAS)
+          const hasGoodVolume = volume24h > 100000; // $100K mínimo (reduzido)
+          const hasGoodVolatility = Math.abs(priceChange) > 0.3; // 0.3% mínimo (reduzido)
           
           // 2. ANÁLISE DE TENDÊNCIA (RSI-like baseado em price change)
           const isBullishTrend = priceChange > 1.5; // Subindo forte
@@ -390,25 +390,24 @@ export const MultiAssetTrader = () => {
             action = 'SELL'; // Movimento moderado
           }
           
-          // 5. FILTRO FINAL: Apenas sinais com score >= 65 e validações OK
+          // 5. FILTRO FINAL: Apenas sinais com score >= 60 e validações OK
           const shouldTrade = (
-            signalScore >= 65 &&
+            signalScore >= 60 && // Reduzido de 65 para 60
             hasGoodVolume &&
             hasGoodVolatility &&
             action !== null &&
-            currentBalance > 2 &&
-            Math.random() > 0.70 // 30% chance final para não sobrecarregar
+            currentBalance > 2
+            // ⚡ REMOVIDO Math.random() para permitir TODOS os sinais válidos
           );
 
           // 📋 MOTIVOS PARA NÃO EXECUTAR
           if (!shouldTrade && signalScore > 0) {
             let skipReason = '';
-            if (signalScore < 65) skipReason = `Score baixo (${signalScore}/65)`;
-            else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M < $1M)`;
-            else if (!hasGoodVolatility) skipReason = `Volatilidade baixa (${Math.abs(priceChange).toFixed(2)}% < 0.8%)`;
+            if (signalScore < 60) skipReason = `Score baixo (${signalScore}/60)`;
+            else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M < $0.1M)`;
+            else if (!hasGoodVolatility) skipReason = `Volatilidade baixa (${Math.abs(priceChange).toFixed(2)}% < 0.3%)`;
             else if (currentBalance <= 2) skipReason = `Saldo insuficiente ($${currentBalance.toFixed(2)})`;
             else if (action === null) skipReason = 'Sem sinal claro de entrada';
-            else skipReason = 'Filtro de frequência (evitar overtrading)';
             
             console.log(`⏭️ ${symbol} PULADO: ${skipReason}`);
           }
