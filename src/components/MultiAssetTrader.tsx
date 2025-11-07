@@ -493,6 +493,12 @@ export const MultiAssetTrader = () => {
           const isModerateBullish = priceChange > 1.0 && priceChange <= 2.0;
           const isModerateBearish = priceChange < -1.0 && priceChange >= -2.0;
           
+          // String descritiva da tendência
+          const trendStrength = isBullishTrend ? 'Alta Forte' : 
+                                 isBearishTrend ? 'Baixa Forte' :
+                                 isModerateBullish ? 'Alta Moderada' :
+                                 isModerateBearish ? 'Baixa Moderada' : 'Neutro';
+          
           // Detectar zonas de suporte/resistência
           const nearResistance = pricePosition > 0.85; // Preço próximo do topo (85%+)
           const nearSupport = pricePosition < 0.15; // Preço próximo do fundo (15%-)
@@ -620,6 +626,26 @@ export const MultiAssetTrader = () => {
             console.log(`   Confirmações (${confirmations.length}): ${confirmations.join(', ')}`);
             console.log(`   Volatilidade: ${volatility.toFixed(2)}% | Volume: $${(volume24h/1e6).toFixed(1)}M`);
             console.log(`   Posição no Range: ${(pricePosition * 100).toFixed(0)}% | Mudança 24h: ${priceChange.toFixed(2)}%\n`);
+            
+            // Disparar evento customizado para o dashboard
+            const signalEvent = new CustomEvent('trading-signal', {
+              detail: {
+                symbol,
+                action,
+                score: signalScore,
+                confirmations: confirmations.length,
+                metrics: {
+                  volatility,
+                  volume24h,
+                  priceChange,
+                  pricePosition: pricePosition < 0.3 ? 'Suporte' : pricePosition > 0.7 ? 'Resistência' : 'Meio Range',
+                  trend: trendStrength,
+                },
+                technicalFactors: confirmations,
+                reasoning: `Score: ${signalScore}/100 com ${confirmations.length} confirmações técnicas. Volume 24h: $${(volume24h/1e6).toFixed(1)}M, Volatilidade: ${volatility.toFixed(2)}%`,
+              }
+            });
+            window.dispatchEvent(signalEvent);
             
             // Toast de confirmação de sinal de alta qualidade
             if (signalScore >= 85) {
