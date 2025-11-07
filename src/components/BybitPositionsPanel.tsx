@@ -1,11 +1,28 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const BybitPositionsPanel = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [closingPosition, setClosingPosition] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState<any>(null);
+  
   const { data: positions, refetch, isLoading } = useQuery({
     queryKey: ['bybit-positions'],
     queryFn: async () => {
@@ -32,6 +49,97 @@ export const BybitPositionsPanel = () => {
   const totalPnL = positions?.reduce((sum: number, p: any) => 
     sum + parseFloat(p.unrealisedPnl || 0), 0) || 0;
 
+  // 🔴 MUTATION PARA FECHAR POSIÇÃO
+  const closePositionMutation = useMutation({
+    mutationFn: async ({ symbol, side, qty }: { symbol: string; side: string; qty: string }) => {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'place_order',
+          isTestnet: false,
+          params: {
+            category: 'linear',
+            symbol: symbol,
+            side: side === 'Buy' ? 'Sell' : 'Buy', // ORDEM OPOSTA para fechar
+            orderType: 'Market',
+            qty: qty,
+            reduceOnly: true, // IMPORTANTE: apenas reduzir posição existente
+            timeInForce: 'GTC',
+            positionIdx: 0
+          }
+        }
+      });
+
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Erro ao fechar posição');
+      
+      return data;
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: "✅ Posição Fechada",
+        description: `${variables.symbol} fechado com sucesso via stop manual`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['bybit-positions'] });
+      setClosingPosition(null);
+      setConfirmClose(null);
+    },
+    onError: (error: any, variables) => {
+      toast({
+        title: "❌ Erro ao Fechar Posição",
+        description: error.message || `Falha ao fechar ${variables.symbol}`,
+        variant: "destructive"
+      });
+      setClosingPosition(null);
+    }
+  });
+
+  const handleClosePosition = (position: any) => {
+    setConfirmClose(position);
+  };
+
+  const confirmClosePosition = async () => {
+    if (!confirmClose) return;
+    
+    // Fechar todas as posições
+    if (confirmClose.all) {
+      setClosingPosition('ALL');
+      
+      try {
+        // Fechar cada posição sequencialmente
+        for (const position of positions || []) {
+          await closePositionMutation.mutateAsync({
+            symbol: position.symbol,
+            side: position.side,
+            qty: position.size
+          });
+        }
+        
+        toast({
+          title: "✅ Todas as Posições Fechadas",
+          description: `${positions?.length || 0} posições fechadas com sucesso`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "❌ Erro ao Fechar Posições",
+          description: error.message || 'Algumas posições podem não ter sido fechadas',
+          variant: "destructive"
+        });
+      } finally {
+        setClosingPosition(null);
+        setConfirmClose(null);
+        queryClient.invalidateQueries({ queryKey: ['bybit-positions'] });
+      }
+    } else {
+      // Fechar posição individual
+      setClosingPosition(confirmClose.symbol);
+      closePositionMutation.mutate({
+        symbol: confirmClose.symbol,
+        side: confirmClose.side,
+        qty: confirmClose.size
+      });
+    }
+  };
+
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -53,12 +161,24 @@ export const BybitPositionsPanel = () => {
             Atualizar
           </Button>
           {positions && positions.length > 0 && (
-            <Badge 
-              variant={totalPnL >= 0 ? "default" : "destructive"} 
-              className="text-lg px-4 py-2"
-            >
-              P&L Total: ${totalPnL.toFixed(2)}
-            </Badge>
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setConfirmClose({ all: true })}
+                disabled={closingPosition === 'ALL'}
+                className="gap-2"
+              >
+                <XCircle className="h-4 w-4" />
+                Fechar Todas
+              </Button>
+              <Badge 
+                variant={totalPnL >= 0 ? "default" : "destructive"} 
+                className="text-lg px-4 py-2"
+              >
+                P&L Total: ${totalPnL.toFixed(2)}
+              </Badge>
+            </>
           )}
         </div>
       </div>
@@ -137,30 +257,101 @@ export const BybitPositionsPanel = () => {
                 </div>
 
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                  <div>
-                    <p className="text-xs text-muted-foreground">P&L não realizado</p>
-                    <p className={`text-xl font-bold ${
-                      pnl > 0 ? 'text-green-500' : 
-                      pnl < 0 ? 'text-red-500' : 'text-muted-foreground'
-                    }`}>
-                      ${pnl.toFixed(2)}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">P&L não realizado</p>
+                      <p className={`text-xl font-bold ${
+                        pnl > 0 ? 'text-green-500' : 
+                        pnl < 0 ? 'text-red-500' : 'text-muted-foreground'
+                      }`}>
+                        ${pnl.toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Variação</p>
+                      <p className={`text-lg font-bold ${
+                        pnlPercentage > 0 ? 'text-green-500' : 
+                        pnlPercentage < 0 ? 'text-red-500' : 'text-muted-foreground'
+                      }`}>
+                        {pnlPercentage > 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Variação</p>
-                    <p className={`text-lg font-bold ${
-                      pnlPercentage > 0 ? 'text-green-500' : 
-                      pnlPercentage < 0 ? 'text-red-500' : 'text-muted-foreground'
-                    }`}>
-                      {pnlPercentage > 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%
-                    </p>
-                  </div>
+                  
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleClosePosition(position)}
+                    disabled={closingPosition === position.symbol}
+                    className="gap-2"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    {closingPosition === position.symbol ? 'Fechando...' : 'Fechar Agora'}
+                  </Button>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* 🔴 DIALOG DE CONFIRMAÇÃO */}
+      <AlertDialog open={!!confirmClose} onOpenChange={(open) => !open && setConfirmClose(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>⚠️ Confirmar Fechamento de Posição</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              {confirmClose?.all ? (
+                <>
+                  <p className="font-semibold text-foreground">
+                    Você está prestes a fechar TODAS as {positions?.length || 0} posições abertas!
+                  </p>
+                  <div className="bg-muted p-3 rounded-lg space-y-1">
+                    <p className="text-sm">Total de posições: <span className="font-bold">{positions?.length || 0}</span></p>
+                    <p className="text-sm">
+                      P&L Total: <span className={`font-bold ${
+                        totalPnL > 0 ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        ${totalPnL.toFixed(2)}
+                      </span>
+                    </p>
+                  </div>
+                  <p className="text-xs text-red-500 font-semibold mt-2">
+                    ⚠️ ATENÇÃO: Esta ação fechará TODAS as posições ao preço de mercado e NÃO pode ser desfeita!
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>Você está prestes a fechar manualmente esta posição:</p>
+                  {confirmClose && (
+                    <div className="bg-muted p-3 rounded-lg space-y-1">
+                      <p className="font-semibold">{confirmClose.symbol}</p>
+                      <p className="text-sm">Direção: <span className="font-bold">{confirmClose.side}</span></p>
+                      <p className="text-sm">Quantidade: <span className="font-bold">{confirmClose.size}</span></p>
+                      <p className="text-sm">
+                        P&L Atual: <span className={`font-bold ${
+                          parseFloat(confirmClose.unrealisedPnl) > 0 ? 'text-green-500' : 'text-red-500'
+                        }`}>
+                          ${parseFloat(confirmClose.unrealisedPnl || 0).toFixed(2)}
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Esta ação não pode ser desfeita. A posição será fechada imediatamente ao preço de mercado.
+                  </p>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmClosePosition} className="bg-red-600 hover:bg-red-700">
+              {confirmClose?.all ? 'Fechar Todas Agora' : 'Confirmar Fechamento'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };
