@@ -555,13 +555,15 @@ export const MultiAssetTrader = () => {
     let interval: NodeJS.Timeout;
 
     if (isRunning) {
+      console.log("🤖 Multi-Asset Trader iniciado - Operação 24/7");
+      
       // Executar imediatamente
       analyzeAndTrade();
       
-      // Depois repetir a cada 2 minutos (mais agressivo)
+      // Depois repetir a cada 45 segundos (operação 24h mais agressiva)
       interval = setInterval(() => {
         analyzeAndTrade();
-      }, 2 * 60 * 1000);
+      }, 45 * 1000);
     }
 
     return () => {
@@ -804,7 +806,7 @@ export const MultiAssetTrader = () => {
               <div className="flex items-center gap-3">
                 <span className="text-green-500 font-semibold animate-pulse">● OPERANDO</span>
                 <span className="text-xs text-muted-foreground">
-                  Ciclo: {cycleCount} | Próx: 2min
+                  Ciclo: {cycleCount} | Próx: 45s | 24/7
                 </span>
               </div>
               <span className="text-xs">

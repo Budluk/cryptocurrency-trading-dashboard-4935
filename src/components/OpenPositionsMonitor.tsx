@@ -251,7 +251,7 @@ export const OpenPositionsMonitor = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
                   <div>
                     <p className="text-xs text-muted-foreground">Entrada</p>
                     <p className="font-semibold">${position.entry_price.toFixed(2)}</p>
@@ -267,6 +267,41 @@ export const OpenPositionsMonitor = () => {
                   <div>
                     <p className="text-xs text-muted-foreground">Confiança</p>
                     <p className="font-semibold">{position.confidence}%</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Abertura</p>
+                    <p className="font-semibold text-xs">{new Date(position.opened_at).toLocaleTimeString('pt-BR')}</p>
+                  </div>
+                </div>
+
+                {/* Estatísticas da Operação */}
+                <div className="grid grid-cols-3 gap-2 mb-3 p-2 bg-background/40 rounded">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Stop Loss</p>
+                    <p className="font-semibold text-sm">${position.stop_loss?.toFixed(2) || 'N/A'}</p>
+                    {position.stop_loss && position.current_price && (
+                      <p className="text-xs text-red-500">
+                        {((Math.abs(position.current_price - position.stop_loss) / position.entry_price) * 100).toFixed(2)}% até SL
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Take Profit</p>
+                    <p className="font-semibold text-sm">${position.take_profit?.toFixed(2) || 'N/A'}</p>
+                    {position.take_profit && position.current_price && (
+                      <p className="text-xs text-green-500">
+                        {((Math.abs(position.take_profit - position.current_price) / position.entry_price) * 100).toFixed(2)}% até TP
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Duração</p>
+                    <p className="font-semibold text-sm">
+                      {Math.floor((Date.now() - new Date(position.opened_at).getTime()) / 60000)}m
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {Math.floor((Date.now() - new Date(position.opened_at).getTime()) / 3600000)}h
+                    </p>
                   </div>
                 </div>
 

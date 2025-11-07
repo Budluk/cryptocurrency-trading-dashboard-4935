@@ -15,6 +15,7 @@ import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
 import { TrailingStopConfig } from "@/components/TrailingStopConfig";
 import { AdvancedPerformanceMetrics } from "@/components/AdvancedPerformanceMetrics";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
+import { CorrelationHeatmap } from "@/components/CorrelationHeatmap";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -47,10 +48,11 @@ const Index = () => {
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-9">
+            <TabsList className="grid w-full grid-cols-10">
               <TabsTrigger value="trader">Auto Trader</TabsTrigger>
               <TabsTrigger value="tradingview">TradingView</TabsTrigger>
               <TabsTrigger value="positions">Posições</TabsTrigger>
+              <TabsTrigger value="correlation">Correlação</TabsTrigger>
               <TabsTrigger value="trailing">Trailing Stop</TabsTrigger>
               <TabsTrigger value="history">Histórico</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
@@ -80,6 +82,10 @@ const Index = () => {
             
             <TabsContent value="positions">
               <OpenPositionsMonitor />
+            </TabsContent>
+            
+            <TabsContent value="correlation">
+              <CorrelationHeatmap />
             </TabsContent>
             
             <TabsContent value="trailing">
