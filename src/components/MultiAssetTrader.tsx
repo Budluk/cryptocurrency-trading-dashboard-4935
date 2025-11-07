@@ -464,14 +464,30 @@ export const MultiAssetTrader = () => {
               ? (currentPrice * (1 + takeProfitPct)).toFixed(priceDecimals)
               : (currentPrice * (1 - takeProfitPct)).toFixed(priceDecimals);
             
-            // Validar que SL está correto para a direção
-            if (action === 'BUY' && parseFloat(stopLoss) >= currentPrice) {
-              console.log(`⚠️ ${symbol}: Stop Loss inválido para BUY (${stopLoss} >= ${currentPrice})`);
-              continue;
-            }
-            if (action === 'SELL' && parseFloat(stopLoss) <= currentPrice) {
-              console.log(`⚠️ ${symbol}: Stop Loss inválido para SELL (${stopLoss} <= ${currentPrice})`);
-              continue;
+            // 🛡️ VALIDAÇÃO CRÍTICA: SL e TP devem estar nas direções corretas
+            const slNum = parseFloat(stopLoss);
+            const tpNum = parseFloat(takeProfit);
+            
+            if (action === 'BUY') {
+              // Para BUY: SL < preço < TP
+              if (slNum >= currentPrice) {
+                console.log(`⚠️ ${symbol}: Stop Loss inválido para BUY (SL: ${stopLoss} >= Preço: ${currentPrice})`);
+                continue;
+              }
+              if (tpNum <= currentPrice) {
+                console.log(`⚠️ ${symbol}: Take Profit inválido para BUY (TP: ${takeProfit} <= Preço: ${currentPrice})`);
+                continue;
+              }
+            } else {
+              // Para SELL: TP < preço < SL
+              if (slNum <= currentPrice) {
+                console.log(`⚠️ ${symbol}: Stop Loss inválido para SELL (SL: ${stopLoss} <= Preço: ${currentPrice})`);
+                continue;
+              }
+              if (tpNum >= currentPrice) {
+                console.log(`⚠️ ${symbol}: Take Profit inválido para SELL (TP: ${takeProfit} >= Preço: ${currentPrice})`);
+                continue;
+              }
             }
             
             const orderValueUSD = (qty * currentPrice).toFixed(2);
