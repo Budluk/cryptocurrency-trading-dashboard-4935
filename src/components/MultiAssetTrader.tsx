@@ -38,7 +38,7 @@ export const MultiAssetTrader = () => {
 
   // PROTEÇÕES INTELIGENTES
   const DAILY_STOP_LOSS_PCT = 0.10; // -10% do bankroll
-  const [maxOpenPositions, setMaxOpenPositions] = useState(5); // Agora configurável
+  const [maxOpenPositions, setMaxOpenPositions] = useState(50); // 🚀 Alto para operar todos os sinais
   const MAX_CONSECUTIVE_LOSSES = 3;
   
   // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
