@@ -33,7 +33,39 @@ export const AutoTrader = () => {
     setExecutedTrades([]);
 
     try {
-      // 1. Buscar lista de instrumentos da Bybit
+      // 1. Buscar saldo total da Bybit para calcular juros compostos
+      toast({
+        title: "💰 Consultando saldo...",
+        description: "Verificando saldo disponível na Bybit",
+      });
+
+      const { data: balanceData, error: balanceError } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_balance',
+          isTestnet,
+          params: { accountType: 'UNIFIED' }
+        }
+      });
+
+      if (balanceError || !balanceData?.success) {
+        throw new Error('Falha ao buscar saldo da Bybit');
+      }
+
+      // Extrair saldo total disponível em USDT
+      const balanceList = balanceData.data?.list || [];
+      const usdtBalance = balanceList[0]?.coin?.find((c: any) => c.coin === 'USDT')?.availableToWithdraw || '0';
+      const totalBalance = parseFloat(usdtBalance);
+
+      if (totalBalance < 10) {
+        throw new Error(`Saldo insuficiente: $${totalBalance.toFixed(2)} USDT. Mínimo: $10 USDT`);
+      }
+
+      toast({
+        title: "✅ Saldo verificado",
+        description: `Saldo disponível: $${totalBalance.toFixed(2)} USDT`,
+      });
+
+      // 2. Buscar lista de instrumentos da Bybit
       toast({
         title: "🔍 Buscando ativos...",
         description: "Carregando lista de criptomoedas da Bybit",
@@ -56,13 +88,22 @@ export const AutoTrader = () => {
 
       toast({
         title: "✅ Ativos carregados",
-        description: `${totalSymbols} ativos encontrados. Iniciando análise...`,
+        description: `${totalSymbols} ativos encontrados. Iniciando análise com saldo de $${totalBalance.toFixed(2)}...`,
       });
 
-      // 2. Analisar cada símbolo
+      // 3. Analisar cada símbolo com precisão melhorada
+      let totalInvested = 0;
+      const riskPerTrade = 0.02; // 2% do saldo por trade
+
       for (let i = 0; i < instruments.length && isRunning; i++) {
         const instrument = instruments[i];
         const symbol = instrument.symbol.replace('USDT', '/USD');
+        
+        // Parar se já investimos muito (máx 30% do capital em uma rodada)
+        if (totalInvested >= totalBalance * 0.3) {
+          console.log('Limite de exposição atingido (30% do capital)');
+          break;
+        }
         
         setCurrentSymbol(symbol);
         setProgress((i / totalSymbols) * 100);
@@ -86,21 +127,53 @@ export const AutoTrader = () => {
 
           const signal = analysisData.signal;
           
-          // 3. Se confiança >= 85% e não for HOLD, executar trade
-          if (signal.confidence >= 85 && signal.action !== 'HOLD') {
-            console.log(`🎯 Sinal forte encontrado: ${symbol} - ${signal.action} (${signal.confidence}%)`);
+          // 4. Precisão melhorada: confiança >= 90% (mais seletivo)
+          if (signal.confidence >= 90 && signal.action !== 'HOLD') {
+            console.log(`🎯 Sinal de alta precisão: ${symbol} - ${signal.action} (${signal.confidence}%)`);
 
-            // Calcular quantidade baseada no saldo (exemplo: 1% do saldo por trade)
-            const quantity = 0.01; // Ajustar conforme necessário
+            // Calcular quantidade com juros compostos (baseado no saldo atual)
+            const currentBalance = totalBalance + totalInvested; // Saldo disponível atualizado
+            const amountToRisk = currentBalance * riskPerTrade;
+            
+            // Buscar preço atual
+            const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
+              body: {
+                action: 'get_ticker',
+                isTestnet,
+                params: { category: 'linear', symbol: instrument.symbol }
+              }
+            });
+
+            if (!tickerData?.success) {
+              console.error(`Erro ao buscar ticker para ${symbol}`);
+              continue;
+            }
+
+            const currentPrice = parseFloat(tickerData.data?.list?.[0]?.lastPrice || '0');
+            if (currentPrice === 0) continue;
+
+            // Calcular quantidade baseada no risco e alavancagem
+            const leverage = 10;
+            const quantity = (amountToRisk * leverage) / currentPrice;
+            
+            // Verificar quantidade mínima
+            const minQty = parseFloat(instrument.lotSizeFilter?.minOrderQty || '0.001');
+            if (quantity < minQty) {
+              console.log(`Quantidade ${quantity} menor que mínimo ${minQty} para ${symbol}`);
+              continue;
+            }
 
             const orderParams = {
               category: 'linear',
               symbol: instrument.symbol,
               side: signal.action === 'BUY' ? 'Buy' : 'Sell',
               orderType: 'Market',
-              qty: quantity.toString(),
+              qty: quantity.toFixed(4),
+              leverage: leverage.toString(),
               timeInForce: 'GTC',
-              positionIdx: 0
+              positionIdx: 0,
+              stopLoss: signal.stop_loss?.toString(),
+              takeProfit: signal.target_price?.toString(),
             };
 
             // Executar ordem
@@ -113,6 +186,8 @@ export const AutoTrader = () => {
             });
 
             if (!orderError && orderData?.success) {
+              totalInvested += amountToRisk;
+              
               const tradeResult: AnalysisResult = {
                 symbol,
                 action: signal.action,
@@ -127,14 +202,14 @@ export const AutoTrader = () => {
 
               toast({
                 title: `✅ Trade executado: ${symbol}`,
-                description: `${signal.action} com ${signal.confidence}% de confiança`,
+                description: `${signal.action} com ${signal.confidence}% confiança | Risco: $${amountToRisk.toFixed(2)}`,
               });
             } else {
               console.error(`Erro ao executar ordem para ${symbol}:`, orderError);
             }
           }
 
-          // Aguardar um pouco entre análises para não sobrecarregar
+          // Aguardar um pouco entre análises
           await new Promise(resolve => setTimeout(resolve, 2000));
 
         } catch (error) {

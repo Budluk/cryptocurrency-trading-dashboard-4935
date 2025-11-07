@@ -6,8 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowUpCircle, ArrowDownCircle, Activity, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { useWebNotifications } from "@/hooks/useWebNotifications";
 import { useNotificationSettings } from "@/hooks/useNotificationSettings";
+import { useSuspiciousPatternDetector } from "@/hooks/useSuspiciousPatternDetector";
 import { NotificationSettingsDialog } from "./NotificationSettingsDialog";
 import { LargeOrdersHistory } from "./LargeOrdersHistory";
+import { PatternAlertsPanel } from "./PatternAlertsPanel";
 import { toast } from "sonner";
 
 interface OrderFlowData {
@@ -35,6 +37,7 @@ export function OrderFlowDashboard() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const { permission, isSupported, requestPermission, sendNotification } = useWebNotifications();
   const { settings, updateSettings, resetSettings, shouldNotify } = useNotificationSettings();
+  const { patterns, addOrder, addPriceUpdate } = useSuspiciousPatternDetector();
   const previousOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -56,6 +59,11 @@ export function OrderFlowDashboard() {
       if (message.type === 'order_flow_update') {
         setFlowData(message.data);
         
+        // Add price updates to pattern detector
+        message.data.forEach((data: OrderFlowData) => {
+          addPriceUpdate(data.symbol, data.price);
+        });
+        
         // Check for new large orders and send notifications based on filters
         if (notificationsEnabled && permission === 'granted') {
           message.data.forEach((data: OrderFlowData) => {
@@ -70,6 +78,16 @@ export function OrderFlowDashboard() {
               // Only notify for new orders
               if (!previousOrdersRef.current.has(orderId)) {
                 previousOrdersRef.current.add(orderId);
+                
+                // Add to pattern detector
+                addOrder({
+                  symbol: data.symbol,
+                  side: order.side,
+                  value_usd: order.value_usd,
+                  price: order.price,
+                  is_institutional: order.is_institutional,
+                  timestamp: Date.now(),
+                });
                 
                 const emoji = order.side === 'BUY' ? '🟢' : '🔴';
                 const action = order.side === 'BUY' ? 'COMPRA' : 'VENDA';
@@ -207,8 +225,16 @@ export function OrderFlowDashboard() {
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="live" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="live">Fluxo ao Vivo</TabsTrigger>
+            <TabsTrigger value="patterns">
+              Padrões Suspeitos
+              {patterns.length > 0 && (
+                <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 text-[10px]">
+                  {patterns.length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
           
@@ -314,6 +340,10 @@ export function OrderFlowDashboard() {
                 <p>Conectando ao stream de order flow...</p>
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="patterns" className="mt-4">
+            <PatternAlertsPanel patterns={patterns} />
           </TabsContent>
 
           <TabsContent value="history" className="mt-4">
