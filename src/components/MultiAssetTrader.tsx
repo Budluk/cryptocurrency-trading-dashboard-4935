@@ -472,70 +472,163 @@ export const MultiAssetTrader = () => {
         const symbol = instrument.symbol;
         
         try {
-          // ⚡ ANÁLISE TÉCNICA AVANÇADA PARA SINAIS DE QUALIDADE
+          // ⚡ ANÁLISE TÉCNICA AVANÇADA - SISTEMA DE PRECISÃO APRIMORADO
           
-          // 1. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (AJUSTADAS)
-          const hasGoodVolume = volume24h > 100000; // $100K mínimo (reduzido)
-          const hasGoodVolatility = Math.abs(priceChange) > 0.3; // 0.3% mínimo (reduzido)
+          // 1. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (MAIS RIGOROSAS)
+          const hasGoodVolume = volume24h > 500000; // $500K mínimo (aumentado)
+          const hasExcellentVolume = volume24h > 2000000; // $2M+ = volume excepcional
+          const hasGoodVolatility = volatility > 0.8; // 0.8% mínimo (aumentado)
+          const hasStrongVolatility = volatility > 2.0; // 2%+ = volatilidade forte
           
-          // 2. ANÁLISE DE TENDÊNCIA (RSI-like baseado em price change)
-          const isBullishTrend = priceChange > 1.5; // Subindo forte
-          const isBearishTrend = priceChange < -1.5; // Caindo forte
-          const isOversold = priceChange < -3; // Possível reversão
-          const isOverbought = priceChange > 3; // Possível reversão
+          // 2. ANÁLISE DE TENDÊNCIA E MOMENTUM
+          const currentPrice = parseFloat(ticker.lastPrice);
+          const highPrice = parseFloat(ticker.highPrice24h);
+          const lowPrice = parseFloat(ticker.lowPrice24h);
+          const priceRange = highPrice - lowPrice;
+          const pricePosition = (currentPrice - lowPrice) / priceRange; // 0-1, onde está no range
           
-          // 3. VALIDAÇÃO DE VOLUME (compara com média)
-          const avgVolume = 3000000; // Média estimada
-          const volumeStrength = volume24h > avgVolume * 1.5; // Volume 50% acima da média
+          // Detectar tendências fortes
+          const isBullishTrend = priceChange > 2.0; // Subindo forte (+2%)
+          const isBearishTrend = priceChange < -2.0; // Caindo forte (-2%)
+          const isModerateBullish = priceChange > 1.0 && priceChange <= 2.0;
+          const isModerateBearish = priceChange < -1.0 && priceChange >= -2.0;
           
-          // 4. SCORE DE QUALIDADE DO SINAL
+          // Detectar zonas de suporte/resistência
+          const nearResistance = pricePosition > 0.85; // Preço próximo do topo (85%+)
+          const nearSupport = pricePosition < 0.15; // Preço próximo do fundo (15%-)
+          const inMiddleZone = pricePosition >= 0.4 && pricePosition <= 0.6;
+          
+          // Detectar reversões (oversold/overbought)
+          const isOversold = priceChange < -4; // -4% = oversold extremo
+          const isOverbought = priceChange > 4; // +4% = overbought extremo
+          const isMildOversold = priceChange < -2.5 && priceChange >= -4;
+          const isMildOverbought = priceChange > 2.5 && priceChange <= 4;
+          
+          // 3. ANÁLISE DE VOLUME (comparação dinâmica)
+          const avgVolume = 5000000; // $5M baseline
+          const volumeRatio = volume24h / avgVolume;
+          const hasVolumeSpike = volumeRatio > 2.0; // 2x+ volume médio
+          const hasStrongVolume = volumeRatio > 1.5; // 1.5x volume médio
+          
+          // 4. SISTEMA DE SCORING MULTI-CONFIRMAÇÃO (0-100)
           let signalScore = 0;
           let action: 'BUY' | 'SELL' | null = null;
+          let confirmations: string[] = [];
           
-          // Sinais de COMPRA
-          if (isBullishTrend && volumeStrength) {
-            signalScore = 80;
+          // === SINAIS DE COMPRA (BUY) ===
+          let buyScore = 0;
+          
+          // Confirmação 1: Tendência de alta + volume
+          if (isBullishTrend && hasStrongVolume) {
+            buyScore += 30;
+            confirmations.push('Tendência de alta forte');
+          } else if (isModerateBullish && hasGoodVolume) {
+            buyScore += 20;
+            confirmations.push('Tendência de alta moderada');
+          }
+          
+          // Confirmação 2: Reversão de fundo (oversold bounce)
+          if (isOversold && nearSupport && hasVolumeSpike) {
+            buyScore += 35;
+            confirmations.push('Reversão de fundo confirmada');
+          } else if (isMildOversold && nearSupport) {
+            buyScore += 25;
+            confirmations.push('Zona de suporte');
+          }
+          
+          // Confirmação 3: Momentum positivo
+          if (pricePosition > 0.5 && priceChange > 0.5) {
+            buyScore += 15;
+            confirmations.push('Momentum positivo');
+          }
+          
+          // Confirmação 4: Volume excepcional
+          if (hasExcellentVolume && priceChange > 0) {
+            buyScore += 20;
+            confirmations.push('Volume excepcional');
+          }
+          
+          // === SINAIS DE VENDA (SELL) ===
+          let sellScore = 0;
+          
+          // Confirmação 1: Tendência de baixa + volume
+          if (isBearishTrend && hasStrongVolume) {
+            sellScore += 30;
+            confirmations.push('Tendência de baixa forte');
+          } else if (isModerateBearish && hasGoodVolume) {
+            sellScore += 20;
+            confirmations.push('Tendência de baixa moderada');
+          }
+          
+          // Confirmação 2: Reversão de topo (overbought rejection)
+          if (isOverbought && nearResistance && hasVolumeSpike) {
+            sellScore += 35;
+            confirmations.push('Reversão de topo confirmada');
+          } else if (isMildOverbought && nearResistance) {
+            sellScore += 25;
+            confirmations.push('Zona de resistência');
+          }
+          
+          // Confirmação 3: Momentum negativo
+          if (pricePosition < 0.5 && priceChange < -0.5) {
+            sellScore += 15;
+            confirmations.push('Momentum negativo');
+          }
+          
+          // Confirmação 4: Volume excepcional
+          if (hasExcellentVolume && priceChange < 0) {
+            sellScore += 20;
+            confirmations.push('Volume excepcional');
+          }
+          
+          // 5. DETERMINAR AÇÃO E SCORE FINAL
+          if (buyScore > sellScore && buyScore >= 50) {
             action = 'BUY';
-          } else if (isOversold && volumeStrength) {
-            signalScore = 75;
-            action = 'BUY'; // Reversão após queda
-          } else if (priceChange > 0.8 && priceChange < 2 && hasGoodVolume) {
-            signalScore = 65;
-            action = 'BUY'; // Movimento moderado
-          }
-          
-          // Sinais de VENDA
-          if (isBearishTrend && volumeStrength) {
-            signalScore = 80;
+            signalScore = Math.min(buyScore, 100);
+          } else if (sellScore > buyScore && sellScore >= 50) {
             action = 'SELL';
-          } else if (isOverbought && volumeStrength) {
-            signalScore = 75;
-            action = 'SELL'; // Reversão após subida
-          } else if (priceChange < -0.8 && priceChange > -2 && hasGoodVolume) {
-            signalScore = 65;
-            action = 'SELL'; // Movimento moderado
+            signalScore = Math.min(sellScore, 100);
           }
           
-          // 5. FILTRO FINAL: Apenas sinais com score >= 60 e validações OK
+          // 6. FILTRO FINAL: Apenas sinais de ALTA QUALIDADE (score >= 70 e múltiplas confirmações)
           const shouldTrade = (
-            signalScore >= 60 && // Reduzido de 65 para 60
+            signalScore >= 70 && // Score mínimo aumentado para 70
+            confirmations.length >= 2 && // Pelo menos 2 confirmações técnicas
             hasGoodVolume &&
             hasGoodVolatility &&
             action !== null &&
             currentBalance > 2
-            // ⚡ REMOVIDO Math.random() para permitir TODOS os sinais válidos
           );
 
-          // 📋 MOTIVOS PARA NÃO EXECUTAR
+          // 📋 MOTIVOS PARA NÃO EXECUTAR (com detalhes do scoring)
           if (!shouldTrade && signalScore > 0) {
             let skipReason = '';
-            if (signalScore < 60) skipReason = `Score baixo (${signalScore}/60)`;
-            else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M < $0.1M)`;
-            else if (!hasGoodVolatility) skipReason = `Volatilidade baixa (${Math.abs(priceChange).toFixed(2)}% < 0.3%)`;
+            if (signalScore < 70) skipReason = `Score baixo (${signalScore}/70) | Confirmações: ${confirmations.length}`;
+            else if (confirmations.length < 2) skipReason = `Poucas confirmações (${confirmations.length}/2)`;
+            else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M < $0.5M)`;
+            else if (!hasGoodVolatility) skipReason = `Volatilidade baixa (${volatility.toFixed(2)}% < 0.8%)`;
             else if (currentBalance <= 2) skipReason = `Saldo insuficiente ($${currentBalance.toFixed(2)})`;
             else if (action === null) skipReason = 'Sem sinal claro de entrada';
             
             console.log(`⏭️ ${symbol} PULADO: ${skipReason}`);
+          }
+          
+          // 📊 LOG DE SINAIS DE ALTA QUALIDADE
+          if (shouldTrade && action) {
+            console.log(`\n✅ ${symbol} - SINAL DE ALTA QUALIDADE`);
+            console.log(`   Ação: ${action} | Score: ${signalScore}/100`);
+            console.log(`   Confirmações (${confirmations.length}): ${confirmations.join(', ')}`);
+            console.log(`   Volatilidade: ${volatility.toFixed(2)}% | Volume: $${(volume24h/1e6).toFixed(1)}M`);
+            console.log(`   Posição no Range: ${(pricePosition * 100).toFixed(0)}% | Mudança 24h: ${priceChange.toFixed(2)}%\n`);
+            
+            // Toast de confirmação de sinal de alta qualidade
+            if (signalScore >= 85) {
+              toast({
+                title: "🎯 Sinal Premium Detectado",
+                description: `${symbol} ${action} | Score: ${signalScore}/100 | ${confirmations.length} confirmações`,
+                duration: 3000,
+              });
+            }
           }
           
           if (shouldTrade && action) {
