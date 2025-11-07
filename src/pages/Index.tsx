@@ -14,6 +14,7 @@ import { TradeHistory } from "@/components/TradeHistory";
 import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
 import { TrailingStopConfig } from "@/components/TrailingStopConfig";
 import { AdvancedPerformanceMetrics } from "@/components/AdvancedPerformanceMetrics";
+import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -39,7 +40,10 @@ const Index = () => {
           </div>
         </header>
         
-        <div className="space-y-8">
+        {/* P&L Diário */}
+        <DailyPnLSummary />
+        
+        <div className="space-y-8 mt-8">
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">

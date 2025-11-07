@@ -3,11 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
 
 interface Trade {
   symbol: string;
@@ -31,6 +32,7 @@ export const MultiAssetTrader = () => {
   const [openPositionsCount, setOpenPositionsCount] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const { toast } = useToast();
+  const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
 
   // PROTEÇÕES INTELIGENTES
   const DAILY_STOP_LOSS_PCT = 0.10; // -10% do bankroll
@@ -183,12 +185,12 @@ export const MultiAssetTrader = () => {
       await syncBybitBalance();
       await syncOpenPositions();
 
-      // 1. Buscar ativos mais voláteis da Bybit
+      // 1. Buscar TODOS os ativos da Bybit
       const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_instruments',
           isTestnet: false, // ⚡ SEMPRE CONTA REAL
-          params: { category: 'linear', limit: 100, status: 'Trading' }
+          params: { category: 'linear', limit: 1000, status: 'Trading' } // TODOS OS ATIVOS
         }
       });
 
@@ -298,6 +300,19 @@ export const MultiAssetTrader = () => {
           }
           
           if (shouldTrade && action) {
+            // 🔍 VERIFICAR CORRELAÇÃO ANTES DE EXECUTAR
+            const correlationCheck = checkNewPosition(symbol, action === 'BUY' ? 'Buy' : 'Sell');
+            
+            if (!correlationCheck.allowed) {
+              console.log(`🚫 ${symbol}: BLOQUEADO - ${correlationCheck.reason}`);
+              toast({
+                title: "🚫 Trade Bloqueado",
+                description: `${symbol}: ${correlationCheck.reason}`,
+                variant: "destructive",
+              });
+              continue;
+            }
+
             const currentVolatility = Math.abs(priceChange);
             setAvgVolatility(currentVolatility); // Atualizar volatilidade média
             
@@ -624,9 +639,24 @@ export const MultiAssetTrader = () => {
             </p>
           </div>
           
-          <Badge variant={isTestnet ? "outline" : "destructive"} className="text-lg px-4 py-2">
-            {isTestnet ? '🧪 TESTNET' : '⚡ REAL'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={isTestnet ? "outline" : "destructive"} className="text-lg px-4 py-2">
+              {isTestnet ? '🧪 TESTNET' : '⚡ REAL'}
+            </Badge>
+            <Badge 
+              variant={
+                getCorrelationRisk().level === 'low' 
+                  ? 'default' 
+                  : getCorrelationRisk().level === 'medium' 
+                  ? 'secondary' 
+                  : 'destructive'
+              }
+              className="text-xs flex items-center gap-1"
+            >
+              <Network className="h-3 w-3" />
+              {getCorrelationRisk().message}
+            </Badge>
+          </div>
         </div>
 
         {/* Status Cards */}

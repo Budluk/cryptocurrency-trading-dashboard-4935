@@ -4,7 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, TrendingDown, X, Target, ShieldAlert } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { TrendingUp, TrendingDown, X, Target, ShieldAlert, Edit2, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ProgressiveClosureIndicator } from "./ProgressiveClosureIndicator";
@@ -28,6 +29,8 @@ interface Position {
 export const OpenPositionsMonitor = () => {
   const { toast } = useToast();
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
+  const [editingStopLoss, setEditingStopLoss] = useState<string | null>(null);
+  const [newStopLoss, setNewStopLoss] = useState<string>("");
 
   const { data: positions, refetch } = useQuery({
     queryKey: ['open-positions'],
@@ -67,6 +70,42 @@ export const OpenPositionsMonitor = () => {
       supabase.removeChannel(channel);
     };
   }, [refetch]);
+
+  const updateStopLoss = async (positionId: string) => {
+    try {
+      const stopLossValue = parseFloat(newStopLoss);
+      if (isNaN(stopLossValue) || stopLossValue <= 0) {
+        toast({
+          title: "❌ Valor inválido",
+          description: "Digite um valor numérico válido para o stop loss",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('auto_trader_positions')
+        .update({ stop_loss: stopLossValue })
+        .eq('id', positionId);
+
+      if (error) throw error;
+
+      toast({
+        title: "✅ Stop Loss atualizado",
+        description: `Novo stop: $${stopLossValue.toFixed(2)}`,
+      });
+
+      setEditingStopLoss(null);
+      setNewStopLoss("");
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: "❌ Erro ao atualizar stop",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const closePosition = async (positionId: string, reason: string) => {
     try {
@@ -232,18 +271,66 @@ export const OpenPositionsMonitor = () => {
                 </div>
 
                 <div className="space-y-2 mb-3">
-                  {position.stop_loss && (
-                    <div className="flex items-center gap-2">
-                      <ShieldAlert className="w-4 h-4 text-red-500" />
-                      <div className="flex-1">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span>Stop Loss: ${position.stop_loss.toFixed(2)}</span>
-                          <span className="text-red-500">{stopLossProgress.toFixed(0)}%</span>
+                  {/* Stop Loss com edição manual */}
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-red-500" />
+                    <div className="flex-1">
+                      {editingStopLoss === position.id ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Novo Stop Loss"
+                            value={newStopLoss}
+                            onChange={(e) => setNewStopLoss(e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => updateStopLoss(position.id)}
+                          >
+                            <Check className="h-3 w-3 text-green-500" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => {
+                              setEditingStopLoss(null);
+                              setNewStopLoss("");
+                            }}
+                          >
+                            <X className="h-3 w-3 text-red-500" />
+                          </Button>
                         </div>
-                        <Progress value={Math.min(stopLossProgress, 100)} className="h-1" />
-                      </div>
+                      ) : (
+                        <>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="flex items-center gap-2">
+                              Stop Loss: ${position.stop_loss?.toFixed(2) || 'N/A'}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-4 w-4 p-0"
+                                onClick={() => {
+                                  setEditingStopLoss(position.id);
+                                  setNewStopLoss(position.stop_loss?.toString() || "");
+                                }}
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            </span>
+                            <span className="text-red-500">{stopLossProgress.toFixed(0)}%</span>
+                          </div>
+                          {position.stop_loss && (
+                            <Progress value={Math.min(stopLossProgress, 100)} className="h-1" />
+                          )}
+                        </>
+                      )}
                     </div>
-                  )}
+                  </div>
                   
                   {position.take_profit && (
                     <div className="flex items-center gap-2">
