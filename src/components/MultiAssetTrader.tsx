@@ -154,26 +154,53 @@ export const MultiAssetTrader = () => {
     return baseLeverage;
   };
 
-  // Calcular tamanho da posição baseado em VOLATILIDADE e WIN RATE
-  const calculatePositionSize = (balance: number, leverage: number, volatility: number, winRate: number) => {
-    // Base: 1-5% do bankroll
+  // 💼 GERENCIAMENTO DE MARGEM DINÂMICO
+  const calculatePositionSize = (balance: number, leverage: number, volatility: number, winRate: number, currentOpenPositions: number) => {
+    // 🎯 MARGEM DISPONÍVEL: Calcular quanto de margem ainda temos
+    const MAX_MARGIN_USAGE = 0.80; // Usar no máximo 80% da margem disponível
+    const RESERVE_MARGIN = 0.20; // Reservar 20% para novas oportunidades
+    
+    // 📊 DISTRIBUIÇÃO DE MARGEM: Dividir margem disponível entre posições
+    const targetPositions = Math.min(maxOpenPositions, 20); // Objetivo de posições simultâneas
+    const marginPerPosition = (balance * MAX_MARGIN_USAGE) / targetPositions;
+    
+    // 🔄 AJUSTE DINÂMICO: Quanto mais posições abertas, menor o tamanho de novas
+    const positionSizeMultiplier = currentOpenPositions === 0 
+      ? 1.0 // Primeira posição: tamanho normal
+      : Math.max(0.3, 1 - (currentOpenPositions / targetPositions) * 0.5); // Reduzir gradualmente
+    
+    // 📐 BASE DO RISCO: 1-5% do bankroll por posição
     let baseRisk = balance < 15 ? 0.05 : 0.03;
-
-    // AJUSTE POR VOLATILIDADE: Reduzir risco em ativos muito voláteis
+    
+    // 💡 AJUSTE POR VOLATILIDADE: Reduzir risco em ativos muito voláteis
     if (volatility > 5) baseRisk *= 0.6; // -40% em alta volatilidade
     else if (volatility > 3) baseRisk *= 0.8; // -20% em volatilidade moderada
     else if (volatility < 1) baseRisk *= 1.2; // +20% em baixa volatilidade
-
-    // AJUSTE POR WIN RATE: Aumentar risco se está performando bem
+    
+    // 📈 AJUSTE POR WIN RATE: Aumentar risco se está performando bem
     if (winRate >= 65) baseRisk *= 1.3; // +30% se win rate alto
     else if (winRate >= 55) baseRisk *= 1.1; // +10% se win rate bom
     else if (winRate < 40) baseRisk *= 0.7; // -30% se win rate baixo
-
-    // Garantir limites razoáveis (0.5% a 8% do bankroll)
-    baseRisk = Math.max(0.005, Math.min(0.08, baseRisk));
-
-    const usdSize = balance * baseRisk;
-    return { usdSize, quantity: (usdSize * leverage) };
+    
+    // 🎲 AJUSTE POR NÚMERO DE POSIÇÕES
+    baseRisk *= positionSizeMultiplier;
+    
+    // 🛡️ LIMITES DE SEGURANÇA
+    // - Mínimo: $2 por posição (viável na Bybit)
+    // - Máximo: Não exceder margem disponível por posição
+    const minPositionSize = 2;
+    const maxPositionSize = marginPerPosition / leverage;
+    
+    let usdSize = balance * baseRisk;
+    usdSize = Math.max(minPositionSize, Math.min(maxPositionSize, usdSize));
+    
+    return { 
+      usdSize, 
+      quantity: (usdSize * leverage),
+      marginUsed: usdSize / leverage,
+      marginPerPosition,
+      positionSizeMultiplier
+    };
   };
 
   // 🔄 SINCRONIZAÇÃO AUTOMÁTICA - Buscar saldo real da Bybit
@@ -785,7 +812,8 @@ export const MultiAssetTrader = () => {
             
             const leverage = dynamicLeverage;
             
-            let { usdSize } = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate);
+            let positionSizeResult = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate, openPositionsCount);
+            let { usdSize, marginUsed, marginPerPosition, positionSizeMultiplier } = positionSizeResult;
             
             // 🔥 MARTINGALE CONTROLADO: Dobrar após 2 perdas consecutivas (limite 3x)
             if (martingaleEnabled && lossStreak >= 2) {
@@ -830,6 +858,9 @@ export const MultiAssetTrader = () => {
             
             const currentPrice = parseFloat(ticker.lastPrice);
             const atrEstimate = currentPrice * 0.02; // Estimar ATR como 2% do preço
+            
+            // 📊 LOG DE MARGEM
+            console.log(`💼 MARGEM: Posições: ${openPositionsCount}/${maxOpenPositions} | Tamanho: $${usdSize.toFixed(2)} (${(positionSizeMultiplier * 100).toFixed(0)}% do normal) | Margem usada: $${marginUsed.toFixed(2)}/${marginPerPosition.toFixed(2)}`);
             
             // Pegar filtros do instrumento para calcular quantidade válida
             const lotSizeFilter = instrument.lotSizeFilter || {};
@@ -1468,7 +1499,7 @@ export const MultiAssetTrader = () => {
                 variant="outline"
                 size="sm"
                 className="h-6 w-6 p-0"
-                onClick={() => setMaxOpenPositions(Math.min(20, maxOpenPositions + 1))}
+                onClick={() => setMaxOpenPositions(Math.min(50, maxOpenPositions + 1))}
                 disabled={isRunning}
               >
                 +
@@ -1476,6 +1507,57 @@ export const MultiAssetTrader = () => {
             </div>
           </div>
         </div>
+
+        {/* 💼 GERENCIAMENTO DE MARGEM */}
+        <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-purple-400" />
+              <span className="text-sm font-medium">Gerenciamento de Margem Dinâmico</span>
+            </div>
+            <Badge variant="outline" className="text-purple-400 border-purple-400">
+              {openPositionsCount}/{maxOpenPositions} posições
+            </Badge>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Margem Total:</span>
+              <span className="font-mono text-purple-400">${currentBalance.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Margem Usada (Est.):</span>
+              <span className="font-mono">
+                ${(currentBalance * 0.80 * (openPositionsCount / Math.max(maxOpenPositions, 20))).toFixed(2)}
+                <span className="text-xs text-muted-foreground ml-1">
+                  ({((openPositionsCount / Math.max(maxOpenPositions, 20)) * 80).toFixed(0)}%)
+                </span>
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Margem Livre:</span>
+              <span className="font-mono text-green-400">
+                ${(currentBalance * (1 - 0.80 * (openPositionsCount / Math.max(maxOpenPositions, 20)))).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Próxima Posição (Est.):</span>
+              <span className="font-mono text-xs">
+                ~${((currentBalance * 0.80 / Math.max(maxOpenPositions, 20)) * Math.max(0.3, 1 - (openPositionsCount / Math.max(maxOpenPositions, 20)) * 0.5)).toFixed(2)}
+              </span>
+            </div>
+            <Progress 
+              value={(openPositionsCount / maxOpenPositions) * 100} 
+              className="h-2 mt-2"
+            />
+            <div className="text-xs text-muted-foreground text-center">
+              Capacidade utilizada: {((openPositionsCount / maxOpenPositions) * 100).toFixed(0)}%
+              {openPositionsCount > maxOpenPositions * 0.8 && (
+                <span className="text-yellow-500 ml-2">⚠️ Próximo ao limite</span>
+              )}
+            </div>
+          </div>
+        </Card>
 
         {/* Mode Toggle */}
         <div className="flex items-center justify-between p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
