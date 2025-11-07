@@ -48,7 +48,7 @@ export const MultiAssetTrader = () => {
   // ⚡ CONFIGURAÇÕES AVANÇADAS
   const [trailingStopEnabled, setTrailingStopEnabled] = useState(true);
   const [trailingStopPercent, setTrailingStopPercent] = useState(1.5);
-  const [timeFilterEnabled, setTimeFilterEnabled] = useState(true);
+  const [timeFilterEnabled, setTimeFilterEnabled] = useState(false); // 🔄 24/7 por padrão
   const [startHour, setStartHour] = useState(14); // 14h UTC (início de NY)
   const [endHour, setEndHour] = useState(20); // 20h UTC (fim de NY)
   const [scaleInOutEnabled, setScaleInOutEnabled] = useState(true);
