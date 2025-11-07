@@ -2,8 +2,12 @@ import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowUpCircle, ArrowDownCircle, Activity, AlertTriangle, Bell, BellOff } from "lucide-react";
 import { useWebNotifications } from "@/hooks/useWebNotifications";
+import { useNotificationSettings } from "@/hooks/useNotificationSettings";
+import { NotificationSettingsDialog } from "./NotificationSettingsDialog";
+import { LargeOrdersHistory } from "./LargeOrdersHistory";
 import { toast } from "sonner";
 
 interface OrderFlowData {
@@ -30,6 +34,7 @@ export function OrderFlowDashboard() {
   const [isConnected, setIsConnected] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const { permission, isSupported, requestPermission, sendNotification } = useWebNotifications();
+  const { settings, updateSettings, resetSettings, shouldNotify } = useNotificationSettings();
   const previousOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -51,34 +56,38 @@ export function OrderFlowDashboard() {
       if (message.type === 'order_flow_update') {
         setFlowData(message.data);
         
-        // Check for new large institutional orders and send notifications
+        // Check for new large orders and send notifications based on filters
         if (notificationsEnabled && permission === 'granted') {
           message.data.forEach((data: OrderFlowData) => {
             data.large_orders.forEach((order) => {
-              if (order.is_institutional) {
-                const orderId = `${data.symbol}-${order.value_usd}-${order.side}`;
+              // Check if should notify based on filters
+              if (!shouldNotify(order.value_usd, data.symbol, order.is_institutional)) {
+                return;
+              }
+
+              const orderId = `${data.symbol}-${order.value_usd}-${order.side}-${Date.now()}`;
+              
+              // Only notify for new orders
+              if (!previousOrdersRef.current.has(orderId)) {
+                previousOrdersRef.current.add(orderId);
                 
-                // Only notify for new orders
-                if (!previousOrdersRef.current.has(orderId)) {
-                  previousOrdersRef.current.add(orderId);
-                  
-                  const emoji = order.side === 'BUY' ? '🟢' : '🔴';
-                  const action = order.side === 'BUY' ? 'COMPRA' : 'VENDA';
-                  
-                  sendNotification(
-                    `${emoji} Ordem Institucional Detectada`,
-                    {
-                      body: `${action} de ${formatVolume(order.value_usd)} em ${data.symbol}\nImpacto: ${order.impact_score.toFixed(1)}%`,
-                      tag: orderId,
-                      requireInteraction: true,
-                    }
-                  );
-                  
-                  toast.success(
-                    `Ordem institucional detectada: ${action} de ${formatVolume(order.value_usd)} em ${data.symbol}`,
-                    { duration: 5000 }
-                  );
-                }
+                const emoji = order.side === 'BUY' ? '🟢' : '🔴';
+                const action = order.side === 'BUY' ? 'COMPRA' : 'VENDA';
+                const institutionalLabel = order.is_institutional ? ' INSTITUCIONAL' : '';
+                
+                sendNotification(
+                  `${emoji} Grande Ordem${institutionalLabel} Detectada`,
+                  {
+                    body: `${action} de ${formatVolume(order.value_usd)} em ${data.symbol}\nImpacto: ${order.impact_score.toFixed(1)}%`,
+                    tag: orderId,
+                    requireInteraction: true,
+                  }
+                );
+                
+                toast.success(
+                  `Grande ordem detectada: ${action} de ${formatVolume(order.value_usd)} em ${data.symbol}`,
+                  { duration: 5000 }
+                );
               }
             });
           });
@@ -162,7 +171,14 @@ export function OrderFlowDashboard() {
               Detecção de movimentações institucionais em tempo real
             </CardDescription>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {isSupported && notificationsEnabled && (
+              <NotificationSettingsDialog
+                settings={settings}
+                onUpdateSettings={updateSettings}
+                onResetSettings={resetSettings}
+              />
+            )}
             {isSupported && (
               <Button
                 variant={notificationsEnabled ? "default" : "outline"}
@@ -190,6 +206,13 @@ export function OrderFlowDashboard() {
         </div>
       </CardHeader>
       <CardContent>
+        <Tabs defaultValue="live" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="live">Fluxo ao Vivo</TabsTrigger>
+            <TabsTrigger value="history">Histórico</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="live" className="mt-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {flowData.map((data) => (
             <Card key={data.symbol} className="bg-muted/30">
@@ -285,12 +308,18 @@ export function OrderFlowDashboard() {
           ))}
         </div>
 
-        {flowData.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            <Activity className="h-12 w-12 mx-auto mb-3 opacity-50 animate-pulse" />
-            <p>Conectando ao stream de order flow...</p>
-          </div>
-        )}
+            {flowData.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <Activity className="h-12 w-12 mx-auto mb-3 opacity-50 animate-pulse" />
+                <p>Conectando ao stream de order flow...</p>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="history" className="mt-4">
+            <LargeOrdersHistory />
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );
