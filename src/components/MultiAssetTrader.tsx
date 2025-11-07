@@ -495,6 +495,20 @@ export const MultiAssetTrader = () => {
             // 🔧 Converter qty para string com precisão correta
             const qtyStr = qty.toFixed(decimals);
             
+            // 📊 LOG DETALHADO PRÉ-ORDEM PARA DEBUG
+            console.log(`📋 PRÉ-ORDEM ${symbol}:`, {
+              action,
+              price: currentPrice,
+              qty: qtyStr,
+              orderValue: orderValueUSD,
+              leverage,
+              stopLoss,
+              takeProfit,
+              validation: action === 'SELL' 
+                ? `SELL: TP(${takeProfit}) < Price(${currentPrice}) < SL(${stopLoss})`
+                : `BUY: SL(${stopLoss}) < Price(${currentPrice}) < TP(${takeProfit})`
+            });
+            
             // 🛡️ VERIFICAÇÃO CRÍTICA DE SALDO ANTES DE CADA ORDEM
             // Buscar saldo atualizado imediatamente antes da ordem
             const { data: balanceCheck, error: balanceError } = await supabase.functions.invoke('bybit-trading', {
@@ -513,6 +527,18 @@ export const MultiAssetTrader = () => {
             const freshBalance = parseFloat(balanceCheck.data?.list?.[0]?.totalAvailableBalance || '0');
             const requiredMargin = parseFloat(orderValueUSD) / leverage;
             const MIN_SAFE_BALANCE = 10; // Manter sempre $10 de margem de segurança
+
+            // 🛑 VERIFICAÇÃO CRÍTICA: Parar se saldo negativo ou insuficiente
+            if (freshBalance < 0) {
+              console.log(`🛑 ${symbol}: SALDO NEGATIVO - Disponível: $${freshBalance.toFixed(2)}`);
+              setIsRunning(false);
+              toast({
+                title: "🛑 Trader Pausado",
+                description: `Saldo negativo: $${freshBalance.toFixed(2)}. Aguarde fechamento de posições.`,
+                variant: "destructive",
+              });
+              return; // PARAR COMPLETAMENTE
+            }
 
             if (freshBalance < requiredMargin + MIN_SAFE_BALANCE) {
               console.log(`🛑 ${symbol}: Saldo insuficiente - Disponível: $${freshBalance.toFixed(2)} | Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`);
@@ -574,6 +600,15 @@ export const MultiAssetTrader = () => {
               let failureReason = errorMsg;
               if (errorMsg.includes('ab not enough')) {
                 failureReason = `❌ SALDO INSUFICIENTE - Margem esgotada`;
+              } else if (errorMsg.includes('TakeProfit') || errorMsg.includes('StopLoss')) {
+                failureReason = `❌ SL/TP INVÁLIDO - ${errorMsg}`;
+                console.error(`🚨 ERRO CRÍTICO SL/TP para ${symbol}:`, {
+                  action,
+                  currentPrice,
+                  stopLoss,
+                  takeProfit,
+                  errorMsg
+                });
               } else if (errorMsg.includes('minNotional')) {
                 failureReason = `Valor mínimo não atingido (< $5.00)`;
               } else if (errorMsg.includes('insufficient')) {
@@ -598,7 +633,10 @@ export const MultiAssetTrader = () => {
                 originalError: errorMsg,
                 qty: qtyStr,
                 orderValue: orderValueUSD,
-                balance: currentBalance
+                balance: currentBalance,
+                stopLoss,
+                takeProfit,
+                currentPrice
               });
               
               // Incrementar perdas consecutivas em caso de erro
