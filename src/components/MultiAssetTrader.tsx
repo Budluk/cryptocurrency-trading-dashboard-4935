@@ -31,6 +31,7 @@ export const MultiAssetTrader = () => {
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [openPositionsCount, setOpenPositionsCount] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [mlConfig, setMlConfig] = useState<any>(null);
   const { toast } = useToast();
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
 
@@ -68,6 +69,18 @@ export const MultiAssetTrader = () => {
     const restoreTraderState = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      // Buscar configuração do ML adaptativo
+      const { data: mlData } = await supabase
+        .from('ml_adaptive_config')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (mlData && mlData.is_enabled) {
+        setMlConfig(mlData);
+        console.log('🧠 ML Adaptativo ATIVADO:', mlData);
+      }
 
       const { data: config } = await supabase
         .from('auto_trader_config')
@@ -352,7 +365,11 @@ export const MultiAssetTrader = () => {
             const currentVolatility = Math.abs(priceChange);
             setAvgVolatility(currentVolatility); // Atualizar volatilidade média
             
-            const leverage = getLeverageForBalance(currentBalance, historicalWinRate);
+            // Usar alavancagem recomendada pelo ML se disponível
+            const leverage = mlConfig?.is_enabled && mlConfig?.recommended_leverage
+              ? mlConfig.recommended_leverage
+              : getLeverageForBalance(currentBalance, historicalWinRate);
+            
             const { usdSize } = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate);
             
             const currentPrice = parseFloat(ticker.lastPrice);
@@ -421,20 +438,29 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
-            // 🛡️ CALCULAR SL E TP - STOPS OBRIGATÓRIOS
+            // 🛡️ CALCULAR SL E TP - STOPS OBRIGATÓRIOS (COM ML ADAPTATIVO)
             const priceDecimals = ticker.lastPrice.includes('.') 
               ? ticker.lastPrice.split('.')[1].length 
               : 2;
             
-            // Stop Loss SEMPRE ativo - 2% de distância
-            const stopLoss = action === 'BUY' 
-              ? (currentPrice * 0.98).toFixed(priceDecimals) // -2% para BUY
-              : (currentPrice * 1.02).toFixed(priceDecimals); // +2% para SELL
+            // Usar configurações do ML se estiver ativo, senão usar valores padrão
+            const stopLossPct = mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct 
+              ? mlConfig.recommended_stop_loss_pct / 100 
+              : 0.02; // 2% padrão
             
-            // Take Profit - 4% de distância (risco/retorno 1:2)
+            const takeProfitPct = mlConfig?.is_enabled && mlConfig?.recommended_take_profit_pct 
+              ? mlConfig.recommended_take_profit_pct / 100 
+              : 0.04; // 4% padrão
+            
+            // Stop Loss SEMPRE ativo
+            const stopLoss = action === 'BUY' 
+              ? (currentPrice * (1 - stopLossPct)).toFixed(priceDecimals)
+              : (currentPrice * (1 + stopLossPct)).toFixed(priceDecimals);
+            
+            // Take Profit
             const takeProfit = action === 'BUY'
-              ? (currentPrice * 1.04).toFixed(priceDecimals) // +4% para BUY
-              : (currentPrice * 0.96).toFixed(priceDecimals); // -4% para SELL
+              ? (currentPrice * (1 + takeProfitPct)).toFixed(priceDecimals)
+              : (currentPrice * (1 - takeProfitPct)).toFixed(priceDecimals);
             
             // Validar que SL está correto para a direção
             if (action === 'BUY' && parseFloat(stopLoss) >= currentPrice) {
@@ -451,7 +477,8 @@ export const MultiAssetTrader = () => {
             // 🔧 Converter qty para string com precisão correta
             const qtyStr = qty.toFixed(decimals);
             
-            console.log(`🎯 SINAL QUALIFICADO [Score: ${signalScore}]: ${symbol} ${action} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
+            const mlIndicator = mlConfig?.is_enabled ? ` [🧠ML: ${stopLossPct*100}%/${takeProfitPct*100}%]` : '';
+            console.log(`🎯 SINAL QUALIFICADO [Score: ${signalScore}]: ${symbol} ${action}${mlIndicator} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
@@ -889,7 +916,7 @@ export const MultiAssetTrader = () => {
             <Button 
               onClick={stopTrading} 
               variant="destructive"
-              className="flex-1"
+              className="w-full"
               size="lg"
             >
               <Square className="h-5 w-5 mr-2" />
@@ -897,6 +924,12 @@ export const MultiAssetTrader = () => {
             </Button>
           )}
         </div>
+
+        {mlConfig?.is_enabled && (
+          <div className="text-xs text-center text-muted-foreground bg-primary/5 p-2 rounded-lg border border-primary/10">
+            🧠 ML Adaptativo: SL {mlConfig.recommended_stop_loss_pct}% | TP {mlConfig.recommended_take_profit_pct}% | Lev {mlConfig.recommended_leverage}x | Confiança: {mlConfig.confidence_score}%
+          </div>
+        )}
 
         {isRunning && (
           <div className="mt-4">

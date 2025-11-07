@@ -20,6 +20,7 @@ import { VolatilityDashboard } from "@/components/VolatilityDashboard";
 import { ActiveTradesPanel } from "@/components/ActiveTradesPanel";
 import { CopyTradingDashboard } from "@/components/CopyTradingDashboard";
 import { TraderProfileSettings } from "@/components/TraderProfileSettings";
+import { MLAdaptiveSettings } from "@/components/MLAdaptiveSettings";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -128,8 +129,10 @@ const Index = () => {
               <AdvancedAnalytics />
             </TabsContent>
             
-            <TabsContent value="settings">
+            <TabsContent value="settings" className="space-y-4">
               <AutoTraderSettings />
+              <MLAdaptiveSettings />
+              <TraderProfileSettings />
             </TabsContent>
             
             <TabsContent value="backtesting">

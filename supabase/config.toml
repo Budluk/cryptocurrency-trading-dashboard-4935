@@ -9,5 +9,8 @@ verify_jwt = false
 [functions.tradingview-webhook]
 verify_jwt = false
 
+[functions.ml-adaptive-learning]
+verify_jwt = true
+
 [functions.copy-trading-sync]
 verify_jwt = false

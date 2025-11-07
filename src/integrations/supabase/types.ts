@@ -980,6 +980,54 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_adaptive_config: {
+        Row: {
+          confidence_score: number | null
+          created_at: string
+          id: string
+          is_enabled: boolean
+          last_analysis_at: string | null
+          optimal_patterns: Json | null
+          recommended_leverage: number | null
+          recommended_stop_loss_pct: number | null
+          recommended_take_profit_pct: number | null
+          trades_analyzed: number | null
+          updated_at: string
+          user_id: string
+          win_rate_by_leverage: Json | null
+        }
+        Insert: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          last_analysis_at?: string | null
+          optimal_patterns?: Json | null
+          recommended_leverage?: number | null
+          recommended_stop_loss_pct?: number | null
+          recommended_take_profit_pct?: number | null
+          trades_analyzed?: number | null
+          updated_at?: string
+          user_id: string
+          win_rate_by_leverage?: Json | null
+        }
+        Update: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          last_analysis_at?: string | null
+          optimal_patterns?: Json | null
+          recommended_leverage?: number | null
+          recommended_stop_loss_pct?: number | null
+          recommended_take_profit_pct?: number | null
+          trades_analyzed?: number | null
+          updated_at?: string
+          user_id?: string
+          win_rate_by_leverage?: Json | null
+        }
+        Relationships: []
+      }
       multi_asset_trades: {
         Row: {
           closed_at: string | null
