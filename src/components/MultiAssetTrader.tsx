@@ -175,7 +175,7 @@ export const MultiAssetTrader = () => {
     }
   };
 
-  // 📊 SINCRONIZAR POSIÇÕES ABERTAS
+  // 📊 SINCRONIZAR POSIÇÕES ABERTAS E IMPORTAR PARA O BANCO
   const syncOpenPositions = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
@@ -193,7 +193,59 @@ export const MultiAssetTrader = () => {
         const positions = data.data.list || [];
         const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
         setOpenPositionsCount(openPositions.length);
-        console.log(`📈 Posições abertas: ${openPositions.length}`);
+        console.log(`📈 Posições Bybit: ${openPositions.length}`);
+
+        // 🔄 IMPORTAR POSIÇÕES QUE NÃO EXISTEM NO BANCO
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Buscar posições já existentes no banco
+        const { data: dbPositions } = await supabase
+          .from('auto_trader_positions')
+          .select('symbol, side')
+          .eq('status', 'OPEN')
+          .eq('user_id', user.id);
+
+        const existingPositions = new Set(
+          (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
+        );
+
+        // Importar posições da Bybit que não estão no banco
+        for (const position of openPositions) {
+          const symbol = position.symbol;
+          const side = position.side;
+          const posKey = `${symbol}-${side}`;
+
+          if (!existingPositions.has(posKey)) {
+            const entryPrice = parseFloat(position.avgPrice);
+            const qty = parseFloat(position.size);
+            const leverage = parseInt(position.leverage);
+            const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
+            const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
+            const currentPrice = parseFloat(position.markPrice);
+            const unrealizedPnl = parseFloat(position.unrealisedPnl);
+
+            console.log(`💾 Importando posição: ${symbol} ${side} @ ${entryPrice}`);
+
+            await supabase.from('auto_trader_positions').insert({
+              user_id: user.id,
+              symbol: symbol,
+              side: side,
+              qty: qty,
+              entry_price: entryPrice,
+              current_price: currentPrice,
+              highest_price: side === 'Buy' ? currentPrice : currentPrice,
+              stop_loss: stopLoss,
+              take_profit: takeProfit,
+              leverage: leverage,
+              status: 'OPEN',
+              confidence: 85, // Estimado para posições importadas
+              trailing_stop_percentage: 1.5,
+              unrealized_pnl: unrealizedPnl,
+              opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Erro ao sincronizar posições:', error);

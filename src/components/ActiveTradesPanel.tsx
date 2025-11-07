@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,94 @@ import { useRealtimePrice } from "@/hooks/useRealtimePrice";
 export const ActiveTradesPanel = () => {
   const { toast } = useToast();
   const { getPrice, isConnected } = useRealtimePrice();
+
+  // 🔄 Sincronizar posições da Bybit ao carregar
+  const syncBybitPositions = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_positions',
+          isTestnet: false,
+          params: { 
+            category: 'linear',
+            settleCoin: 'USDT' 
+          }
+        }
+      });
+
+      if (!error && data?.success) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const positions = data.data.list || [];
+        const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
+
+        // Buscar posições já existentes no banco
+        const { data: dbPositions } = await supabase
+          .from('auto_trader_positions')
+          .select('symbol, side')
+          .eq('status', 'OPEN')
+          .eq('user_id', user.id);
+
+        const existingPositions = new Set(
+          (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
+        );
+
+        let imported = 0;
+
+        // Importar posições que não estão no banco
+        for (const position of openPositions) {
+          const symbol = position.symbol;
+          const side = position.side;
+          const posKey = `${symbol}-${side}`;
+
+          if (!existingPositions.has(posKey)) {
+            const entryPrice = parseFloat(position.avgPrice);
+            const qty = parseFloat(position.size);
+            const leverage = parseInt(position.leverage);
+            const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
+            const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
+            const currentPrice = parseFloat(position.markPrice);
+            const unrealizedPnl = parseFloat(position.unrealisedPnl);
+
+            await supabase.from('auto_trader_positions').insert({
+              user_id: user.id,
+              symbol: symbol,
+              side: side,
+              qty: qty,
+              entry_price: entryPrice,
+              current_price: currentPrice,
+              highest_price: side === 'Buy' ? currentPrice : currentPrice,
+              stop_loss: stopLoss,
+              take_profit: takeProfit,
+              leverage: leverage,
+              status: 'OPEN',
+              confidence: 85,
+              trailing_stop_percentage: 1.5,
+              unrealized_pnl: unrealizedPnl,
+              opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
+            });
+            
+            imported++;
+          }
+        }
+
+        if (imported > 0) {
+          toast({
+            title: "✅ Posições Sincronizadas",
+            description: `${imported} posições da Bybit importadas`,
+          });
+          refetch();
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar:', error);
+    }
+  };
+
+  useEffect(() => {
+    syncBybitPositions();
+  }, []);
 
   const { data: positions, refetch } = useQuery({
     queryKey: ['active-trades-panel'],
@@ -104,11 +193,21 @@ export const ActiveTradesPanel = () => {
             {positions?.length || 0} posições ativas
           </p>
         </div>
-        {positions && positions.length > 0 && (
-          <Badge variant="default" className="text-lg px-4 py-2">
-            Total P&L: ${positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0).toFixed(2)}
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={syncBybitPositions}
+            className="gap-2"
+          >
+            🔄 Sincronizar
+          </Button>
+          {positions && positions.length > 0 && (
+            <Badge variant="default" className="text-lg px-4 py-2">
+              Total P&L: ${positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0).toFixed(2)}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {!positions || positions.length === 0 ? (
