@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Minimize2, Maximize2, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, Minimize2, Maximize2, Activity, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface Position {
   id: string;
@@ -22,6 +23,7 @@ interface Position {
 export const FloatingPositionsWidget = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
+  const { toast } = useToast();
 
   const { data: positions, refetch } = useQuery({
     queryKey: ['floating-positions'],
@@ -61,6 +63,39 @@ export const FloatingPositionsWidget = () => {
       supabase.removeChannel(channel);
     };
   }, [refetch]);
+
+  const closePosition = async (positionId: string, symbol: string) => {
+    try {
+      const position = positions?.find(p => p.id === positionId);
+      if (!position) return;
+
+      const { error } = await supabase
+        .from('auto_trader_positions')
+        .update({
+          status: 'CLOSED',
+          closed_at: new Date().toISOString(),
+          close_reason: 'Fechamento Manual (Widget)',
+          realized_pnl: position.unrealized_pnl,
+          exit_price: position.current_price
+        })
+        .eq('id', positionId);
+
+      if (error) throw error;
+
+      toast({
+        title: "✅ Posição Fechada",
+        description: `${symbol} - P&L: ${position.unrealized_pnl >= 0 ? '+' : ''}$${position.unrealized_pnl.toFixed(2)}`,
+      });
+
+      refetch();
+    } catch (error: any) {
+      toast({
+        title: "❌ Erro ao fechar",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   if (!isVisible || !positions || positions.length === 0) {
     return null;
@@ -127,11 +162,21 @@ export const FloatingPositionsWidget = () => {
                         {position.side}
                       </Badge>
                     </div>
-                    {isProfit ? (
-                      <TrendingUp className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <TrendingDown className="h-3 w-3 text-red-500" />
-                    )}
+                    <div className="flex items-center gap-1">
+                      {isProfit ? (
+                        <TrendingUp className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <TrendingDown className="h-3 w-3 text-red-500" />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 w-5 p-0 hover:bg-destructive/20"
+                        onClick={() => closePosition(position.id, position.symbol)}
+                      >
+                        <X className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs">

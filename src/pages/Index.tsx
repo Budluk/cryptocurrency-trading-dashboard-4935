@@ -12,6 +12,8 @@ import { WebhookTester } from "@/components/WebhookTester";
 import { MultiAssetTrader } from "@/components/MultiAssetTrader";
 import { TradeHistory } from "@/components/TradeHistory";
 import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
+import { TrailingStopConfig } from "@/components/TrailingStopConfig";
+import { AdvancedPerformanceMetrics } from "@/components/AdvancedPerformanceMetrics";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -41,10 +43,11 @@ const Index = () => {
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-8">
+            <TabsList className="grid w-full grid-cols-9">
               <TabsTrigger value="trader">Auto Trader</TabsTrigger>
               <TabsTrigger value="tradingview">TradingView</TabsTrigger>
               <TabsTrigger value="positions">Posições</TabsTrigger>
+              <TabsTrigger value="trailing">Trailing Stop</TabsTrigger>
               <TabsTrigger value="history">Histórico</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -54,6 +57,7 @@ const Index = () => {
             
             <TabsContent value="trader" className="space-y-8">
               <MultiAssetTrader />
+              <OpenPositionsMonitor />
               <div className="pt-8 border-t border-border">
                 <h3 className="text-lg font-semibold mb-4">Trader Clássico</h3>
                 <AutoTrader />
@@ -74,12 +78,19 @@ const Index = () => {
               <OpenPositionsMonitor />
             </TabsContent>
             
+            <TabsContent value="trailing">
+              <TrailingStopConfig />
+            </TabsContent>
+            
             <TabsContent value="history">
               <TradeHistory />
             </TabsContent>
             
             <TabsContent value="performance">
               <PerformanceDashboard />
+              <div className="mt-8">
+                <AdvancedPerformanceMetrics />
+              </div>
             </TabsContent>
             
             <TabsContent value="analytics">

@@ -129,6 +129,52 @@ export const usePositionMonitor = () => {
             }
           }
 
+          // 🎯 PARTIAL TAKE PROFIT - Fechar 50% em 1.5% de lucro
+          const pnlPercent = side === 'BUY' 
+            ? ((current_price - entry_price) / entry_price) * 100
+            : ((entry_price - current_price) / entry_price) * 100;
+
+          if (!shouldClose && pnlPercent >= 1.5 && qty > 0.002) { // 1.5% de lucro e quantidade suficiente
+            console.log(`🎯 ${position.symbol}: Partial TP atingido (${pnlPercent.toFixed(2)}%) - Fechando 50%`);
+            
+            const halfQty = qty / 2;
+            const partialPnl = side === 'BUY'
+              ? (current_price - entry_price) * halfQty
+              : (entry_price - current_price) * halfQty;
+
+            // Atualizar posição: reduzir quantidade e mover stop para breakeven
+            await supabase
+              .from('auto_trader_positions')
+              .update({
+                qty: halfQty,
+                stop_loss: entry_price, // Move stop para breakeven
+                realized_pnl: partialPnl,
+              })
+              .eq('id', id);
+
+            toast({
+              title: "🎯 Partial Take Profit",
+              description: `${position.symbol}: 50% fechado em +${pnlPercent.toFixed(2)}% | P&L: +$${partialPnl.toFixed(2)} | Stop movido para breakeven`,
+            });
+
+            // Log
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await supabase.from('auto_trader_logs').insert({
+                user_id: user.id,
+                log_type: 'PARTIAL_TP',
+                position_id: id,
+                symbol: position.symbol,
+                message: `Partial TP: 50% fechado em +${pnlPercent.toFixed(2)}%`,
+                metadata: { 
+                  pnl: partialPnl,
+                  remaining_qty: halfQty,
+                  new_stop: entry_price
+                },
+              });
+            }
+          }
+
           // 🔥 FECHAR POSIÇÃO AUTOMATICAMENTE
           if (shouldClose) {
             console.log(`💰 Fechando ${position.symbol} ${side}: ${closeReason} | P&L: $${realized_pnl.toFixed(2)}`);

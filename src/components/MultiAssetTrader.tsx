@@ -37,19 +37,65 @@ export const MultiAssetTrader = () => {
   const MAX_OPEN_POSITIONS = 5;
   const MAX_CONSECUTIVE_LOSSES = 3;
   
-  // Estratégia de alavancagem baseada no bankroll
-  const getLeverageForBalance = (balance: number) => {
-    if (balance < 5) return 20; // Máxima alavancagem quando muito baixo
-    if (balance < 10) return 15;
-    if (balance < 20) return 10;
-    if (balance < 50) return 8;
-    return 5; // Conservador quando tem capital
+  // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
+  const [historicalWinRate, setHistoricalWinRate] = useState(50); // Win rate inicial estimado
+  const [avgVolatility, setAvgVolatility] = useState(2); // Volatilidade média dos ativos
+
+  // Calcular win rate histórico
+  useEffect(() => {
+    const fetchWinRate = async () => {
+      const { data } = await supabase
+        .from('auto_trader_positions')
+        .select('realized_pnl')
+        .eq('status', 'CLOSED')
+        .order('closed_at', { ascending: false })
+        .limit(20);
+
+      if (data && data.length > 0) {
+        const wins = data.filter(t => (t.realized_pnl || 0) > 0).length;
+        const winRate = (wins / data.length) * 100;
+        setHistoricalWinRate(winRate);
+      }
+    };
+
+    fetchWinRate();
+  }, [cycleCount]);
+
+  // Estratégia de alavancagem baseada no bankroll E win rate
+  const getLeverageForBalance = (balance: number, winRate: number) => {
+    // Base de alavancagem pelo saldo
+    let baseLeverage = 5;
+    if (balance < 5) baseLeverage = 20;
+    else if (balance < 10) baseLeverage = 15;
+    else if (balance < 20) baseLeverage = 10;
+    else if (balance < 50) baseLeverage = 8;
+
+    // Ajustar pela performance
+    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 25); // Aumenta se está bem
+    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 5, 3); // Reduz se está mal
+
+    return baseLeverage;
   };
 
-  // Calcular tamanho da posição (1-5% do bankroll por trade)
-  const calculatePositionSize = (balance: number, leverage: number) => {
-    const riskPercent = balance < 15 ? 0.05 : 0.03; // 5% se baixo, 3% se ok
-    const usdSize = balance * riskPercent;
+  // Calcular tamanho da posição baseado em VOLATILIDADE e WIN RATE
+  const calculatePositionSize = (balance: number, leverage: number, volatility: number, winRate: number) => {
+    // Base: 1-5% do bankroll
+    let baseRisk = balance < 15 ? 0.05 : 0.03;
+
+    // AJUSTE POR VOLATILIDADE: Reduzir risco em ativos muito voláteis
+    if (volatility > 5) baseRisk *= 0.6; // -40% em alta volatilidade
+    else if (volatility > 3) baseRisk *= 0.8; // -20% em volatilidade moderada
+    else if (volatility < 1) baseRisk *= 1.2; // +20% em baixa volatilidade
+
+    // AJUSTE POR WIN RATE: Aumentar risco se está performando bem
+    if (winRate >= 65) baseRisk *= 1.3; // +30% se win rate alto
+    else if (winRate >= 55) baseRisk *= 1.1; // +10% se win rate bom
+    else if (winRate < 40) baseRisk *= 0.7; // -30% se win rate baixo
+
+    // Garantir limites razoáveis (0.5% a 8% do bankroll)
+    baseRisk = Math.max(0.005, Math.min(0.08, baseRisk));
+
+    const usdSize = balance * baseRisk;
     return { usdSize, quantity: (usdSize * leverage) };
   };
 
@@ -237,10 +283,26 @@ export const MultiAssetTrader = () => {
             currentBalance > 2 &&
             Math.random() > 0.70 // 30% chance final para não sobrecarregar
           );
+
+          // 📋 MOTIVOS PARA NÃO EXECUTAR
+          if (!shouldTrade && signalScore > 0) {
+            let skipReason = '';
+            if (signalScore < 65) skipReason = `Score baixo (${signalScore}/65)`;
+            else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M < $1M)`;
+            else if (!hasGoodVolatility) skipReason = `Volatilidade baixa (${Math.abs(priceChange).toFixed(2)}% < 0.8%)`;
+            else if (currentBalance <= 2) skipReason = `Saldo insuficiente ($${currentBalance.toFixed(2)})`;
+            else if (action === null) skipReason = 'Sem sinal claro de entrada';
+            else skipReason = 'Filtro de frequência (evitar overtrading)';
+            
+            console.log(`⏭️ ${symbol} PULADO: ${skipReason}`);
+          }
           
           if (shouldTrade && action) {
-            const leverage = getLeverageForBalance(currentBalance);
-            const { usdSize } = calculatePositionSize(currentBalance, leverage);
+            const currentVolatility = Math.abs(priceChange);
+            setAvgVolatility(currentVolatility); // Atualizar volatilidade média
+            
+            const leverage = getLeverageForBalance(currentBalance, historicalWinRate);
+            const { usdSize } = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate);
             
             const currentPrice = parseFloat(ticker.lastPrice);
             const atrEstimate = currentPrice * 0.02; // Estimar ATR como 2% do preço
@@ -409,20 +471,37 @@ export const MultiAssetTrader = () => {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError);
               const errorMsg = orderData?.error || orderError?.message || 'Erro desconhecido';
               
+              // 📋 MOTIVOS DETALHADOS DE FALHA
+              let failureReason = errorMsg;
+              if (errorMsg.includes('minNotional')) {
+                failureReason = `Valor mínimo não atingido (< $5.00)`;
+              } else if (errorMsg.includes('insufficient')) {
+                failureReason = `Saldo insuficiente na conta`;
+              } else if (errorMsg.includes('not exists') || errorMsg.includes('not found')) {
+                failureReason = `Instrumento ${symbol} não listado na Bybit`;
+              } else if (errorMsg.includes('qty')) {
+                failureReason = `Quantidade inválida (minQty não respeitado)`;
+              } else if (errorMsg.includes('price')) {
+                failureReason = `Preço inválido ou fora dos limites`;
+              }
+              
               toast({
-                title: "❌ Falha na Ordem",
-                description: `${symbol}: ${errorMsg}`,
+                title: `❌ Falha: ${symbol}`,
+                description: failureReason,
                 variant: "destructive"
+              });
+              
+              // Log detalhado
+              console.log(`📋 FALHA DETALHADA ${symbol}:`, {
+                reason: failureReason,
+                originalError: errorMsg,
+                qty: qtyStr,
+                orderValue: orderValueUSD,
+                balance: currentBalance
               });
               
               // Incrementar perdas consecutivas em caso de erro
               setConsecutiveLosses(prev => prev + 1);
-              
-              toast({
-                title: `❌ Falha ${symbol}`,
-                description: orderError?.message || 'Erro ao executar ordem',
-                variant: 'destructive'
-              });
             }
           }
 
@@ -501,7 +580,7 @@ export const MultiAssetTrader = () => {
     setIsRunning(true);
     toast({
       title: "⚡ TRADER REAL 24/7 ATIVADO",
-      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance)}x | Ciclo: 2min | Sinais Técnicos Avançados`,
+      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance, historicalWinRate)}x | Win Rate: ${historicalWinRate.toFixed(0)}% | Ciclo: 2min`,
     });
   };
 
@@ -568,9 +647,9 @@ export const MultiAssetTrader = () => {
               <TrendingUp className="h-4 w-4 text-blue-500" />
               <span className="text-xs text-muted-foreground">Alavancagem</span>
             </div>
-            <div className="text-xl font-bold">{getLeverageForBalance(currentBalance)}x</div>
+            <div className="text-xl font-bold">{getLeverageForBalance(currentBalance, historicalWinRate)}x</div>
             <div className="text-xs text-muted-foreground">
-              Dinâmica
+              Dinâmica (Win: {historicalWinRate.toFixed(0)}%)
             </div>
           </Card>
 
