@@ -271,9 +271,12 @@ export const MultiAssetTrader = () => {
 
       const tickers = tickerData?.data?.list || [];
       
+      // 🛑 FLAG para parar processamento em caso de saldo insuficiente
+      let shouldStopTrading = false;
+      
       // 3. Analisar TODOS os ativos disponíveis (não limitar a 20)
       for (const instrument of tradableAssets) {
-        if (!isRunning) break;
+        if (!isRunning || shouldStopTrading) break;
 
         const symbol = instrument.symbol;
         const ticker = tickers.find((t: any) => t.symbol === symbol);
@@ -532,23 +535,25 @@ export const MultiAssetTrader = () => {
             if (freshBalance < 0) {
               console.log(`🛑 ${symbol}: SALDO NEGATIVO - Disponível: $${freshBalance.toFixed(2)}`);
               setIsRunning(false);
+              shouldStopTrading = true; // ATIVAR FLAG
               toast({
                 title: "🛑 Trader Pausado",
                 description: `Saldo negativo: $${freshBalance.toFixed(2)}. Aguarde fechamento de posições.`,
                 variant: "destructive",
               });
-              return; // PARAR COMPLETAMENTE
+              break; // Sair do loop imediatamente
             }
 
             if (freshBalance < requiredMargin + MIN_SAFE_BALANCE) {
               console.log(`🛑 ${symbol}: Saldo insuficiente - Disponível: $${freshBalance.toFixed(2)} | Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`);
               setIsRunning(false);
+              shouldStopTrading = true; // ATIVAR FLAG
               toast({
                 title: "🛑 Trader Pausado",
                 description: `Saldo insuficiente: $${freshBalance.toFixed(2)} disponível. Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`,
                 variant: "destructive",
               });
-              return; // PARAR COMPLETAMENTE a função
+              break; // Sair do loop imediatamente
             }
             
             const mlIndicator = mlConfig?.is_enabled ? ` [🧠ML: ${stopLossPct*100}%/${takeProfitPct*100}%]` : '';
@@ -646,12 +651,13 @@ export const MultiAssetTrader = () => {
               if (errorMsg.includes('ab not enough')) {
                 console.log('🛑 SALDO INSUFICIENTE - Pausando trader');
                 setIsRunning(false);
+                shouldStopTrading = true; // ATIVAR FLAG
                 toast({
                   title: "🛑 Trader Pausado",
                   description: "Saldo insuficiente para novas operações. Aguarde fechamento de posições.",
                   variant: "destructive",
                 });
-                return; // PARAR COMPLETAMENTE a função
+                break; // Sair do loop imediatamente
               }
             }
           }
