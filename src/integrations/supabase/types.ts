@@ -863,6 +863,42 @@ export type Database = {
         }
         Relationships: []
       }
+      large_orders: {
+        Row: {
+          detected_at: string
+          id: string
+          impact_score: number | null
+          is_institutional: boolean
+          price: number
+          side: string
+          size: number
+          symbol: string
+          value_usd: number
+        }
+        Insert: {
+          detected_at?: string
+          id?: string
+          impact_score?: number | null
+          is_institutional?: boolean
+          price: number
+          side: string
+          size: number
+          symbol: string
+          value_usd: number
+        }
+        Update: {
+          detected_at?: string
+          id?: string
+          impact_score?: number | null
+          is_institutional?: boolean
+          price?: number
+          side?: string
+          size?: number
+          symbol?: string
+          value_usd?: number
+        }
+        Relationships: []
+      }
       logs: {
         Row: {
           asset_interval: string | null
@@ -1296,6 +1332,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      order_flow_analysis: {
+        Row: {
+          buy_volume: number
+          created_at: string
+          id: string
+          institutional_flow: string | null
+          large_orders_count: number
+          net_volume: number
+          price: number
+          sell_volume: number
+          symbol: string
+          timeframe: string
+          timestamp: string
+          volume_delta_pct: number
+        }
+        Insert: {
+          buy_volume: number
+          created_at?: string
+          id?: string
+          institutional_flow?: string | null
+          large_orders_count?: number
+          net_volume: number
+          price: number
+          sell_volume: number
+          symbol: string
+          timeframe: string
+          timestamp: string
+          volume_delta_pct: number
+        }
+        Update: {
+          buy_volume?: number
+          created_at?: string
+          id?: string
+          institutional_flow?: string | null
+          large_orders_count?: number
+          net_volume?: number
+          price?: number
+          sell_volume?: number
+          symbol?: string
+          timeframe?: string
+          timestamp?: string
+          volume_delta_pct?: number
+        }
+        Relationships: []
       }
       paper_trades: {
         Row: {

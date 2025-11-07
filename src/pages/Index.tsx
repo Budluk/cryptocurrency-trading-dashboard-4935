@@ -1,153 +1,106 @@
 import CryptoChart from "@/components/CryptoChart";
 import AdvancedAISignals from "@/components/AdvancedAISignals";
-import { BybitModeToggle } from "@/components/BybitModeToggle";
-import { AutoTrader } from "@/components/AutoTrader";
-import { OpenPositionsMonitor } from "@/components/OpenPositionsMonitor";
-import { FloatingPositionsWidget } from "@/components/FloatingPositionsWidget";
 import { AutoTraderSettings } from "@/components/AutoTraderSettings";
-import { BacktestingPanel } from "@/components/BacktestingPanel";
 import PerformanceDashboard from "@/components/PerformanceDashboard";
-import { TradingViewWebhookStatus } from "@/components/TradingViewWebhookStatus";
-import { WebhookTester } from "@/components/WebhookTester";
 import { MultiAssetTrader } from "@/components/MultiAssetTrader";
-import { TradeHistory } from "@/components/TradeHistory";
 import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
-import { TrailingStopConfig } from "@/components/TrailingStopConfig";
-import { AdvancedPerformanceMetrics } from "@/components/AdvancedPerformanceMetrics";
-import { DailyPnLSummary } from "@/components/DailyPnLSummary";
-import { CorrelationHeatmap } from "@/components/CorrelationHeatmap";
-import { VolatilityDashboard } from "@/components/VolatilityDashboard";
-import { ActiveTradesPanel } from "@/components/ActiveTradesPanel";
-import { CopyTradingDashboard } from "@/components/CopyTradingDashboard";
 import { TraderProfileSettings } from "@/components/TraderProfileSettings";
 import { MLAdaptiveSettings } from "@/components/MLAdaptiveSettings";
 import { SentimentDashboard } from "@/components/SentimentDashboard";
 import { PortfolioRebalancer } from "@/components/PortfolioRebalancer";
+import { OrderFlowDashboard } from "@/components/OrderFlowDashboard";
+import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
 import { usePriceUpdater } from "@/hooks/usePriceUpdater";
+import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 const Index = () => {
-  // Ativar monitoramento automático de posições e atualização de preços
   usePositionMonitor();
   usePriceUpdater();
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+      <div className="max-w-[1600px] mx-auto p-6">
+        {/* Header */}
         <header className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-2">
             <div>
-              <h1 className="text-3xl font-bold mb-2">Sinais de Trading IA</h1>
-              <p className="text-muted-foreground">Sinais precisos com IA avançada e análise técnica</p>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                AI Trading Platform
+              </h1>
+              <p className="text-muted-foreground mt-1">Sistema profissional de trading com IA avançada</p>
             </div>
-            <Badge variant="default" className="animate-pulse">
+            <Badge variant="default" className="h-8 px-4">
+              <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
               AO VIVO
             </Badge>
           </div>
         </header>
         
-        {/* P&L Diário */}
+        {/* P&L Summary */}
         <DailyPnLSummary />
         
-        <div className="space-y-8 mt-8">
-          <BybitModeToggle />
-          
-          <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-12">
-              <TabsTrigger value="trader">Auto Trader</TabsTrigger>
-              <TabsTrigger value="tradingview">TradingView</TabsTrigger>
-              <TabsTrigger value="positions">Posições</TabsTrigger>
-              <TabsTrigger value="copy">Copy Trade</TabsTrigger>
-              <TabsTrigger value="volatility">Volatilidade</TabsTrigger>
-              <TabsTrigger value="correlation">Correlação</TabsTrigger>
-              <TabsTrigger value="trailing">Trailing Stop</TabsTrigger>
-              <TabsTrigger value="history">Histórico</TabsTrigger>
-              <TabsTrigger value="performance">Performance</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-              <TabsTrigger value="settings">Config</TabsTrigger>
-              <TabsTrigger value="backtesting">Backtest</TabsTrigger>
+        <div className="mt-8">
+          <Tabs defaultValue="trading" className="w-full">
+            <TabsList className="grid w-full grid-cols-4 mb-6">
+              <TabsTrigger value="trading" className="data-[state=active]:bg-primary">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Trading
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="data-[state=active]:bg-primary">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Analytics
+              </TabsTrigger>
+              <TabsTrigger value="advanced" className="data-[state=active]:bg-primary">
+                <Activity className="h-4 w-4 mr-2" />
+                Advanced
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="data-[state=active]:bg-primary">
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="trader" className="space-y-8">
-              <MultiAssetTrader />
-              <ActiveTradesPanel />
-              <OpenPositionsMonitor />
-              <div className="pt-8 border-t border-border">
-                <h3 className="text-lg font-semibold mb-4">Trader Clássico</h3>
-                <AutoTrader />
+            {/* Trading Tab */}
+            <TabsContent value="trading" className="space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <MultiAssetTrader />
+                <div className="space-y-6">
+                  <CryptoChart />
+                  <AdvancedAISignals />
+                </div>
               </div>
-              <AdvancedAISignals />
             </TabsContent>
 
-            <TabsContent value="tradingview" className="space-y-8">
-              <TradingViewWebhookStatus />
-              <WebhookTester />
-              <div className="grid gap-4 md:grid-cols-2">
-                <CryptoChart />
-                <AdvancedAISignals />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="positions">
-              <ActiveTradesPanel />
-              <div className="mt-8">
-                <OpenPositionsMonitor />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="copy">
-              <CopyTradingDashboard />
-              <div className="mt-8">
-                <TraderProfileSettings />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="volatility">
-              <VolatilityDashboard />
-            </TabsContent>
-            
-            <TabsContent value="correlation">
-              <CorrelationHeatmap />
-            </TabsContent>
-            
-            <TabsContent value="trailing">
-              <TrailingStopConfig />
-            </TabsContent>
-            
-            <TabsContent value="history">
-              <TradeHistory />
-            </TabsContent>
-            
-            <TabsContent value="performance">
+            {/* Analytics Tab */}
+            <TabsContent value="analytics" className="space-y-6">
               <PerformanceDashboard />
-              <div className="mt-8">
-                <AdvancedPerformanceMetrics />
+              <AdvancedAnalytics />
+            </TabsContent>
+
+            {/* Advanced Tab */}
+            <TabsContent value="advanced" className="space-y-6">
+              <OrderFlowDashboard />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SentimentDashboard />
+                <PortfolioRebalancer />
               </div>
             </TabsContent>
             
-            <TabsContent value="analytics" className="space-y-4">
-              <AdvancedAnalytics />
-              <SentimentDashboard />
-              <PortfolioRebalancer />
-            </TabsContent>
-            
-            <TabsContent value="settings" className="space-y-4">
-              <AutoTraderSettings />
-              <MLAdaptiveSettings />
+            {/* Settings Tab */}
+            <TabsContent value="settings" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <AutoTraderSettings />
+                <MLAdaptiveSettings />
+              </div>
               <TraderProfileSettings />
-            </TabsContent>
-            
-            <TabsContent value="backtesting">
-              <BacktestingPanel />
             </TabsContent>
           </Tabs>
         </div>
       </div>
-      
-      {/* Widget Flutuante de Posições */}
-      <FloatingPositionsWidget />
     </div>
   );
 };

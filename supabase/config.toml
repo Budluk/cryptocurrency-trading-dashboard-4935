@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.portfolio-rebalancer]
 verify_jwt = true
+
+[functions.order-flow-analysis]
+verify_jwt = false
