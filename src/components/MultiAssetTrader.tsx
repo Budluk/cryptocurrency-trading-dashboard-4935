@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
+import { AdvancedTradingSettings } from "@/components/AdvancedTradingSettings";
 
 interface Trade {
   symbol: string;
@@ -43,6 +44,21 @@ export const MultiAssetTrader = () => {
   // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
   const [historicalWinRate, setHistoricalWinRate] = useState(50); // Win rate inicial estimado
   const [avgVolatility, setAvgVolatility] = useState(2); // Volatilidade média dos ativos
+  
+  // ⚡ CONFIGURAÇÕES AVANÇADAS
+  const [trailingStopEnabled, setTrailingStopEnabled] = useState(true);
+  const [trailingStopPercent, setTrailingStopPercent] = useState(1.5);
+  const [timeFilterEnabled, setTimeFilterEnabled] = useState(true);
+  const [startHour, setStartHour] = useState(14); // 14h UTC (início de NY)
+  const [endHour, setEndHour] = useState(20); // 20h UTC (fim de NY)
+  const [scaleInOutEnabled, setScaleInOutEnabled] = useState(true);
+  
+  // 📊 TRACKING DE POSIÇÕES PARA TRAILING STOP
+  const [positionTracking, setPositionTracking] = useState<Map<string, {
+    highestPrice: number;
+    lowestPrice: number;
+    currentStopLoss: number;
+  }>>(new Map());
 
   // Calcular win rate histórico
   useEffect(() => {
@@ -200,6 +216,131 @@ export const MultiAssetTrader = () => {
     }
   };
 
+  // 🎯 TRAILING STOP LOSS - Atualizar stops dinamicamente
+  const updateTrailingStops = async () => {
+    if (!trailingStopEnabled || positionTracking.size === 0) return;
+    
+    try {
+      // Buscar posições abertas
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_positions',
+          isTestnet: false,
+          params: { 
+            category: 'linear',
+            settleCoin: 'USDT' 
+          }
+        }
+      });
+
+      if (error || !data?.success) return;
+
+      const positions = data.data?.list || [];
+      const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
+
+      for (const position of openPositions) {
+        const symbol = position.symbol;
+        const tracking = positionTracking.get(symbol);
+        if (!tracking) continue;
+
+        const currentPrice = parseFloat(position.markPrice);
+        const side = position.side; // 'Buy' ou 'Sell'
+        let shouldUpdateStop = false;
+        let newStopLoss = tracking.currentStopLoss;
+
+        if (side === 'Buy') {
+          // Para BUY: Mover SL para cima quando preço sobe
+          if (currentPrice > tracking.highestPrice) {
+            const newHighest = currentPrice;
+            newStopLoss = newHighest * (1 - trailingStopPercent / 100);
+            
+            // Só atualizar se o novo SL for maior que o atual (movendo para cima)
+            if (newStopLoss > tracking.currentStopLoss) {
+              shouldUpdateStop = true;
+              console.log(`🎯 TRAILING STOP ${symbol}: Novo SL $${newStopLoss.toFixed(4)} (era $${tracking.currentStopLoss.toFixed(4)})`);
+              
+              // Atualizar tracking
+              setPositionTracking(prev => {
+                const newMap = new Map(prev);
+                newMap.set(symbol, {
+                  ...tracking,
+                  highestPrice: newHighest,
+                  currentStopLoss: newStopLoss
+                });
+                return newMap;
+              });
+            }
+          }
+        } else {
+          // Para SELL: Mover SL para baixo quando preço cai
+          if (currentPrice < tracking.lowestPrice) {
+            const newLowest = currentPrice;
+            newStopLoss = newLowest * (1 + trailingStopPercent / 100);
+            
+            // Só atualizar se o novo SL for menor que o atual (movendo para baixo)
+            if (newStopLoss < tracking.currentStopLoss) {
+              shouldUpdateStop = true;
+              console.log(`🎯 TRAILING STOP ${symbol}: Novo SL $${newStopLoss.toFixed(4)} (era $${tracking.currentStopLoss.toFixed(4)})`);
+              
+              // Atualizar tracking
+              setPositionTracking(prev => {
+                const newMap = new Map(prev);
+                newMap.set(symbol, {
+                  ...tracking,
+                  lowestPrice: newLowest,
+                  currentStopLoss: newStopLoss
+                });
+                return newMap;
+              });
+            }
+          }
+        }
+
+        // Atualizar stop loss na Bybit se necessário
+        if (shouldUpdateStop) {
+          const priceDecimals = position.avgPrice.includes('.') 
+            ? position.avgPrice.split('.')[1].length 
+            : 2;
+          
+          const { error: updateError } = await supabase.functions.invoke('bybit-trading', {
+            body: {
+              action: 'set_trading_stop',
+              isTestnet: false,
+              params: {
+                category: 'linear',
+                symbol: symbol,
+                stopLoss: newStopLoss.toFixed(priceDecimals),
+                positionIdx: 0
+              }
+            }
+          });
+
+          if (updateError) {
+            console.error(`❌ Erro ao atualizar trailing stop ${symbol}:`, updateError);
+          } else {
+            console.log(`✅ Trailing Stop atualizado na Bybit: ${symbol} → $${newStopLoss.toFixed(priceDecimals)}`);
+          }
+        }
+      }
+
+      // Limpar tracking de posições que foram fechadas
+      const openSymbols = new Set(openPositions.map((p: any) => p.symbol));
+      setPositionTracking(prev => {
+        const newMap = new Map(prev);
+        for (const [symbol] of newMap) {
+          if (!openSymbols.has(symbol)) {
+            newMap.delete(symbol);
+            console.log(`🧹 Removido tracking de ${symbol} (posição fechada)`);
+          }
+        }
+        return newMap;
+      });
+
+    } catch (error) {
+      console.error('Erro ao atualizar trailing stops:', error);
+    }
+  };
+
   const analyzeAndTrade = async () => {
     try {
       // 🔄 SINCRONIZAR PRIMEIRO - Obter dados atualizados da Bybit
@@ -235,6 +376,20 @@ export const MultiAssetTrader = () => {
       if (openPositionsCount >= MAX_OPEN_POSITIONS) {
         console.log('📊 Máximo de posições abertas atingido');
         return;
+      }
+      
+      // ⏰ FILTRO DE HORÁRIOS
+      if (timeFilterEnabled) {
+        const currentHour = new Date().getUTCHours();
+        const isWithinTradingHours = startHour <= endHour
+          ? currentHour >= startHour && currentHour < endHour
+          : currentHour >= startHour || currentHour < endHour; // Suporta overnight (ex: 22h-6h)
+        
+        if (!isWithinTradingHours) {
+          console.log(`⏰ FORA DO HORÁRIO DE TRADING: ${currentHour}h UTC (Ativo: ${startHour}h-${endHour}h UTC)`);
+          return; // Não analisa ativos fora do horário
+        }
+        console.log(`✅ DENTRO DO HORÁRIO DE TRADING: ${currentHour}h UTC`);
       }
 
       // 1. Buscar TODOS os ativos da Bybit
@@ -392,6 +547,12 @@ export const MultiAssetTrader = () => {
             // Calcular quantidade baseada no tamanho desejado
             let rawQty = (usdSize * leverage) / currentPrice;
             
+            // 📊 SCALE IN/OUT: Entrar com 50% inicial se ativado
+            if (scaleInOutEnabled) {
+              rawQty = rawQty * 0.5; // 50% da posição inicial
+              console.log(`📊 SCALE IN/OUT ATIVO: Entrando com 50% da posição (${rawQty.toFixed(4)})`);
+            }
+            
             // Garantir valor mínimo de 5 USDT
             const minQtyForValue = MIN_ORDER_VALUE / currentPrice;
             if (rawQty < minQtyForValue) {
@@ -463,9 +624,15 @@ export const MultiAssetTrader = () => {
               : (currentPrice * (1 + stopLossPct)).toFixed(priceDecimals);
             
             // Take Profit
+            // 📊 SCALE IN/OUT: Se ativado, usar TP mais próximo (primeiro nível = 2%)
+            const firstTpPct = scaleInOutEnabled ? 0.02 : takeProfitPct; // 2% se scale-in ativo
             const takeProfit = action === 'BUY'
-              ? (currentPrice * (1 + takeProfitPct)).toFixed(priceDecimals)
-              : (currentPrice * (1 - takeProfitPct)).toFixed(priceDecimals);
+              ? (currentPrice * (1 + firstTpPct)).toFixed(priceDecimals)
+              : (currentPrice * (1 - firstTpPct)).toFixed(priceDecimals);
+            
+            if (scaleInOutEnabled) {
+              console.log(`📊 SCALE OUT: TP1=${takeProfit} (2%), TP2 será ${(takeProfitPct*100).toFixed(0)}% (fechamento manual)`);
+            }
             
             // 🛡️ VALIDAÇÃO CRÍTICA: SL e TP devem estar nas direções corretas
             const slNum = parseFloat(stopLoss);
@@ -581,6 +748,20 @@ export const MultiAssetTrader = () => {
             if (!orderError && orderData?.success) {
               console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)}`);
               
+              // 🎯 TRAILING STOP: Inicializar tracking
+              if (trailingStopEnabled) {
+                setPositionTracking(prev => {
+                  const newMap = new Map(prev);
+                  newMap.set(symbol, {
+                    highestPrice: action === 'BUY' ? currentPrice : 0,
+                    lowestPrice: action === 'SELL' ? currentPrice : Infinity,
+                    currentStopLoss: parseFloat(stopLoss)
+                  });
+                  return newMap;
+                });
+                console.log(`🎯 TRAILING STOP iniciado para ${symbol} (Distância: ${trailingStopPercent}%)`);
+              }
+              
               const trade: Trade = {
                 symbol,
                 action,
@@ -680,19 +861,28 @@ export const MultiAssetTrader = () => {
   // Sincronizar saldo a cada 30 segundos quando ativo (OTIMIZADO)
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
+    let trailingInterval: NodeJS.Timeout;
 
     if (isRunning) {
       // Sincronização menos frequente para melhor performance
       syncInterval = setInterval(() => {
         syncBybitBalance();
         syncOpenPositions();
-      }, 60 * 1000); // Mudado de 30s para 60s
+      }, 60 * 1000); // A cada 60s
+      
+      // 🎯 TRAILING STOP: Atualizar a cada 15 segundos (mais frequente que sync)
+      if (trailingStopEnabled) {
+        trailingInterval = setInterval(() => {
+          updateTrailingStops();
+        }, 15 * 1000); // A cada 15s
+      }
     }
 
     return () => {
       if (syncInterval) clearInterval(syncInterval);
+      if (trailingInterval) clearInterval(trailingInterval);
     };
-  }, [isRunning]);
+  }, [isRunning, trailingStopEnabled]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -1006,6 +1196,22 @@ export const MultiAssetTrader = () => {
           </div>
         )}
       </Card>
+
+      {/* ⚡ CONFIGURAÇÕES AVANÇADAS */}
+      <AdvancedTradingSettings
+        trailingStopEnabled={trailingStopEnabled}
+        setTrailingStopEnabled={setTrailingStopEnabled}
+        trailingStopPercent={trailingStopPercent}
+        setTrailingStopPercent={setTrailingStopPercent}
+        timeFilterEnabled={timeFilterEnabled}
+        setTimeFilterEnabled={setTimeFilterEnabled}
+        startHour={startHour}
+        setStartHour={setStartHour}
+        endHour={endHour}
+        setEndHour={setEndHour}
+        scaleInOutEnabled={scaleInOutEnabled}
+        setScaleInOutEnabled={setScaleInOutEnabled}
+      />
 
       {/* Recent Trades */}
       {activeTrades.length > 0 && (

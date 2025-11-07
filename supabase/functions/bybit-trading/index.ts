@@ -49,6 +49,9 @@ serve(async (req) => {
       case 'place_order':
         result = await placeOrder(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
+      case 'set_trading_stop':
+        result = await setTradingStop(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
       case 'get_ticker':
         result = await getTicker(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
@@ -244,5 +247,16 @@ async function getInstruments(baseUrl: string, apiKey: string, apiSecret: string
       limit: params.limit || 1000,
       status: 'Trading'
     }
+  );
+}
+
+async function setTradingStop(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/position/trading-stop',
+    apiKey,
+    apiSecret,
+    'POST',
+    params
   );
 }
