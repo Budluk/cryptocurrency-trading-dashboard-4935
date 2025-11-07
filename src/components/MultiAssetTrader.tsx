@@ -440,13 +440,6 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
-            // 🛡️ VERIFICAR SALDO DISPONÍVEL (margem considerando alavancagem)
-            const requiredMargin = finalOrderValue / leverage;
-            if (requiredMargin > currentBalance) {
-              console.log(`💸 ${symbol}: Saldo insuficiente (Necessário: $${requiredMargin.toFixed(2)} | Disponível: $${currentBalance.toFixed(2)})`);
-              continue;
-            }
-            
             // 🛡️ CALCULAR SL E TP - STOPS OBRIGATÓRIOS (COM ML ADAPTATIVO)
             const priceDecimals = ticker.lastPrice.includes('.') 
               ? ticker.lastPrice.split('.')[1].length 
@@ -486,8 +479,38 @@ export const MultiAssetTrader = () => {
             // 🔧 Converter qty para string com precisão correta
             const qtyStr = qty.toFixed(decimals);
             
+            // 🛡️ VERIFICAÇÃO CRÍTICA DE SALDO ANTES DE CADA ORDEM
+            // Buscar saldo atualizado imediatamente antes da ordem
+            const { data: balanceCheck, error: balanceError } = await supabase.functions.invoke('bybit-trading', {
+              body: {
+                action: 'get_balance',
+                isTestnet: false,
+                params: { accountType: 'UNIFIED' }
+              }
+            });
+
+            if (balanceError || !balanceCheck?.success) {
+              console.error(`❌ Erro ao verificar saldo antes de ${symbol}:`, balanceError);
+              continue;
+            }
+
+            const freshBalance = parseFloat(balanceCheck.data?.list?.[0]?.totalAvailableBalance || '0');
+            const requiredMargin = parseFloat(orderValueUSD) / leverage;
+            const MIN_SAFE_BALANCE = 10; // Manter sempre $10 de margem de segurança
+
+            if (freshBalance < requiredMargin + MIN_SAFE_BALANCE) {
+              console.log(`🛑 ${symbol}: Saldo insuficiente - Disponível: $${freshBalance.toFixed(2)} | Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`);
+              setIsRunning(false);
+              toast({
+                title: "🛑 Trader Pausado",
+                description: `Saldo insuficiente: $${freshBalance.toFixed(2)} disponível. Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`,
+                variant: "destructive",
+              });
+              break; // Parar completamente o ciclo
+            }
+            
             const mlIndicator = mlConfig?.is_enabled ? ` [🧠ML: ${stopLossPct*100}%/${takeProfitPct*100}%]` : '';
-            console.log(`🎯 SINAL QUALIFICADO [Score: ${signalScore}]: ${symbol} ${action}${mlIndicator} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
+            console.log(`🎯 SINAL QUALIFICADO [Score: ${signalScore}]: ${symbol} ${action}${mlIndicator} | Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x | Qty: ${qtyStr} | Price: $${currentPrice} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit} | Saldo: $${freshBalance.toFixed(2)}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
