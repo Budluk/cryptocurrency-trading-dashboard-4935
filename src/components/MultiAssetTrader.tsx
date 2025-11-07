@@ -21,7 +21,7 @@ interface Trade {
 
 export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
-  const [isTestnet, setIsTestnet] = useState(false); // ⚡ CONTA REAL - TODOS OS ATIVOS
+  const [isTestnet, setIsTestnet] = useState(false); // ⚡ PADRÃO: CONTA REAL
   const [bankroll, setBankroll] = useState(9);
   const [currentBalance, setCurrentBalance] = useState(9);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
@@ -453,7 +453,7 @@ export const MultiAssetTrader = () => {
               try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                  await supabase.from('auto_trader_positions').insert({
+                  const { data: insertedPosition } = await supabase.from('auto_trader_positions').insert({
                     user_id: user.id,
                     symbol: symbol,
                     side: action,
@@ -470,9 +470,30 @@ export const MultiAssetTrader = () => {
                     unrealized_pnl: 0,
                     exchange_order_id: orderData.data?.orderId,
                     opened_at: new Date().toISOString()
-                  });
+                  }).select().single();
                   
                   console.log(`💾 Posição salva: ${symbol} ${action} @ ${currentPrice}`);
+
+                  // 🔄 COPY TRADING: Notificar seguidores sobre novo trade
+                  try {
+                    await supabase.functions.invoke('copy-trading-sync', {
+                      body: {
+                        trader_user_id: user.id,
+                        symbol,
+                        side: action,
+                        qty,
+                        entry_price: currentPrice,
+                        stop_loss: parseFloat(stopLoss),
+                        take_profit: parseFloat(takeProfit),
+                        leverage,
+                        confidence: signalScore,
+                      }
+                    });
+                    console.log('✅ Copy trading sync enviado');
+                  } catch (copyError) {
+                    console.error('⚠️ Erro no copy trading sync:', copyError);
+                    // Não bloquear o trade principal por falha no copy
+                  }
                 }
               } catch (dbError) {
                 console.error('Erro ao salvar posição no DB:', dbError);
@@ -584,7 +605,7 @@ export const MultiAssetTrader = () => {
     if (isTestnet) {
       toast({
         title: "⚠️ Modo Testnet ativo",
-        description: "Alterne para REAL para operar com dinheiro real",
+        description: "Alterne para CONTA REAL para operar",
         variant: "destructive",
       });
       return;
@@ -642,8 +663,8 @@ export const MultiAssetTrader = () => {
           </div>
           
           <div className="flex items-center gap-2">
-            <Badge variant={isTestnet ? "outline" : "destructive"} className="text-lg px-4 py-2">
-              {isTestnet ? '🧪 TESTNET' : '⚡ REAL'}
+            <Badge variant={isTestnet ? "outline" : "destructive"} className="text-lg px-4 py-2 animate-pulse">
+              {isTestnet ? '🧪 TESTNET' : '⚡ CONTA REAL'}
             </Badge>
             <Badge 
               variant={

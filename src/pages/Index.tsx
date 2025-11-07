@@ -18,6 +18,8 @@ import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { CorrelationHeatmap } from "@/components/CorrelationHeatmap";
 import { VolatilityDashboard } from "@/components/VolatilityDashboard";
 import { ActiveTradesPanel } from "@/components/ActiveTradesPanel";
+import { CopyTradingDashboard } from "@/components/CopyTradingDashboard";
+import { TraderProfileSettings } from "@/components/TraderProfileSettings";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePositionMonitor } from "@/hooks/usePositionMonitor";
@@ -50,10 +52,11 @@ const Index = () => {
           <BybitModeToggle />
           
           <Tabs defaultValue="trader" className="w-full">
-            <TabsList className="grid w-full grid-cols-11">
+            <TabsList className="grid w-full grid-cols-12">
               <TabsTrigger value="trader">Auto Trader</TabsTrigger>
               <TabsTrigger value="tradingview">TradingView</TabsTrigger>
               <TabsTrigger value="positions">Posições</TabsTrigger>
+              <TabsTrigger value="copy">Copy Trade</TabsTrigger>
               <TabsTrigger value="volatility">Volatilidade</TabsTrigger>
               <TabsTrigger value="correlation">Correlação</TabsTrigger>
               <TabsTrigger value="trailing">Trailing Stop</TabsTrigger>
@@ -88,6 +91,13 @@ const Index = () => {
               <ActiveTradesPanel />
               <div className="mt-8">
                 <OpenPositionsMonitor />
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="copy">
+              <CopyTradingDashboard />
+              <div className="mt-8">
+                <TraderProfileSettings />
               </div>
             </TabsContent>
             

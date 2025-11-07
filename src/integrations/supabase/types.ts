@@ -499,6 +499,78 @@ export type Database = {
         }
         Relationships: []
       }
+      copy_trading_config: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          max_trader_drawdown: number
+          min_trader_trades: number
+          min_trader_win_rate: number
+          total_capital_for_copy: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_trader_drawdown?: number
+          min_trader_trades?: number
+          min_trader_win_rate?: number
+          total_capital_for_copy?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_trader_drawdown?: number
+          min_trader_trades?: number
+          min_trader_win_rate?: number
+          total_capital_for_copy?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      copy_trading_followers: {
+        Row: {
+          capital_allocation_percent: number
+          created_at: string
+          follower_user_id: string
+          id: string
+          is_active: boolean
+          max_leverage: number
+          min_confidence: number
+          trader_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          capital_allocation_percent?: number
+          created_at?: string
+          follower_user_id: string
+          id?: string
+          is_active?: boolean
+          max_leverage?: number
+          min_confidence?: number
+          trader_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          capital_allocation_percent?: number
+          created_at?: string
+          follower_user_id?: string
+          id?: string
+          is_active?: boolean
+          max_leverage?: number
+          min_confidence?: number
+          trader_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       demo_accounts: {
         Row: {
           created_at: string
@@ -1542,6 +1614,63 @@ export type Database = {
           team_id?: number
           team_name?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      trader_profiles: {
+        Row: {
+          avg_trade_duration_minutes: number
+          bio: string | null
+          created_at: string
+          display_name: string
+          followers_count: number
+          id: string
+          is_public: boolean
+          max_drawdown: number
+          profit_factor: number
+          sharpe_ratio: number | null
+          total_pnl: number
+          total_trades: number
+          updated_at: string
+          user_id: string
+          win_rate: number
+          winning_trades: number
+        }
+        Insert: {
+          avg_trade_duration_minutes?: number
+          bio?: string | null
+          created_at?: string
+          display_name: string
+          followers_count?: number
+          id?: string
+          is_public?: boolean
+          max_drawdown?: number
+          profit_factor?: number
+          sharpe_ratio?: number | null
+          total_pnl?: number
+          total_trades?: number
+          updated_at?: string
+          user_id: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Update: {
+          avg_trade_duration_minutes?: number
+          bio?: string | null
+          created_at?: string
+          display_name?: string
+          followers_count?: number
+          id?: string
+          is_public?: boolean
+          max_drawdown?: number
+          profit_factor?: number
+          sharpe_ratio?: number | null
+          total_pnl?: number
+          total_trades?: number
+          updated_at?: string
+          user_id?: string
+          win_rate?: number
+          winning_trades?: number
         }
         Relationships: []
       }
