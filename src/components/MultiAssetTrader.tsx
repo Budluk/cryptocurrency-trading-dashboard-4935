@@ -533,7 +533,9 @@ export const MultiAssetTrader = () => {
               
               // 📋 MOTIVOS DETALHADOS DE FALHA
               let failureReason = errorMsg;
-              if (errorMsg.includes('minNotional')) {
+              if (errorMsg.includes('ab not enough')) {
+                failureReason = `❌ SALDO INSUFICIENTE - Margem esgotada`;
+              } else if (errorMsg.includes('minNotional')) {
                 failureReason = `Valor mínimo não atingido (< $5.00)`;
               } else if (errorMsg.includes('insufficient')) {
                 failureReason = `Saldo insuficiente na conta`;
@@ -562,6 +564,17 @@ export const MultiAssetTrader = () => {
               
               // Incrementar perdas consecutivas em caso de erro
               setConsecutiveLosses(prev => prev + 1);
+              
+              // Se erro de saldo insuficiente, parar o trader
+              if (errorMsg.includes('ab not enough')) {
+                console.log('🛑 SALDO INSUFICIENTE - Pausando trader');
+                setIsRunning(false);
+                toast({
+                  title: "🛑 Trader Pausado",
+                  description: "Saldo insuficiente para novas operações. Aguarde fechamento de posições.",
+                  variant: "destructive",
+                });
+              }
             }
           }
 
