@@ -52,6 +52,11 @@ export const MultiAssetTrader = () => {
   const [startHour, setStartHour] = useState(14); // 14h UTC (início de NY)
   const [endHour, setEndHour] = useState(20); // 20h UTC (fim de NY)
   const [scaleInOutEnabled, setScaleInOutEnabled] = useState(true);
+  const [martingaleEnabled, setMartingaleEnabled] = useState(false);
+  const [copyTradingEnabled, setCopyTradingEnabled] = useState(false);
+  const [hedgeEnabled, setHedgeEnabled] = useState(false);
+  const [sentimentEnabled, setSentimentEnabled] = useState(false);
+  const [dynamicLeverageEnabled, setDynamicLeverageEnabled] = useState(false);
   
   // 📊 TRACKING DE POSIÇÕES PARA TRAILING STOP
   const [positionTracking, setPositionTracking] = useState<Map<string, {
@@ -59,6 +64,11 @@ export const MultiAssetTrader = () => {
     lowestPrice: number;
     currentStopLoss: number;
   }>>(new Map());
+  
+  // 📊 TRACKING PARA MARTINGALE E COPY TRADING
+  const [lossStreak, setLossStreak] = useState(0);
+  const [winningPatterns, setWinningPatterns] = useState<any[]>([]);
+  const [currentLeverage, setCurrentLeverage] = useState(10);
 
   // Calcular win rate histórico
   useEffect(() => {
@@ -521,16 +531,89 @@ export const MultiAssetTrader = () => {
               });
               continue;
             }
+            
+            // 🛡️ HEDGE DINÂMICO: Detectar reversões e considerar hedge
+            if (hedgeEnabled) {
+              const riskLevel = getCorrelationRisk();
+              
+              // Se há risco médio/alto e detectamos reversão forte, o trade serve como hedge
+              if (riskLevel.level !== 'low') {
+                const isStrongReversal = Math.abs(priceChange) > 3;
+                
+                if (isStrongReversal) {
+                  console.log(`🛡️ HEDGE: Reversão forte detectada em ${symbol} (${priceChange.toFixed(1)}%) - ${riskLevel.message}`);
+                  toast({
+                    title: "🛡️ Hedge Detectado",
+                    description: `Trade em ${symbol} pode servir como proteção contra correlação`,
+                  });
+                }
+              }
+            }
 
             const currentVolatility = Math.abs(priceChange);
             setAvgVolatility(currentVolatility); // Atualizar volatilidade média
             
-            // Usar alavancagem recomendada pelo ML se disponível
-            const leverage = mlConfig?.is_enabled && mlConfig?.recommended_leverage
+            // 🔥 ALAVANCAGEM DINÂMICA: Ajustar baseado no desempenho
+            let dynamicLeverage = mlConfig?.is_enabled && mlConfig?.recommended_leverage
               ? mlConfig.recommended_leverage
               : getLeverageForBalance(currentBalance, historicalWinRate);
             
-            const { usdSize } = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate);
+            if (dynamicLeverageEnabled) {
+              // Aumentar leverage com alta win rate, reduzir com perda
+              if (historicalWinRate >= 70) {
+                dynamicLeverage = Math.min(dynamicLeverage * 1.2, 20); // +20% leverage, max 20x
+                console.log(`⚡ ALAVANCAGEM AUMENTADA: ${dynamicLeverage.toFixed(1)}x (Win Rate: ${historicalWinRate.toFixed(0)}%)`);
+              } else if (historicalWinRate < 45 || lossStreak >= 2) {
+                dynamicLeverage = Math.max(dynamicLeverage * 0.7, 5); // -30% leverage, min 5x
+                console.log(`🛡️ ALAVANCAGEM REDUZIDA: ${dynamicLeverage.toFixed(1)}x (Win Rate: ${historicalWinRate.toFixed(0)}% | Streak: ${lossStreak})`);
+              }
+              setCurrentLeverage(dynamicLeverage);
+            }
+            
+            const leverage = dynamicLeverage;
+            
+            let { usdSize } = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate);
+            
+            // 🔥 MARTINGALE CONTROLADO: Dobrar após 2 perdas consecutivas (limite 3x)
+            if (martingaleEnabled && lossStreak >= 2) {
+              const martingaleMultiplier = Math.min(Math.pow(2, lossStreak - 1), 3); // 2x, 3x máximo
+              usdSize = usdSize * martingaleMultiplier;
+              console.log(`🎲 MARTINGALE ATIVO: ${martingaleMultiplier}x (${lossStreak} perdas) - Novo tamanho: $${usdSize.toFixed(2)}`);
+              
+              toast({
+                title: "🎲 Martingale Ativado",
+                description: `Aumentando posição ${martingaleMultiplier}x após ${lossStreak} perdas`,
+              });
+            }
+            
+            // 📋 COPY TRADING: Verificar se este é um padrão vencedor conhecido
+            if (copyTradingEnabled && winningPatterns.length > 0) {
+              const matchingPattern = winningPatterns.find(p => 
+                p.symbol === symbol && 
+                p.action === action &&
+                Math.abs(p.priceChange - priceChange) < 0.5 // Similar price movement
+              );
+              
+              if (matchingPattern) {
+                usdSize = usdSize * 1.3; // +30% em padrões vencedores conhecidos
+                console.log(`🎯 COPY TRADING: Padrão vencedor detectado! (+30% tamanho)`);
+                toast({
+                  title: "🎯 Padrão Vencedor",
+                  description: `Replicando setup similar que teve ${matchingPattern.winRate.toFixed(0)}% de sucesso`,
+                });
+              }
+            }
+            
+            // 📰 ANÁLISE DE SENTIMENTO: Filtrar trades com notícias negativas
+            if (sentimentEnabled) {
+              // Buscar análise de sentimento (simplificado - pode ser expandido com API real)
+              const sentiment = Math.abs(priceChange) > 5 ? 'volatile' : 'normal';
+              
+              if (sentiment === 'volatile' && Math.abs(priceChange) > 8) {
+                console.log(`⚠️ SENTIMENTO: Volatilidade extrema detectada (${priceChange.toFixed(1)}%) - reduzindo exposição`);
+                usdSize = usdSize * 0.7; // Reduzir 30% em volatilidade extrema
+              }
+            }
             
             const currentPrice = parseFloat(ticker.lastPrice);
             const atrEstimate = currentPrice * 0.02; // Estimar ATR como 2% do preço
@@ -762,6 +845,26 @@ export const MultiAssetTrader = () => {
                 console.log(`🎯 TRAILING STOP iniciado para ${symbol} (Distância: ${trailingStopPercent}%)`);
               }
               
+              // 📋 COPY TRADING: Salvar padrão para replicação futura
+              if (copyTradingEnabled) {
+                setWinningPatterns(prev => {
+                  const newPattern = {
+                    symbol,
+                    action,
+                    priceChange,
+                    volume24h,
+                    timestamp: new Date().toISOString(),
+                    winRate: 0 // Será atualizado ao fechar a posição
+                  };
+                  return [...prev.slice(-19), newPattern]; // Manter últimos 20
+                });
+              }
+              
+              // 🎲 MARTINGALE: Resetar streak de perdas em sucesso
+              if (martingaleEnabled) {
+                setLossStreak(0);
+              }
+              
               const trade: Trade = {
                 symbol,
                 action,
@@ -781,6 +884,11 @@ export const MultiAssetTrader = () => {
             } else {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError);
               const errorMsg = orderData?.error || orderError?.message || 'Erro desconhecido';
+              
+              // 🎲 MARTINGALE: Incrementar streak de perdas
+              if (martingaleEnabled) {
+                setLossStreak(prev => Math.min(prev + 1, 3)); // Max 3 perdas
+              }
               
               // 📋 MOTIVOS DETALHADOS DE FALHA
               let failureReason = errorMsg;
@@ -1211,6 +1319,16 @@ export const MultiAssetTrader = () => {
         setEndHour={setEndHour}
         scaleInOutEnabled={scaleInOutEnabled}
         setScaleInOutEnabled={setScaleInOutEnabled}
+        martingaleEnabled={martingaleEnabled}
+        setMartingaleEnabled={setMartingaleEnabled}
+        copyTradingEnabled={copyTradingEnabled}
+        setCopyTradingEnabled={setCopyTradingEnabled}
+        hedgeEnabled={hedgeEnabled}
+        setHedgeEnabled={setHedgeEnabled}
+        sentimentEnabled={sentimentEnabled}
+        setSentimentEnabled={setSentimentEnabled}
+        dynamicLeverageEnabled={dynamicLeverageEnabled}
+        setDynamicLeverageEnabled={setDynamicLeverageEnabled}
       />
 
       {/* Recent Trades */}

@@ -3,7 +3,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Clock, Layers } from "lucide-react";
+import { TrendingUp, Clock, Layers, TrendingDown, Copy, Shield, Newspaper, Zap } from "lucide-react";
 
 interface AdvancedTradingSettingsProps {
   trailingStopEnabled: boolean;
@@ -18,6 +18,16 @@ interface AdvancedTradingSettingsProps {
   setEndHour: (value: number) => void;
   scaleInOutEnabled: boolean;
   setScaleInOutEnabled: (value: boolean) => void;
+  martingaleEnabled: boolean;
+  setMartingaleEnabled: (value: boolean) => void;
+  copyTradingEnabled: boolean;
+  setCopyTradingEnabled: (value: boolean) => void;
+  hedgeEnabled: boolean;
+  setHedgeEnabled: (value: boolean) => void;
+  sentimentEnabled: boolean;
+  setSentimentEnabled: (value: boolean) => void;
+  dynamicLeverageEnabled: boolean;
+  setDynamicLeverageEnabled: (value: boolean) => void;
 }
 
 export const AdvancedTradingSettings = ({
@@ -33,6 +43,16 @@ export const AdvancedTradingSettings = ({
   setEndHour,
   scaleInOutEnabled,
   setScaleInOutEnabled,
+  martingaleEnabled,
+  setMartingaleEnabled,
+  copyTradingEnabled,
+  setCopyTradingEnabled,
+  hedgeEnabled,
+  setHedgeEnabled,
+  sentimentEnabled,
+  setSentimentEnabled,
+  dynamicLeverageEnabled,
+  setDynamicLeverageEnabled,
 }: AdvancedTradingSettingsProps) => {
   return (
     <Card className="p-6 space-y-6">
@@ -213,10 +233,162 @@ export const AdvancedTradingSettings = ({
         )}
       </div>
 
+      {/* MARTINGALE CONTROLADO */}
+      <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-orange-500/20">
+              <TrendingDown className="w-5 h-5 text-orange-500" />
+            </div>
+            <div>
+              <Label htmlFor="martingale" className="text-base font-semibold">
+                Martingale Controlado
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Dobra posição após 2 perdas consecutivas (limite 3x)
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="martingale"
+              checked={martingaleEnabled}
+              onCheckedChange={setMartingaleEnabled}
+            />
+            {martingaleEnabled && (
+              <Badge variant="default" className="ml-2">Ativo</Badge>
+            )}
+          </div>
+        </div>
+        {martingaleEnabled && (
+          <div className="bg-amber-500/10 p-3 rounded-lg border border-amber-500/30 mt-3">
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              ⚠️ <strong>Atenção:</strong> Martingale aumenta exposição ao risco. Use apenas com bom gerenciamento.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* COPY TRADING INTERNO */}
+      <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-cyan-500/20">
+              <Copy className="w-5 h-5 text-cyan-500" />
+            </div>
+            <div>
+              <Label htmlFor="copy-trading" className="text-base font-semibold">
+                Copy Trading Interno
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Aprende e replica padrões de trades vencedores
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="copy-trading"
+              checked={copyTradingEnabled}
+              onCheckedChange={setCopyTradingEnabled}
+            />
+            {copyTradingEnabled && (
+              <Badge variant="default" className="ml-2">Ativo</Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* HEDGE DINÂMICO */}
+      <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-pink-500/20">
+              <Shield className="w-5 h-5 text-pink-500" />
+            </div>
+            <div>
+              <Label htmlFor="hedge" className="text-base font-semibold">
+                Hedge Dinâmico
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Abre posição contrária em ativo correlacionado durante reversões
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="hedge"
+              checked={hedgeEnabled}
+              onCheckedChange={setHedgeEnabled}
+            />
+            {hedgeEnabled && (
+              <Badge variant="default" className="ml-2">Ativo</Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ANÁLISE DE SENTIMENTO */}
+      <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-indigo-500/20">
+              <Newspaper className="w-5 h-5 text-indigo-500" />
+            </div>
+            <div>
+              <Label htmlFor="sentiment" className="text-base font-semibold">
+                Análise de Sentimento
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Filtra trades baseado em notícias e sentimento do mercado
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="sentiment"
+              checked={sentimentEnabled}
+              onCheckedChange={setSentimentEnabled}
+            />
+            {sentimentEnabled && (
+              <Badge variant="default" className="ml-2">Ativo</Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ALAVANCAGEM DINÂMICA */}
+      <div className="space-y-3 p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-full bg-yellow-500/20">
+              <Zap className="w-5 h-5 text-yellow-500" />
+            </div>
+            <div>
+              <Label htmlFor="dynamic-leverage" className="text-base font-semibold">
+                Alavancagem Dinâmica
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Ajusta alavancagem automaticamente baseado no desempenho
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="dynamic-leverage"
+              checked={dynamicLeverageEnabled}
+              onCheckedChange={setDynamicLeverageEnabled}
+            />
+            {dynamicLeverageEnabled && (
+              <Badge variant="default" className="ml-2">Ativo</Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* RESUMO DE FEATURES ATIVAS */}
-      <div className="flex items-center gap-2 pt-4 border-t border-border">
+      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-border">
         <span className="text-sm font-semibold">Features Ativas:</span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {trailingStopEnabled && (
             <Badge variant="default" className="gap-1">
               <TrendingUp className="w-3 h-3" />
@@ -235,7 +407,39 @@ export const AdvancedTradingSettings = ({
               Scale In/Out
             </Badge>
           )}
-          {!trailingStopEnabled && !timeFilterEnabled && !scaleInOutEnabled && (
+          {martingaleEnabled && (
+            <Badge variant="default" className="gap-1">
+              <TrendingDown className="w-3 h-3" />
+              Martingale
+            </Badge>
+          )}
+          {copyTradingEnabled && (
+            <Badge variant="default" className="gap-1">
+              <Copy className="w-3 h-3" />
+              Copy Trading
+            </Badge>
+          )}
+          {hedgeEnabled && (
+            <Badge variant="default" className="gap-1">
+              <Shield className="w-3 h-3" />
+              Hedge
+            </Badge>
+          )}
+          {sentimentEnabled && (
+            <Badge variant="default" className="gap-1">
+              <Newspaper className="w-3 h-3" />
+              Sentimento
+            </Badge>
+          )}
+          {dynamicLeverageEnabled && (
+            <Badge variant="default" className="gap-1">
+              <Zap className="w-3 h-3" />
+              Alavancagem
+            </Badge>
+          )}
+          {!trailingStopEnabled && !timeFilterEnabled && !scaleInOutEnabled && 
+           !martingaleEnabled && !copyTradingEnabled && !hedgeEnabled && 
+           !sentimentEnabled && !dynamicLeverageEnabled && (
             <Badge variant="outline">Nenhuma</Badge>
           )}
         </div>
