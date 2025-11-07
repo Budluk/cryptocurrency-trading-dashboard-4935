@@ -383,19 +383,11 @@ export const MultiAssetTrader = () => {
         return;
       }
 
-      // 🚨 VERIFICAR LIMITE DE POSIÇÕES ABERTAS
-      if (openPositionsCount >= maxOpenPositions) {
-        console.log(`🚫 LIMITE DE POSIÇÕES: ${openPositionsCount}/${maxOpenPositions} - Aguardando fechamento de posições`);
-        
-        // Mostrar toast informativo a cada 5 ciclos
-        if (cycleCount % 5 === 0) {
-          toast({
-            title: "⚠️ Limite de Posições Atingido",
-            description: `Você tem ${openPositionsCount} posições abertas. Limite: ${maxOpenPositions}. Aguardando fechamento para novas entradas.`,
-            variant: "destructive",
-          });
-        }
-        return;
+      // 🚨 VERIFICAR LIMITE DE POSIÇÕES ABERTAS (com priorização inteligente)
+      const shouldCheckPrioritization = openPositionsCount >= maxOpenPositions;
+      
+      if (shouldCheckPrioritization) {
+        console.log(`⚠️ LIMITE DE POSIÇÕES: ${openPositionsCount}/${maxOpenPositions} - Sistema de priorização ativo`);
       }
       
       // ⏰ FILTRO DE HORÁRIOS
@@ -668,6 +660,78 @@ export const MultiAssetTrader = () => {
           }
           
           if (shouldTrade && action) {
+            // 🎯 SISTEMA DE PRIORIZAÇÃO: Se limite atingido, verificar se vale a pena substituir
+            if (shouldCheckPrioritization) {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) continue;
+
+              // Buscar posições abertas no banco com seus scores
+              const { data: openDbPositions } = await supabase
+                .from('auto_trader_positions')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('status', 'OPEN')
+                .order('confidence', { ascending: true }); // Menor score primeiro
+
+              if (openDbPositions && openDbPositions.length > 0) {
+                const lowestScorePosition = openDbPositions[0];
+                const lowestScore = lowestScorePosition.confidence || 0;
+
+                // Se a nova oportunidade tem score SIGNIFICATIVAMENTE superior (pelo menos 15 pontos)
+                if (signalScore >= lowestScore + 15) {
+                  console.log(`🔄 PRIORIZAÇÃO: Nova oportunidade ${symbol} (${signalScore}) > Posição atual ${lowestScorePosition.symbol} (${lowestScore})`);
+                  
+                  // Fechar a posição com menor score
+                  try {
+                    const { data: closeData, error: closeError } = await supabase.functions.invoke('bybit-trading', {
+                      body: {
+                        action: 'close_position',
+                        isTestnet: false,
+                        params: {
+                          category: 'linear',
+                          symbol: lowestScorePosition.symbol,
+                          side: lowestScorePosition.side === 'Buy' ? 'Sell' : 'Buy',
+                          qty: lowestScorePosition.qty.toString(),
+                          orderType: 'Market',
+                          positionIdx: 0
+                        }
+                      }
+                    });
+
+                    if (!closeError && closeData?.success) {
+                      // Atualizar posição no banco
+                      await supabase
+                        .from('auto_trader_positions')
+                        .update({
+                          status: 'CLOSED',
+                          closed_at: new Date().toISOString(),
+                          close_reason: `Substituída por oportunidade premium (Score ${signalScore} > ${lowestScore})`
+                        })
+                        .eq('id', lowestScorePosition.id);
+
+                      setOpenPositionsCount(prev => prev - 1);
+                      
+                      toast({
+                        title: "🔄 Posição Substituída",
+                        description: `${lowestScorePosition.symbol} (${lowestScore}) fechada para abrir ${symbol} (${signalScore})`,
+                      });
+                      
+                      console.log(`✅ SUBSTITUIÇÃO: ${lowestScorePosition.symbol} fechada, liberando vaga para ${symbol}`);
+                    } else {
+                      console.error(`❌ Erro ao fechar ${lowestScorePosition.symbol}:`, closeError);
+                      continue; // Não abre nova posição se não conseguiu fechar
+                    }
+                  } catch (error) {
+                    console.error('Erro na substituição de posição:', error);
+                    continue;
+                  }
+                } else {
+                  console.log(`⏭️ PRIORIZAÇÃO: Nova oportunidade ${symbol} (${signalScore}) não supera significativamente ${lowestScorePosition.symbol} (${lowestScore})`);
+                  continue; // Pular este trade
+                }
+              }
+            }
+            
             // 🔍 VERIFICAR CORRELAÇÃO ANTES DE EXECUTAR
             const correlationCheck = checkNewPosition(symbol, action === 'BUY' ? 'Buy' : 'Sell');
             
@@ -978,7 +1042,27 @@ export const MultiAssetTrader = () => {
             });
 
             if (!orderError && orderData?.success) {
-              console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)}`);
+              console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)} | Score: ${signalScore}`);
+              
+              // 💾 SALVAR POSIÇÃO NO BANCO COM SCORE DE QUALIDADE
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user) {
+                await supabase
+                  .from('auto_trader_positions')
+                  .insert({
+                    user_id: user.id,
+                    symbol,
+                    side: action === 'BUY' ? 'Buy' : 'Sell',
+                    entry_price: currentPrice,
+                    qty,
+                    leverage,
+                    stop_loss: parseFloat(stopLoss),
+                    take_profit: parseFloat(takeProfit),
+                    confidence: signalScore, // 🎯 SALVAR SCORE DE QUALIDADE
+                    status: 'OPEN',
+                    exchange_order_id: orderData.data?.orderId
+                  });
+              }
               
               // 🎯 TRAILING STOP: Inicializar tracking
               if (trailingStopEnabled) {
