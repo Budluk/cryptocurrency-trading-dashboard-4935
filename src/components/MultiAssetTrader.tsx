@@ -506,7 +506,7 @@ export const MultiAssetTrader = () => {
                 description: `Saldo insuficiente: $${freshBalance.toFixed(2)} disponível. Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`,
                 variant: "destructive",
               });
-              break; // Parar completamente o ciclo
+              return; // PARAR COMPLETAMENTE a função
             }
             
             const mlIndicator = mlConfig?.is_enabled ? ` [🧠ML: ${stopLossPct*100}%/${takeProfitPct*100}%]` : '';
@@ -597,6 +597,7 @@ export const MultiAssetTrader = () => {
                   description: "Saldo insuficiente para novas operações. Aguarde fechamento de posições.",
                   variant: "destructive",
                 });
+                return; // PARAR COMPLETAMENTE a função
               }
             }
           }
