@@ -625,10 +625,10 @@ export const MultiAssetTrader = () => {
             signalScore = Math.min(sellScore, 100);
           }
           
-          // 6. FILTRO FINAL: Apenas sinais de ALTA QUALIDADE (score >= 70 e múltiplas confirmações)
+          // 6. FILTRO FINAL: Critérios mais flexíveis para entrar em mais operações
           const shouldTrade = (
-            signalScore >= 70 && // Score mínimo aumentado para 70
-            confirmations.length >= 2 && // Pelo menos 2 confirmações técnicas
+            signalScore >= 55 && // Score mínimo reduzido para 55
+            confirmations.length >= 1 && // Pelo menos 1 confirmação técnica
             hasGoodVolume &&
             hasGoodVolatility &&
             action !== null &&
@@ -638,8 +638,8 @@ export const MultiAssetTrader = () => {
           // 📋 MOTIVOS PARA NÃO EXECUTAR (com detalhes do scoring)
           if (!shouldTrade && signalScore > 0) {
             let skipReason = '';
-            if (signalScore < 70) skipReason = `Score baixo (${signalScore}/70) | Confirmações: ${confirmations.length}`;
-            else if (confirmations.length < 2) skipReason = `Poucas confirmações (${confirmations.length}/2)`;
+            if (signalScore < 55) skipReason = `Score baixo (${signalScore}/55) | Confirmações: ${confirmations.length}`;
+            else if (confirmations.length < 1) skipReason = `Sem confirmações (${confirmations.length}/1)`;
             else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M < $0.5M)`;
             else if (!hasGoodVolatility) skipReason = `Volatilidade baixa (${volatility.toFixed(2)}% < 0.8%)`;
             else if (currentBalance <= 2) skipReason = `Saldo insuficiente ($${currentBalance.toFixed(2)})`;
