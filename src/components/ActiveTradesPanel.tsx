@@ -16,6 +16,8 @@ export const ActiveTradesPanel = () => {
   // 🔄 Sincronizar posições da Bybit ao carregar
   const syncBybitPositions = async () => {
     try {
+      console.log('🔄 Iniciando sincronização com Bybit...');
+      
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_positions',
@@ -27,73 +29,99 @@ export const ActiveTradesPanel = () => {
         }
       });
 
-      if (!error && data?.success) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+      if (error) {
+        console.error('❌ Erro ao buscar posições da Bybit:', error);
+        return;
+      }
 
-        const positions = data.data.list || [];
-        const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
+      if (!data?.success) {
+        console.error('❌ Bybit retornou erro:', data?.error);
+        return;
+      }
 
-        // Buscar posições já existentes no banco
-        const { data: dbPositions } = await supabase
-          .from('auto_trader_positions')
-          .select('symbol, side')
-          .eq('status', 'OPEN')
-          .eq('user_id', user.id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('⚠️ Usuário não autenticado');
+        return;
+      }
 
-        const existingPositions = new Set(
-          (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
-        );
+      const positions = data.data.list || [];
+      const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
+      
+      console.log(`📊 Encontradas ${openPositions.length} posições abertas na Bybit`);
 
-        let imported = 0;
+      // Buscar posições já existentes no banco
+      const { data: dbPositions } = await supabase
+        .from('auto_trader_positions')
+        .select('symbol, side')
+        .eq('status', 'OPEN')
+        .eq('user_id', user.id);
 
-        // Importar posições que não estão no banco
-        for (const position of openPositions) {
-          const symbol = position.symbol;
-          const side = position.side;
-          const posKey = `${symbol}-${side}`;
+      const existingPositions = new Set(
+        (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
+      );
 
-          if (!existingPositions.has(posKey)) {
-            const entryPrice = parseFloat(position.avgPrice);
-            const qty = parseFloat(position.size);
-            const leverage = parseInt(position.leverage);
-            const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
-            const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
-            const currentPrice = parseFloat(position.markPrice);
-            const unrealizedPnl = parseFloat(position.unrealisedPnl);
+      let imported = 0;
 
-            await supabase.from('auto_trader_positions').insert({
-              user_id: user.id,
-              symbol: symbol,
-              side: side,
-              qty: qty,
-              entry_price: entryPrice,
-              current_price: currentPrice,
-              highest_price: side === 'Buy' ? currentPrice : currentPrice,
-              stop_loss: stopLoss,
-              take_profit: takeProfit,
-              leverage: leverage,
-              status: 'OPEN',
-              confidence: 85,
-              trailing_stop_percentage: 1.5,
-              unrealized_pnl: unrealizedPnl,
-              opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
-            });
-            
+      // Importar posições que não estão no banco
+      for (const position of openPositions) {
+        const symbol = position.symbol;
+        const side = position.side;
+        const posKey = `${symbol}-${side}`;
+
+        if (!existingPositions.has(posKey)) {
+          const entryPrice = parseFloat(position.avgPrice);
+          const qty = parseFloat(position.size);
+          const leverage = parseInt(position.leverage);
+          const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
+          const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
+          const currentPrice = parseFloat(position.markPrice);
+          const unrealizedPnl = parseFloat(position.unrealisedPnl);
+
+          console.log(`💾 Importando: ${symbol} ${side} - Entry: ${entryPrice} - PnL: ${unrealizedPnl}`);
+
+          const { error: insertError } = await supabase.from('auto_trader_positions').insert({
+            user_id: user.id,
+            symbol: symbol,
+            side: side,
+            qty: qty,
+            entry_price: entryPrice,
+            current_price: currentPrice,
+            highest_price: side === 'Buy' ? currentPrice : currentPrice,
+            stop_loss: stopLoss,
+            take_profit: takeProfit,
+            leverage: leverage,
+            status: 'OPEN',
+            confidence: 85,
+            trailing_stop_percentage: 1.5,
+            unrealized_pnl: unrealizedPnl,
+            opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
+          });
+          
+          if (insertError) {
+            console.error(`❌ Erro ao importar ${symbol}:`, insertError);
+          } else {
             imported++;
           }
         }
+      }
 
-        if (imported > 0) {
-          toast({
-            title: "✅ Posições Sincronizadas",
-            description: `${imported} posições da Bybit importadas`,
-          });
-          refetch();
-        }
+      if (imported > 0) {
+        toast({
+          title: "✅ Posições Sincronizadas",
+          description: `${imported} posições da Bybit importadas`,
+        });
+        refetch();
+      } else {
+        console.log('✓ Todas as posições já estão sincronizadas');
       }
     } catch (error) {
-      console.error('Erro ao sincronizar:', error);
+      console.error('❌ Erro ao sincronizar:', error);
+      toast({
+        title: "❌ Erro na sincronização",
+        description: "Não foi possível sincronizar com a Bybit",
+        variant: "destructive",
+      });
     }
   };
 

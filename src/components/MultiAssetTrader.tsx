@@ -254,6 +254,23 @@ export const MultiAssetTrader = () => {
 
   const analyzeAndTrade = async () => {
     try {
+      // 🔄 SINCRONIZAR PRIMEIRO - Obter dados atualizados da Bybit
+      await syncBybitBalance();
+      await syncOpenPositions();
+
+      // Contar posições ABERTAS no BANCO (não da Bybit)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: dbPositions, error: dbError } = await supabase
+        .from('auto_trader_positions')
+        .select('id', { count: 'exact' })
+        .eq('status', 'OPEN')
+        .eq('user_id', user.id);
+
+      const dbOpenCount = dbPositions?.length || 0;
+      console.log(`📊 Posições ABERTAS no banco: ${dbOpenCount}/${MAX_OPEN_POSITIONS}`);
+
       // 🛡️ VERIFICAR PROTEÇÕES
       if (dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT) {
         console.log('🛑 STOP LOSS DIÁRIO ATINGIDO!');
@@ -277,14 +294,10 @@ export const MultiAssetTrader = () => {
         return;
       }
 
-      if (openPositionsCount >= MAX_OPEN_POSITIONS) {
-        console.log('📊 Máximo de posições abertas atingido');
+      if (dbOpenCount >= MAX_OPEN_POSITIONS) {
+        console.log('📊 Máximo de posições abertas atingido no banco');
         return;
       }
-
-      // 🔄 Sincronizar saldo e posições
-      await syncBybitBalance();
-      await syncOpenPositions();
 
       // 1. Buscar TODOS os ativos da Bybit
       const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
@@ -307,7 +320,7 @@ export const MultiAssetTrader = () => {
         return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
       });
 
-      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${MAX_OPEN_POSITIONS})`);
+      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${dbOpenCount}/${MAX_OPEN_POSITIONS})`);
 
       // 2. Buscar ticker de cada ativo para análise de volume e volatilidade
       const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
@@ -490,6 +503,13 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
+            // 🛡️ VERIFICAR SALDO DISPONÍVEL (margem considerando alavancagem)
+            const requiredMargin = finalOrderValue / leverage;
+            if (requiredMargin > currentBalance) {
+              console.log(`💸 ${symbol}: Saldo insuficiente (Necessário: $${requiredMargin.toFixed(2)} | Disponível: $${currentBalance.toFixed(2)})`);
+              continue;
+            }
+            
             // 🛡️ CALCULAR SL E TP - STOPS OBRIGATÓRIOS (COM ML ADAPTATIVO)
             const priceDecimals = ticker.lastPrice.includes('.') 
               ? ticker.lastPrice.split('.')[1].length 
@@ -562,7 +582,6 @@ export const MultiAssetTrader = () => {
               };
 
               setActiveTrades(prev => [...prev.slice(-19), trade]);
-              setOpenPositionsCount(prev => prev + 1);
               
               // 💾 SALVAR POSIÇÃO NA TABELA PARA MONITORAMENTO AUTOMÁTICO
               try {
@@ -571,7 +590,7 @@ export const MultiAssetTrader = () => {
                   const { data: insertedPosition } = await supabase.from('auto_trader_positions').insert({
                     user_id: user.id,
                     symbol: symbol,
-                    side: action,
+                    side: action === 'BUY' ? 'Buy' : 'Sell', // Corrigir formato
                     qty: qty,
                     entry_price: currentPrice,
                     current_price: currentPrice,
@@ -587,7 +606,7 @@ export const MultiAssetTrader = () => {
                     opened_at: new Date().toISOString()
                   }).select().single();
                   
-                  console.log(`💾 Posição salva: ${symbol} ${action} @ ${currentPrice}`);
+                  console.log(`💾 Posição salva no banco: ${symbol} ${action} @ ${currentPrice}`);
 
                   // 🔄 COPY TRADING: Notificar seguidores sobre novo trade
                   try {
