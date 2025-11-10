@@ -138,7 +138,26 @@ export const MultiAssetTrader = () => {
     restoreTraderState();
   }, []);
 
-  // Estratégia de alavancagem baseada no bankroll E win rate
+  // 🎯 ATIVOS DE ALTA VOLATILIDADE IDEAIS PARA SCALPING
+  const SCALPING_ASSETS = new Set([
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT',
+    'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', '1000BONKUSDT',
+    'AVAXUSDT', 'NEARUSDT', 'APTUSDT', 'INJUSDT',
+    'SUIUSDT', 'TIAUSDT', 'ARBUSDT', 'OPUSDT',
+    '1000FLOKIUSDT', 'WIFUSDT', 'ORDIUSDT', 'STXUSDT',
+    'PENDLEUSDT', 'JUPUSDT', 'PYTHUSDT', 'WLDUSDT'
+  ]);
+
+  // 🔥 SISTEMA DE ALAVANCAGEM PROGRESSIVA PARA SCALPING
+  const getLeverageForScalping = (volatility: number): number => {
+    // Scalping agressivo: 20x-50x baseado na volatilidade
+    if (volatility > 3.0) return 50; // Extrema volatilidade
+    if (volatility > 2.0) return 40; // Alta volatilidade
+    if (volatility > 1.5) return 30; // Média-alta volatilidade
+    return 25; // Padrão para scalping
+  };
+
+  // Estratégia de alavancagem baseada no bankroll E win rate (para ativos normais)
   const getLeverageForBalance = (balance: number, winRate: number) => {
     // Base de alavancagem pelo saldo
     let baseLeverage = 5;
@@ -169,8 +188,8 @@ export const MultiAssetTrader = () => {
       ? 1.0 // Primeira posição: tamanho normal
       : Math.max(0.3, 1 - (currentOpenPositions / targetPositions) * 0.5); // Reduzir gradualmente
     
-    // 📐 BASE DO RISCO: 1-5% do bankroll por posição
-    let baseRisk = balance < 15 ? 0.05 : 0.03;
+    // 📐 BASE DO RISCO AGRESSIVO PARA SCALPING: 3-7% do bankroll por posição
+    let baseRisk = balance < 15 ? 0.07 : 0.05; // AUMENTADO para scalping
     
     // 💡 AJUSTE POR VOLATILIDADE: Reduzir risco em ativos muito voláteis
     if (volatility > 5) baseRisk *= 0.6; // -40% em alta volatilidade
@@ -478,25 +497,25 @@ export const MultiAssetTrader = () => {
           priceChange,
           volume24h
         };
-      }).filter(a => a.volatility > 0.3 && a.volume24h > 50000); // Volatilidade mínima 0.3% e volume mínimo $50K
+      }).filter(a => {
+        const isScalpAsset = SCALPING_ASSETS.has(a.instrument.symbol);
+        // Critérios ultra-agressivos para scalping: 0.2% vol e $100K
+        if (isScalpAsset) return a.volatility > 0.2 && a.volume24h > 100000;
+        // Critérios normais para outros ativos
+        return a.volatility > 0.8 && a.volume24h > 200000;
+      });
       
       // 📊 ORDENAR POR VOLATILIDADE (descendente) e processar TODOS os ativos voláteis
       const topVolatileAssets = assetsWithVolatility
         .sort((a, b) => b.volatility - a.volatility);
       
-      // 🌟 LISTA DE ATIVOS PREMIUM - Critérios mais flexíveis
-      const PREMIUM_ASSETS = new Set([
-        'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'BNBUSDT', 
-        'XRPUSDT', 'ADAUSDT', 'MATICUSDT', 'DOTUSDT', 'AVAXUSDT',
-        'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT', 'ATOMUSDT',
-        'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT', 'OPUSDT'
-      ]);
+      // 🗑️ Removido PREMIUM_ASSETS - usando apenas SCALPING_ASSETS agora
       
       console.log(`🔥 Analisando ${topVolatileAssets.length} ativos com movimento da Bybit (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
       if (topVolatileAssets.length > 0) {
         console.log(`📊 Range de Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
       }
-      console.log(`🎯 CRITÉRIOS: Premium ≥60 score, 2+ conf | Normal ≥75 score, 3+ conf`);
+      console.log(`⚡ SCALPING MODE: ≥50 score, 1+ conf para ativos scalp | ≥70 score, 2+ conf normal`);
       
       // 🛑 FLAG para parar processamento em caso de saldo insuficiente
       let shouldStopTrading = false;
@@ -520,11 +539,12 @@ export const MultiAssetTrader = () => {
           // ATR como % do preço - usado para stops dinâmicos
           const atrPercent = (priceRange / currentPrice) * 100;
           
-          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (BALANCEADAS)
-          const hasGoodVolume = volume24h > 500000; // $500K mínimo para liquidez adequada
-          const hasExcellentVolume = volume24h > 3000000; // $3M+ = volume excepcional
-          const hasGoodVolatility = volatility > 0.8; // 0.8% mínimo - movimento suficiente
-          const hasStrongVolatility = volatility > 2.0; // 2.0%+ = volatilidade forte
+          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (ULTRA-AGRESSIVAS PARA SCALPING)
+          const isScalpAsset = SCALPING_ASSETS.has(symbol);
+          const hasGoodVolume = isScalpAsset ? volume24h > 100000 : volume24h > 300000;
+          const hasExcellentVolume = volume24h > 3000000;
+          const hasGoodVolatility = isScalpAsset ? volatility > 0.3 : volatility > 0.6;
+          const hasStrongVolatility = volatility > 2.0;
           
           // 3. ANÁLISE DE TENDÊNCIA E MOMENTUM (BALANCEADO)
           const pricePosition = (currentPrice - lowPrice) / priceRange; // 0-1, onde está no range
@@ -659,10 +679,9 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - THRESHOLD DIFERENCIADO
-          const isPremiumAsset = PREMIUM_ASSETS.has(symbol);
-          const scoreThreshold = isPremiumAsset ? 60 : 75; // Premium: 60 | Normal: 75
-          const minConfirmations = isPremiumAsset ? 2 : 3; // Premium: 2 | Normal: 3
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - THRESHOLD ULTRA-AGRESSIVO PARA SCALPING
+          const scoreThreshold = isScalpAsset ? 50 : 70; // Scalp: 50 | Normal: 70
+          const minConfirmations = isScalpAsset ? 1 : 2; // Scalp: 1 | Normal: 2
           
           if (buyScore > sellScore && buyScore >= scoreThreshold) {
             action = 'BUY';
@@ -678,10 +697,10 @@ export const MultiAssetTrader = () => {
             (action === 'SELL' && (isBearishTrend || isModerateBearish))
           );
           
-          // Critérios mais flexíveis para ativos premium
-          const volumeCheck = isPremiumAsset ? volume24h > 200000 : hasGoodVolume; // Premium: $200K | Normal: $500K
-          const volatilityCheck = isPremiumAsset ? volatility > 0.5 : hasGoodVolatility; // Premium: 0.5% | Normal: 0.8%
-          const atrMinCheck = isPremiumAsset ? atrPercent > 0.8 : atrPercent > 1.2; // Premium: 0.8% | Normal: 1.2%
+          // Critérios ultra-agressivos para scalping
+          const volumeCheck = hasGoodVolume; // Já ajustado acima
+          const volatilityCheck = hasGoodVolatility; // Já ajustado acima
+          const atrMinCheck = isScalpAsset ? atrPercent > 0.5 : atrPercent > 1.0;
           
           const shouldTrade = (
             signalScore >= scoreThreshold && // Score ajustado por tipo
@@ -698,27 +717,26 @@ export const MultiAssetTrader = () => {
           // 📋 MOTIVOS PARA NÃO EXECUTAR
           if (!shouldTrade && signalScore > 0) {
             let skipReason = '';
-            const assetType = isPremiumAsset ? '🌟Premium' : 'Normal';
-            if (signalScore < scoreThreshold) skipReason = `${assetType} Score baixo (${signalScore}/${scoreThreshold}) | Conf: ${confirmations.length}`;
-            else if (confirmations.length < minConfirmations) skipReason = `${assetType} Poucas conf (${confirmations.length}/${minConfirmations})`;
+            const assetBadge = isScalpAsset ? '⚡SCALP' : 'NORMAL';
+            if (signalScore < scoreThreshold) skipReason = `${assetBadge} Score: ${signalScore}/${scoreThreshold} | Conf: ${confirmations.length}`;
+            else if (confirmations.length < minConfirmations) skipReason = `${assetBadge} Conf: ${confirmations.length}/${minConfirmations}`;
             else if (!hasTrendConfirmation) skipReason = `Trend fraco (${action})`;
-            else if (!volumeCheck) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M)`;
-            else if (!volatilityCheck) skipReason = `Vol. baixa (${volatility.toFixed(2)}%)`;
-            else if (currentBalance <= 2) skipReason = `Saldo insuficiente`;
-            else if (!atrMinCheck) skipReason = `ATR baixo (${atrPercent.toFixed(2)}%)`;
-            else if (atrPercent >= 12) skipReason = `ATR alto (${atrPercent.toFixed(2)}%)`;
+            else if (!volumeCheck) skipReason = `Vol: $${(volume24h/1e6).toFixed(1)}M`;
+            else if (!volatilityCheck) skipReason = `Vol%: ${volatility.toFixed(2)}%`;
+            else if (currentBalance <= 2) skipReason = `Saldo baixo`;
+            else if (!atrMinCheck) skipReason = `ATR: ${atrPercent.toFixed(2)}%`;
+            else if (atrPercent >= 12) skipReason = `ATR alto: ${atrPercent.toFixed(2)}%`;
             else if (action === null) skipReason = 'Sem sinal';
             
-            console.log(`⏭️ ${symbol} PULADO: ${skipReason}`);
+            console.log(`⏭️ ${symbol} SKIP: ${skipReason}`);
           }
           
-          // 📊 LOG DE SINAIS DE QUALIDADE
+          // 📊 LOG DE SINAIS
           if (shouldTrade && action) {
-            const assetBadge = isPremiumAsset ? '🌟 PREMIUM' : '📊';
-            console.log(`\n✅ ${assetBadge} ${symbol} - SINAL CONFIRMADO`);
-            console.log(`   ${action} | Score: ${signalScore}/100 (min: ${scoreThreshold}) | Conf: ${confirmations.length}/${minConfirmations}`);
-            console.log(`   ${confirmations.join(' | ')}`);
-            console.log(`   Vol: ${volatility.toFixed(2)}% | Volume: $${(volume24h/1e6).toFixed(1)}M | ATR: ${atrPercent.toFixed(2)}%`);
+            const assetBadge = isScalpAsset ? '⚡ SCALP' : '📊 TRADE';
+            console.log(`\n${assetBadge} ${symbol} ${action}`);
+            console.log(`   Score: ${signalScore}/${scoreThreshold} | Conf: ${confirmations.length} | Vol: ${volatility.toFixed(2)}% | $${(volume24h/1e6).toFixed(1)}M`);
+            console.log(`   ${confirmations.slice(0, 2).join(' | ')}`);
             
             // Disparar evento customizado para o dashboard
             const signalEvent = new CustomEvent('trading-signal', {
@@ -727,25 +745,26 @@ export const MultiAssetTrader = () => {
                 action,
                 score: signalScore,
                 confirmations: confirmations.length,
+                isScalping: isScalpAsset,
                 metrics: {
                   volatility,
                   volume24h,
                   priceChange,
-                  pricePosition: pricePosition < 0.3 ? 'Suporte' : pricePosition > 0.7 ? 'Resistência' : 'Meio Range',
+                  pricePosition: pricePosition < 0.3 ? 'Suporte' : pricePosition > 0.7 ? 'Resistência' : 'Meio',
                   trend: trendStrength,
                 },
                 technicalFactors: confirmations,
-                reasoning: `Score: ${signalScore}/100 com ${confirmations.length} confirmações técnicas. Volume 24h: $${(volume24h/1e6).toFixed(1)}M, Volatilidade: ${volatility.toFixed(2)}%`,
+                reasoning: `${assetBadge} - Score ${signalScore} com ${confirmations.length} conf.`,
               }
             });
             window.dispatchEvent(signalEvent);
             
-            // Toast de confirmação de sinal de alta qualidade
-            if (signalScore >= 85 || (isPremiumAsset && signalScore >= 70)) {
+            // Toast para sinais fortes
+            if (signalScore >= 75 || (isScalpAsset && signalScore >= 60)) {
               toast({
-                title: isPremiumAsset ? "🌟 Sinal Premium Detectado" : "🎯 Sinal de Qualidade",
-                description: `${symbol} ${action} | Score: ${signalScore}/100 | ${confirmations.length} confirmações`,
-                duration: 3000,
+                title: isScalpAsset ? "⚡ Scalp Signal" : "🎯 Trade Signal",
+                description: `${symbol} ${action} | Score: ${signalScore}`,
+                duration: 2000,
               });
             }
           }
@@ -855,25 +874,32 @@ export const MultiAssetTrader = () => {
             }
 
             const currentVolatility = Math.abs(priceChange);
-            setAvgVolatility(currentVolatility); // Atualizar volatilidade média
+            setAvgVolatility(currentVolatility);
             
-            // 🔥 ALAVANCAGEM DINÂMICA: Ajustar baseado no desempenho
-            let dynamicLeverage = mlConfig?.is_enabled && mlConfig?.recommended_leverage
-              ? mlConfig.recommended_leverage
-              : getLeverageForBalance(currentBalance, historicalWinRate);
+            // 🔥 ALAVANCAGEM PARA SCALPING: Baseada na volatilidade
+            let dynamicLeverage: number;
             
-            if (dynamicLeverageEnabled) {
-              // Aumentar leverage com alta win rate, reduzir com perda
-              if (historicalWinRate >= 70) {
-                dynamicLeverage = Math.min(dynamicLeverage * 1.2, 20); // +20% leverage, max 20x
-                console.log(`⚡ ALAVANCAGEM AUMENTADA: ${dynamicLeverage.toFixed(1)}x (Win Rate: ${historicalWinRate.toFixed(0)}%)`);
-              } else if (historicalWinRate < 45 || lossStreak >= 2) {
-                dynamicLeverage = Math.max(dynamicLeverage * 0.7, 5); // -30% leverage, min 5x
-                console.log(`🛡️ ALAVANCAGEM REDUZIDA: ${dynamicLeverage.toFixed(1)}x (Win Rate: ${historicalWinRate.toFixed(0)}% | Streak: ${lossStreak})`);
+            if (isScalpAsset) {
+              // Scalping: 25x-50x baseado na volatilidade
+              dynamicLeverage = getLeverageForScalping(currentVolatility);
+              console.log(`⚡ SCALP ${dynamicLeverage.toFixed(0)}x | Vol: ${currentVolatility.toFixed(2)}%`);
+            } else if (mlConfig?.is_enabled && mlConfig?.recommended_leverage) {
+              // ML Ativo
+              dynamicLeverage = mlConfig.recommended_leverage;
+            } else {
+              // Alavancagem normal baseada em saldo
+              dynamicLeverage = getLeverageForBalance(currentBalance, historicalWinRate);
+              
+              if (dynamicLeverageEnabled) {
+                if (historicalWinRate >= 70) {
+                  dynamicLeverage = Math.min(dynamicLeverage * 1.2, 20);
+                } else if (historicalWinRate < 45 || lossStreak >= 2) {
+                  dynamicLeverage = Math.max(dynamicLeverage * 0.7, 5);
+                }
               }
-              setCurrentLeverage(dynamicLeverage);
             }
             
+            setCurrentLeverage(dynamicLeverage);
             const leverage = dynamicLeverage;
             
             let positionSizeResult = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate, openPositionsCount);
@@ -994,27 +1020,33 @@ export const MultiAssetTrader = () => {
               continue;
             }
             
-            // 🛡️ CALCULAR SL E TP - STOPS DINÂMICOS BASEADOS EM ATR (COM ML ADAPTATIVO)
+            // 🛡️ CALCULAR SL E TP - SCALPING: STOPS ULTRA-APERTADOS
             const priceDecimals = ticker.lastPrice.includes('.') 
               ? ticker.lastPrice.split('.')[1].length 
               : 2;
             
-            // STOP LOSS DINÂMICO: Usa ATR real com multiplicador baseado em ML ou padrão
-            // Mínimo 2.5% ou 2x ATR, o que for MAIOR - dá mais espaço para respirar
-            const atrMultiplier = 2.0; // 2x ATR
-            const minStopPercent = 2.5; // Mínimo 2.5% sempre
+            let stopLossPct: number;
+            let takeProfitPct: number;
             
-            const atrStopPercent = Math.max(atrPercent * atrMultiplier, minStopPercent);
-            
-            // Se ML estiver ativo, pode ajustar baseado em recomendações
-            const stopLossPct = mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct 
-              ? Math.max(mlConfig.recommended_stop_loss_pct / 100, atrStopPercent / 100)
-              : atrStopPercent / 100;
-            
-            // TAKE PROFIT: Risk:Reward de 1:2.5 (se perder 2.5%, ganhar 6.25%)
-            const takeProfitPct = mlConfig?.is_enabled && mlConfig?.recommended_take_profit_pct 
-              ? mlConfig.recommended_take_profit_pct / 100 
-              : stopLossPct * 2.5;
+            if (isScalpAsset) {
+              // SCALPING: Stops apertados (0.8% SL, 1.5% TP = 1:1.875 R:R)
+              stopLossPct = 0.008; // 0.8%
+              takeProfitPct = 0.015; // 1.5%
+              console.log(`⚡ SCALP STOPS: SL ${(stopLossPct*100).toFixed(1)}% | TP ${(takeProfitPct*100).toFixed(1)}%`);
+            } else {
+              // NORMAL: Stops mais largos baseados em ATR
+              const atrMultiplier = 2.0;
+              const minStopPercent = 2.5;
+              const atrStopPercent = Math.max(atrPercent * atrMultiplier, minStopPercent);
+              
+              stopLossPct = mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct 
+                ? Math.max(mlConfig.recommended_stop_loss_pct / 100, atrStopPercent / 100)
+                : atrStopPercent / 100;
+              
+              takeProfitPct = mlConfig?.is_enabled && mlConfig?.recommended_take_profit_pct 
+                ? mlConfig.recommended_take_profit_pct / 100 
+                : stopLossPct * 2.5;
+            }
             
             // Stop Loss SEMPRE ativo
             const stopLoss = action === 'BUY' 
@@ -1063,19 +1095,8 @@ export const MultiAssetTrader = () => {
             // 🔧 Converter qty para string com precisão correta
             const qtyStr = qty.toFixed(decimals);
             
-            // 📊 LOG DETALHADO PRÉ-ORDEM PARA DEBUG
-            console.log(`📋 PRÉ-ORDEM ${symbol}:`, {
-              action,
-              price: currentPrice,
-              qty: qtyStr,
-              orderValue: orderValueUSD,
-              leverage,
-              stopLoss,
-              takeProfit,
-              validation: action === 'SELL' 
-                ? `SELL: TP(${takeProfit}) < Price(${currentPrice}) < SL(${stopLoss})`
-                : `BUY: SL(${stopLoss}) < Price(${currentPrice}) < TP(${takeProfit})`
-            });
+            // 📊 LOG PRÉ-ORDEM
+            console.log(`${isScalpAsset ? '⚡' : '📋'} ${symbol}: ${action} ${qtyStr} @ $${currentPrice} | ${leverage}x | SL: ${stopLoss} | TP: ${takeProfit}`);
             
             // 🛡️ VERIFICAÇÃO CRÍTICA DE SALDO ANTES DE CADA ORDEM
             // Buscar saldo atualizado imediatamente antes da ordem
@@ -1138,11 +1159,13 @@ export const MultiAssetTrader = () => {
                   symbol: symbol,
                   side: action === 'BUY' ? 'Buy' : 'Sell',
                   orderType: 'Market',
-                  qty: qtyStr, // Usar string com precisão correta
+                  qty: qtyStr,
+                  leverage: leverage.toString(), // 🔥 ALAVANCAGEM CONFIGURADA
                   stopLoss: stopLoss,
                   takeProfit: takeProfit,
                   timeInForce: 'GTC',
-                  positionIdx: 0
+                  positionIdx: 0,
+                  reduceOnly: false
                 }
               }
             });
@@ -1217,8 +1240,8 @@ export const MultiAssetTrader = () => {
               setOpenPositionsCount(prev => prev + 1);
               
               toast({
-                title: `✅ Trade Executado: ${symbol}`,
-                description: `${action} | Leverage: ${leverage}x | Risco: $${usdSize.toFixed(2)} | Score: ${signalScore}`,
+                title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`,
+                description: `${action} ${leverage}x | Risk: $${usdSize.toFixed(2)} | Score: ${signalScore}`,
               });
             } else {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError);
