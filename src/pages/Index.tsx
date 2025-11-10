@@ -11,7 +11,7 @@ import { SentimentDashboard } from "@/components/SentimentDashboard";
 import { PortfolioRebalancer } from "@/components/PortfolioRebalancer";
 import { OrderFlowDashboard } from "@/components/OrderFlowDashboard";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
-import { SignalsDashboard } from "@/components/SignalsDashboard";
+
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,7 +68,6 @@ const Index = () => {
             {/* Trading Tab */}
             <TabsContent value="trading" className="space-y-6">
               <BybitPositionsPanel />
-              <SignalsDashboard />
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <MultiAssetTrader />
                 <div className="space-y-6">
