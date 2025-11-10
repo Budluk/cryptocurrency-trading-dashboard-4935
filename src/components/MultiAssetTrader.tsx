@@ -902,8 +902,28 @@ export const MultiAssetTrader = () => {
             setCurrentLeverage(dynamicLeverage);
             const leverage = dynamicLeverage;
             
-            let positionSizeResult = calculatePositionSize(currentBalance, leverage, currentVolatility, historicalWinRate, openPositionsCount);
-            let { usdSize, marginUsed, marginPerPosition, positionSizeMultiplier } = positionSizeResult;
+            // 🚀 CAPITAL ALLOCATION AGRESSIVO: Usar TODO o saldo para alavancar
+            // META: $15+ por dia com uso máximo de capital
+            const dailyTargetProfit = 15; // Meta diária mínima
+            
+            // Usar 85-95% do saldo disponível por trade
+            const capitalAllocation = isScalpAsset ? 0.95 : 0.85;
+            let usdSize = currentBalance * capitalAllocation;
+            
+            // Calcular lucro esperado com este trade
+            const stopLossPctEstimate = isScalpAsset ? 0.008 : 0.025;
+            const takeProfitPctEstimate = isScalpAsset ? 0.015 : (stopLossPctEstimate * 2.5);
+            const expectedProfit = (usdSize * takeProfitPctEstimate * leverage);
+            const expectedLoss = (usdSize * stopLossPctEstimate * leverage);
+            
+            console.log(`💰 CAPITAL ALLOCATION: $${usdSize.toFixed(2)} (${(capitalAllocation*100).toFixed(0)}% do saldo)`);
+            console.log(`📊 LEVERAGE: ${leverage.toFixed(0)}x | Profit esperado: +$${expectedProfit.toFixed(2)} | Loss: -$${expectedLoss.toFixed(2)}`);
+            console.log(`🎯 META DIÁRIA: $${dailyTargetProfit} | Este trade contribui: ${(expectedProfit/dailyTargetProfit*100).toFixed(1)}%`);
+            
+            // Manter referências para compatibilidade
+            const marginUsed = usdSize / leverage;
+            const marginPerPosition = usdSize;
+            const positionSizeMultiplier = 1.0;
             
             // 🔥 MARTINGALE CONTROLADO: Dobrar após 2 perdas consecutivas (limite 3x)
             if (martingaleEnabled && lossStreak >= 2) {
@@ -948,8 +968,9 @@ export const MultiAssetTrader = () => {
             
             // ATR já calculado anteriormente no código - usar o valor real
             
-            // 📊 LOG DE MARGEM
-            console.log(`💼 MARGEM: Posições: ${openPositionsCount}/${maxOpenPositions} | Tamanho: $${usdSize.toFixed(2)} (${(positionSizeMultiplier * 100).toFixed(0)}% do normal) | Margem usada: $${marginUsed.toFixed(2)}/${marginPerPosition.toFixed(2)}`);
+            // 📊 LOG DE MARGEM E EXPECTATIVA
+            console.log(`💼 POSIÇÃO: ${openPositionsCount}/${maxOpenPositions} | Capital: $${usdSize.toFixed(2)} | Margem: $${marginUsed.toFixed(2)}`);
+            console.log(`💵 EXPECTATIVA: +$${expectedProfit.toFixed(2)} (${(takeProfitPctEstimate*100).toFixed(2)}%) ou -$${expectedLoss.toFixed(2)} (${(stopLossPctEstimate*100).toFixed(2)}%)`);
             
             // Pegar filtros do instrumento para calcular quantidade válida
             const lotSizeFilter = instrument.lotSizeFilter || {};
@@ -1241,7 +1262,7 @@ export const MultiAssetTrader = () => {
               
               toast({
                 title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`,
-                description: `${action} ${leverage}x | Risk: $${usdSize.toFixed(2)} | Score: ${signalScore}`,
+                description: `${action} ${leverage.toFixed(0)}x | Capital: $${usdSize.toFixed(0)} | Expected: +$${expectedProfit.toFixed(2)}`,
               });
             } else {
               console.error(`❌ Erro ao executar ${symbol}:`, orderError);
