@@ -484,11 +484,19 @@ export const MultiAssetTrader = () => {
       const topVolatileAssets = assetsWithVolatility
         .sort((a, b) => b.volatility - a.volatility);
       
+      // 🌟 LISTA DE ATIVOS PREMIUM - Critérios mais flexíveis
+      const PREMIUM_ASSETS = new Set([
+        'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'BNBUSDT', 
+        'XRPUSDT', 'ADAUSDT', 'MATICUSDT', 'DOTUSDT', 'AVAXUSDT',
+        'LINKUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT', 'ATOMUSDT',
+        'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT', 'OPUSDT'
+      ]);
+      
       console.log(`🔥 Analisando ${topVolatileAssets.length} ativos com movimento da Bybit (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
       if (topVolatileAssets.length > 0) {
         console.log(`📊 Range de Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
       }
-      console.log(`🎯 CRITÉRIOS BALANCEADOS: Score ≥75 | 3+ confirmações | Trend confirmado | Volume $500K+`);
+      console.log(`🎯 CRITÉRIOS: Premium ≥60 score, 2+ conf | Normal ≥75 score, 3+ conf`);
       
       // 🛑 FLAG para parar processamento em caso de saldo insuficiente
       let shouldStopTrading = false;
@@ -651,43 +659,53 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - THRESHOLD BALANCEADO
-          if (buyScore > sellScore && buyScore >= 75) {
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - THRESHOLD DIFERENCIADO
+          const isPremiumAsset = PREMIUM_ASSETS.has(symbol);
+          const scoreThreshold = isPremiumAsset ? 60 : 75; // Premium: 60 | Normal: 75
+          const minConfirmations = isPremiumAsset ? 2 : 3; // Premium: 2 | Normal: 3
+          
+          if (buyScore > sellScore && buyScore >= scoreThreshold) {
             action = 'BUY';
             signalScore = Math.min(buyScore, 100);
-          } else if (sellScore > buyScore && sellScore >= 75) {
+          } else if (sellScore > buyScore && sellScore >= scoreThreshold) {
             action = 'SELL';
             signalScore = Math.min(sellScore, 100);
           }
           
-          // 7. FILTRO FINAL: Critérios BALANCEADOS para qualidade
+          // 7. FILTRO FINAL: Critérios FLEXÍVEIS para ativos premium
           const hasTrendConfirmation = (
             (action === 'BUY' && (isBullishTrend || isModerateBullish)) || 
             (action === 'SELL' && (isBearishTrend || isModerateBearish))
           );
           
+          // Critérios mais flexíveis para ativos premium
+          const volumeCheck = isPremiumAsset ? volume24h > 200000 : hasGoodVolume; // Premium: $200K | Normal: $500K
+          const volatilityCheck = isPremiumAsset ? volatility > 0.5 : hasGoodVolatility; // Premium: 0.5% | Normal: 0.8%
+          const atrMinCheck = isPremiumAsset ? atrPercent > 0.8 : atrPercent > 1.2; // Premium: 0.8% | Normal: 1.2%
+          
           const shouldTrade = (
-            signalScore >= 75 && // Score de qualidade
-            confirmations.length >= 3 && // MÍNIMO 3 confirmações
-            hasGoodVolume &&
-            hasGoodVolatility &&
+            signalScore >= scoreThreshold && // Score ajustado por tipo
+            confirmations.length >= minConfirmations && // Confirmações ajustadas
+            volumeCheck &&
+            volatilityCheck &&
             hasTrendConfirmation && // Trend confirmado (forte ou moderado)
             action !== null &&
             currentBalance > 2 &&
-            atrPercent > 1.2 && // ATR mínimo adequado
+            atrMinCheck && // ATR mínimo ajustado
             atrPercent < 12 // ATR máximo
           );
 
           // 📋 MOTIVOS PARA NÃO EXECUTAR
           if (!shouldTrade && signalScore > 0) {
             let skipReason = '';
-            if (signalScore < 75) skipReason = `Score baixo (${signalScore}/75) | Conf: ${confirmations.length}`;
-            else if (confirmations.length < 3) skipReason = `Poucas confirmações (${confirmations.length}/3)`;
+            const assetType = isPremiumAsset ? '🌟Premium' : 'Normal';
+            if (signalScore < scoreThreshold) skipReason = `${assetType} Score baixo (${signalScore}/${scoreThreshold}) | Conf: ${confirmations.length}`;
+            else if (confirmations.length < minConfirmations) skipReason = `${assetType} Poucas conf (${confirmations.length}/${minConfirmations})`;
             else if (!hasTrendConfirmation) skipReason = `Trend fraco (${action})`;
-            else if (!hasGoodVolume) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M)`;
-            else if (!hasGoodVolatility) skipReason = `Vol. baixa (${volatility.toFixed(2)}%)`;
+            else if (!volumeCheck) skipReason = `Volume baixo ($${(volume24h/1e6).toFixed(1)}M)`;
+            else if (!volatilityCheck) skipReason = `Vol. baixa (${volatility.toFixed(2)}%)`;
             else if (currentBalance <= 2) skipReason = `Saldo insuficiente`;
-            else if (atrPercent <= 1.2) skipReason = `ATR baixo (${atrPercent.toFixed(2)}%)`;
+            else if (!atrMinCheck) skipReason = `ATR baixo (${atrPercent.toFixed(2)}%)`;
             else if (atrPercent >= 12) skipReason = `ATR alto (${atrPercent.toFixed(2)}%)`;
             else if (action === null) skipReason = 'Sem sinal';
             
@@ -696,8 +714,9 @@ export const MultiAssetTrader = () => {
           
           // 📊 LOG DE SINAIS DE QUALIDADE
           if (shouldTrade && action) {
-            console.log(`\n✅ ${symbol} - SINAL DE QUALIDADE`);
-            console.log(`   ${action} | Score: ${signalScore}/100 | Conf: ${confirmations.length}`);
+            const assetBadge = isPremiumAsset ? '🌟 PREMIUM' : '📊';
+            console.log(`\n✅ ${assetBadge} ${symbol} - SINAL CONFIRMADO`);
+            console.log(`   ${action} | Score: ${signalScore}/100 (min: ${scoreThreshold}) | Conf: ${confirmations.length}/${minConfirmations}`);
             console.log(`   ${confirmations.join(' | ')}`);
             console.log(`   Vol: ${volatility.toFixed(2)}% | Volume: $${(volume24h/1e6).toFixed(1)}M | ATR: ${atrPercent.toFixed(2)}%`);
             
@@ -722,9 +741,9 @@ export const MultiAssetTrader = () => {
             window.dispatchEvent(signalEvent);
             
             // Toast de confirmação de sinal de alta qualidade
-            if (signalScore >= 85) {
+            if (signalScore >= 85 || (isPremiumAsset && signalScore >= 70)) {
               toast({
-                title: "🎯 Sinal Premium Detectado",
+                title: isPremiumAsset ? "🌟 Sinal Premium Detectado" : "🎯 Sinal de Qualidade",
                 description: `${symbol} ${action} | Score: ${signalScore}/100 | ${confirmations.length} confirmações`,
                 duration: 3000,
               });
