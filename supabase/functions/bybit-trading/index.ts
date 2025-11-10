@@ -172,7 +172,8 @@ async function makeBybitRequest(
     throw new Error('Invalid JSON response from Bybit API');
   }
 
-  if (data.retCode !== 0) {
+  // Handle "not modified" as success (code 10005) - stop loss already at this level
+  if (data.retCode !== 0 && data.retCode !== 10005) {
     throw new Error(`Bybit API Error: ${data.retMsg || 'Unknown error'}`);
   }
 
