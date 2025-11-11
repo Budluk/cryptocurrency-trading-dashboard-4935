@@ -222,7 +222,7 @@ export const MultiAssetTrader = () => {
     };
   };
 
-  // 🔄 SINCRONIZAÇÃO AUTOMÁTICA - Buscar saldo real da Bybit
+  // 🔄 SINCRONIZAÇÃO AUTOMÁTICA - Buscar saldo DISPONÍVEL real da Bybit
   const syncBybitBalance = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
@@ -234,13 +234,14 @@ export const MultiAssetTrader = () => {
       });
 
       if (!error && data?.success) {
-        const usdtCoin = data.data.list[0]?.coin?.find((c: any) => c.coin === 'USDT');
-        if (usdtCoin) {
-          const realBalance = parseFloat(usdtCoin.walletBalance);
-          setCurrentBalance(realBalance);
-          setLastSyncTime(new Date());
-          console.log(`💰 Saldo sincronizado: $${realBalance.toFixed(2)}`);
-        }
+        // 💰 USAR SALDO DISPONÍVEL (após margem de posições abertas)
+        const availableBalance = parseFloat(data.data.list[0]?.totalAvailableBalance || '0');
+        const totalWallet = parseFloat(data.data.list[0]?.totalWalletBalance || '0');
+        
+        setCurrentBalance(availableBalance); // Usar saldo DISPONÍVEL
+        setLastSyncTime(new Date());
+        
+        console.log(`💰 Saldo sincronizado: $${availableBalance.toFixed(2)} disponível (Wallet: $${totalWallet.toFixed(2)})`);
       }
     } catch (error) {
       console.error('Erro ao sincronizar saldo:', error);
@@ -898,13 +899,24 @@ export const MultiAssetTrader = () => {
             setCurrentLeverage(dynamicLeverage);
             const leverage = dynamicLeverage;
             
-            // 🚀 CAPITAL ALLOCATION AGRESSIVO: Usar TODO o saldo para alavancar
-            // META: $15+ por dia com uso máximo de capital
-            const dailyTargetProfit = 15; // Meta diária mínima
+            // 🚀 CAPITAL ALLOCATION INTELIGENTE: Usar saldo disponível com segurança
+            // META: $15+ por dia SEM erros de saldo insuficiente
+            const dailyTargetProfit = 15;
             
-            // Usar 85-95% do saldo disponível por trade
-            const capitalAllocation = isScalpAsset ? 0.95 : 0.85;
-            let usdSize = currentBalance * capitalAllocation;
+            // ⚠️ AJUSTE CRÍTICO: Saldo mínimo de segurança para evitar liquidação
+            const MIN_SAFETY_BALANCE = 5; // Manter $5 sempre disponível
+            const safeBalance = Math.max(0, currentBalance - MIN_SAFETY_BALANCE);
+            
+            // Usar 70-80% do saldo DISPONÍVEL (não total) por trade
+            const capitalAllocation = isScalpAsset ? 0.70 : 0.60;
+            let usdSize = safeBalance * capitalAllocation;
+            
+            // 🛑 VERIFICAÇÃO: Garantir que não excede saldo disponível
+            const initialMargin = usdSize / leverage;
+            if (initialMargin > safeBalance) {
+              usdSize = safeBalance * 0.5; // Reduzir para 50% se necessário
+              console.log(`⚠️ Ajustando tamanho para evitar margem insuficiente: $${usdSize.toFixed(2)}`);
+            }
             
             // Calcular lucro esperado com este trade
             const stopLossPctEstimate = isScalpAsset ? 0.008 : 0.025;
@@ -912,12 +924,12 @@ export const MultiAssetTrader = () => {
             const expectedProfit = (usdSize * takeProfitPctEstimate * leverage);
             const expectedLoss = (usdSize * stopLossPctEstimate * leverage);
             
-            console.log(`💰 CAPITAL ALLOCATION: $${usdSize.toFixed(2)} (${(capitalAllocation*100).toFixed(0)}% do saldo)`);
-            console.log(`📊 LEVERAGE: ${leverage.toFixed(0)}x | Profit esperado: +$${expectedProfit.toFixed(2)} | Loss: -$${expectedLoss.toFixed(2)}`);
-            console.log(`🎯 META DIÁRIA: $${dailyTargetProfit} | Este trade contribui: ${(expectedProfit/dailyTargetProfit*100).toFixed(1)}%`);
+            console.log(`💰 CAPITAL: $${usdSize.toFixed(2)} (${(capitalAllocation*100).toFixed(0)}% de $${safeBalance.toFixed(2)} disponível)`);
+            console.log(`📊 LEVERAGE: ${leverage.toFixed(0)}x | Margem: $${initialMargin.toFixed(2)} | Profit: +$${expectedProfit.toFixed(2)}`);
+            console.log(`🎯 META: $${dailyTargetProfit}/dia | Trade contribui: ${(expectedProfit/dailyTargetProfit*100).toFixed(1)}%`);
             
             // Manter referências para compatibilidade
-            const marginUsed = usdSize / leverage;
+            const marginUsed = initialMargin;
             const marginPerPosition = usdSize;
             const positionSizeMultiplier = 1.0;
             
@@ -1130,33 +1142,27 @@ export const MultiAssetTrader = () => {
               continue;
             }
 
-            const freshBalance = parseFloat(balanceCheck.data?.list?.[0]?.totalAvailableBalance || '0');
-            const requiredMargin = parseFloat(orderValueUSD) / leverage;
-            const MIN_SAFE_BALANCE = 10; // Manter sempre $10 de margem de segurança
+            // 🛡️ VERIFICAÇÃO DUPLA DE SALDO (garantir que não mudou durante o processamento)
+            const freshBalanceFinal = parseFloat(balanceCheck.data?.list?.[0]?.totalAvailableBalance || '0');
+            const requiredMarginFinal = parseFloat(orderValueUSD) / leverage;
+            const MIN_SAFE_BALANCE_FINAL = 10; // Manter sempre $10 de margem de segurança
 
             // 🛑 VERIFICAÇÃO CRÍTICA: Parar se saldo negativo ou insuficiente
-            if (freshBalance < 0) {
-              console.log(`🛑 ${symbol}: SALDO NEGATIVO - Disponível: $${freshBalance.toFixed(2)}`);
+            if (freshBalanceFinal < 0) {
+              console.log(`🛑 ${symbol}: SALDO NEGATIVO - Disponível: $${freshBalanceFinal.toFixed(2)}`);
               setIsRunning(false);
               shouldStopTrading = true; // ATIVAR FLAG
               toast({
                 title: "🛑 Trader Pausado",
-                description: `Saldo negativo: $${freshBalance.toFixed(2)}. Aguarde fechamento de posições.`,
+                description: `Saldo negativo: $${freshBalanceFinal.toFixed(2)}. Aguarde fechamento de posições.`,
                 variant: "destructive",
               });
               break; // Sair do loop imediatamente
             }
 
-            if (freshBalance < requiredMargin + MIN_SAFE_BALANCE) {
-              console.log(`🛑 ${symbol}: Saldo insuficiente - Disponível: $${freshBalance.toFixed(2)} | Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`);
-              setIsRunning(false);
-              shouldStopTrading = true; // ATIVAR FLAG
-              toast({
-                title: "🛑 Trader Pausado",
-                description: `Saldo insuficiente: $${freshBalance.toFixed(2)} disponível. Necessário: $${(requiredMargin + MIN_SAFE_BALANCE).toFixed(2)}`,
-                variant: "destructive",
-              });
-              break; // Sair do loop imediatamente
+            if (freshBalanceFinal < requiredMarginFinal + MIN_SAFE_BALANCE_FINAL) {
+              console.log(`🛑 ${symbol}: Saldo insuficiente - Disponível: $${freshBalanceFinal.toFixed(2)} | Necessário: $${(requiredMarginFinal + MIN_SAFE_BALANCE_FINAL).toFixed(2)}`);
+              continue; // Pular este trade mas continuar com outros
             }
             
             const mlIndicator = mlConfig?.is_enabled ? ` [🧠ML: ${(stopLossPct*100).toFixed(1)}%/${(takeProfitPct*100).toFixed(1)}%]` : '';
@@ -1164,7 +1170,7 @@ export const MultiAssetTrader = () => {
             console.log(`   💰 Preço: $${currentPrice} | ATR: ${atrPercent.toFixed(2)}% | SL Dinâmico: ${(stopLossPct*100).toFixed(2)}%`);
             console.log(`   📊 Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x`);
             console.log(`   📈 Qty: ${qtyStr} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
-            console.log(`   💵 Saldo: $${freshBalance.toFixed(2)} | Confirmações: ${confirmations.join(', ')}`);
+            console.log(`   💵 Saldo: $${freshBalanceFinal.toFixed(2)} (Margem: $${requiredMarginFinal.toFixed(2)}) | Confirmações: ${confirmations.join(', ')}`);
 
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
