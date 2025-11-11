@@ -515,7 +515,7 @@ export const MultiAssetTrader = () => {
       if (topVolatileAssets.length > 0) {
         console.log(`📊 Range de Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
       }
-      console.log(`⚡ SCALPING MODE: ≥50 score, 1+ conf para ativos scalp | ≥70 score, 2+ conf normal`);
+      console.log(`⚡ MODO ULTRA AGRESSIVO: Score ≥20 (scalp) ou ≥30 (normal) | Vol >0.15% | $50K+ | SEM confirmações obrigatórias`);
       
       // 🛑 FLAG para parar processamento em caso de saldo insuficiente
       let shouldStopTrading = false;
@@ -679,9 +679,10 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - THRESHOLD ULTRA-AGRESSIVO PARA SCALPING
-          const scoreThreshold = isScalpAsset ? 50 : 70; // Scalp: 50 | Normal: 70
-          const minConfirmations = isScalpAsset ? 1 : 2; // Scalp: 1 | Normal: 2
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - ULTRA AGRESSIVO
+          // ⚡ THRESHOLDS MUITO BAIXOS para maximizar entradas
+          const scoreThreshold = isScalpAsset ? 20 : 30; // Scalp: 20 | Normal: 30
+          const minConfirmations = 0; // Sem mínimo de confirmações
           
           if (buyScore > sellScore && buyScore >= scoreThreshold) {
             action = 'BUY';
@@ -691,44 +692,37 @@ export const MultiAssetTrader = () => {
             signalScore = Math.min(sellScore, 100);
           }
           
-          // 7. FILTRO FINAL: Critérios FLEXÍVEIS para ativos premium
-          const hasTrendConfirmation = (
-            (action === 'BUY' && (isBullishTrend || isModerateBullish)) || 
-            (action === 'SELL' && (isBearishTrend || isModerateBearish))
-          );
-          
-          // Critérios ultra-agressivos para scalping
-          const volumeCheck = hasGoodVolume; // Já ajustado acima
-          const volatilityCheck = hasGoodVolatility; // Já ajustado acima
-          const atrMinCheck = isScalpAsset ? atrPercent > 0.5 : atrPercent > 1.0;
+          // 7. CRITÉRIOS ULTRA PERMISSIVOS
+          const volumeCheck = volume24h > 50000; // $50K mínimo
+          const volatilityCheck = volatility > 0.15; // 0.15% mínimo
+          const atrMinCheck = atrPercent > 0.3; // 0.3% ATR mínimo
           
           const shouldTrade = (
-            signalScore >= scoreThreshold && // Score ajustado por tipo
-            confirmations.length >= minConfirmations && // Confirmações ajustadas
+            signalScore >= scoreThreshold && // Score muito baixo
             volumeCheck &&
             volatilityCheck &&
-            hasTrendConfirmation && // Trend confirmado (forte ou moderado)
             action !== null &&
             currentBalance > 2 &&
-            atrMinCheck && // ATR mínimo ajustado
-            atrPercent < 12 // ATR máximo
+            atrMinCheck &&
+            atrPercent < 15 // ATR máximo aumentado
           );
 
-          // 📋 MOTIVOS PARA NÃO EXECUTAR
-          if (!shouldTrade && signalScore > 0) {
+          // 📋 LOG DETALHADO DE CADA ATIVO ANALISADO
+          const assetBadge = isScalpAsset ? '⚡' : '📊';
+          if (buyScore > 0 || sellScore > 0) {
+            const status = shouldTrade ? '✅' : '⏭️';
             let skipReason = '';
-            const assetBadge = isScalpAsset ? '⚡SCALP' : 'NORMAL';
-            if (signalScore < scoreThreshold) skipReason = `${assetBadge} Score: ${signalScore}/${scoreThreshold} | Conf: ${confirmations.length}`;
-            else if (confirmations.length < minConfirmations) skipReason = `${assetBadge} Conf: ${confirmations.length}/${minConfirmations}`;
-            else if (!hasTrendConfirmation) skipReason = `Trend fraco (${action})`;
-            else if (!volumeCheck) skipReason = `Vol: $${(volume24h/1e6).toFixed(1)}M`;
-            else if (!volatilityCheck) skipReason = `Vol%: ${volatility.toFixed(2)}%`;
-            else if (currentBalance <= 2) skipReason = `Saldo baixo`;
-            else if (!atrMinCheck) skipReason = `ATR: ${atrPercent.toFixed(2)}%`;
-            else if (atrPercent >= 12) skipReason = `ATR alto: ${atrPercent.toFixed(2)}%`;
-            else if (action === null) skipReason = 'Sem sinal';
+            if (!shouldTrade) {
+              if (signalScore < scoreThreshold) skipReason = `Score baixo: ${signalScore}/${scoreThreshold}`;
+              else if (!volumeCheck) skipReason = `Vol: $${(volume24h/1e6).toFixed(1)}M < $0.05M`;
+              else if (!volatilityCheck) skipReason = `Vol%: ${volatility.toFixed(2)}% < 0.15%`;
+              else if (!atrMinCheck) skipReason = `ATR: ${atrPercent.toFixed(2)}% < 0.3%`;
+              else if (atrPercent >= 15) skipReason = `ATR alto: ${atrPercent.toFixed(2)}%`;
+              else if (action === null) skipReason = 'Sem sinal';
+              else if (currentBalance <= 2) skipReason = 'Saldo baixo';
+            }
             
-            console.log(`⏭️ ${symbol} SKIP: ${skipReason}`);
+            console.log(`${status} ${assetBadge} ${symbol}: BUY=${buyScore} SELL=${sellScore} | ${action || 'NONE'} (${signalScore}) | Vol=${volatility.toFixed(2)}% | $${(volume24h/1e6).toFixed(1)}M | ATR=${atrPercent.toFixed(2)}% ${skipReason ? `| ❌ ${skipReason}` : ''}`);
           }
           
           // 📊 LOG DE SINAIS
