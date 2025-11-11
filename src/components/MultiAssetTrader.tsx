@@ -436,18 +436,20 @@ export const MultiAssetTrader = () => {
         console.log(`⚠️ LIMITE DE POSIÇÕES: ${openPositionsCount}/${maxOpenPositions} - Sistema de priorização ativo`);
       }
       
-      // ⏰ FILTRO DE HORÁRIOS
+      // ⏰ MODO 24/7 ATIVO - Sistema opera continuamente sem restrições de horário
       if (timeFilterEnabled) {
         const currentHour = new Date().getUTCHours();
         const isWithinTradingHours = startHour <= endHour
           ? currentHour >= startHour && currentHour < endHour
-          : currentHour >= startHour || currentHour < endHour; // Suporta overnight (ex: 22h-6h)
+          : currentHour >= startHour || currentHour < endHour;
         
         if (!isWithinTradingHours) {
-          console.log(`⏰ FORA DO HORÁRIO DE TRADING: ${currentHour}h UTC (Ativo: ${startHour}h-${endHour}h UTC)`);
-          return; // Não analisa ativos fora do horário
+          console.log(`⏰ FORA DO HORÁRIO: ${currentHour}h UTC (Ativo: ${startHour}h-${endHour}h UTC)`);
+          return;
         }
-        console.log(`✅ DENTRO DO HORÁRIO DE TRADING: ${currentHour}h UTC`);
+        console.log(`✅ DENTRO DO HORÁRIO: ${currentHour}h UTC`);
+      } else {
+        console.log(`🌍 MODO 24/7 ATIVO - Operando continuamente sem restrições de horário`);
       }
 
       // 1. Buscar TODOS os ativos da Bybit
