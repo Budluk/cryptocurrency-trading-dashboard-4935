@@ -1292,6 +1292,8 @@ export const MultiAssetTrader = () => {
                     leverage,
                     stop_loss: parseFloat(stopLoss),
                     take_profit: parseFloat(takeProfit),
+                    trailing_stop_percentage: 1.5, // 🎯 TRAILING STOP AUTOMÁTICO: 1.5%
+                    highest_price: currentPrice, // Inicializar com preço de entrada
                     confidence: signalScore, // 🎯 SALVAR SCORE DE QUALIDADE
                     status: 'OPEN',
                     exchange_order_id: orderData.data?.orderId

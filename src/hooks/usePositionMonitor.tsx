@@ -90,8 +90,27 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
           let realized_pnl = position.unrealized_pnl;
           let updatedHighestPrice = highest_price || entry_price;
 
-          // 🎯 TRAILING STOP AUTOMÁTICO
-          if (trailing_stop_percentage && trailing_stop_percentage > 0) {
+          // 🎯 ATIVAR TRAILING STOP AUTOMÁTICO quando lucrativo
+          const pnlPercentForTrailing = side === 'BUY' 
+            ? ((current_price - entry_price) / entry_price) * 100
+            : ((entry_price - current_price) / entry_price) * 100;
+
+          // Ativar trailing stop automaticamente quando > +0.5% de lucro
+          let activeTrailingStop = trailing_stop_percentage;
+          if (pnlPercentForTrailing > 0.5 && (!trailing_stop_percentage || trailing_stop_percentage === 0)) {
+            activeTrailingStop = 1.5; // Ativar com 1.5% de trailing
+            await supabase
+              .from('auto_trader_positions')
+              .update({ 
+                trailing_stop_percentage: activeTrailingStop,
+                highest_price: current_price 
+              })
+              .eq('id', id);
+            console.log(`🎯 ${position.symbol}: Trailing stop ativado automaticamente em +${pnlPercentForTrailing.toFixed(2)}%`);
+          }
+
+          // 🎯 TRAILING STOP DINÂMICO - Acompanha preço para maximizar ganhos
+          if (activeTrailingStop && activeTrailingStop > 0) {
             if (side === 'BUY') {
               // Para posições de compra: acompanhar o máximo preço
               if (current_price > updatedHighestPrice) {
@@ -103,17 +122,19 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                   .update({ highest_price: updatedHighestPrice })
                   .eq('id', id);
                 
-                console.log(`📈 ${position.symbol} BUY: Novo máximo $${updatedHighestPrice.toFixed(2)} | Trailing: $${(updatedHighestPrice * (1 - trailing_stop_percentage / 100)).toFixed(2)}`);
+                const profitFromEntry = ((current_price - entry_price) / entry_price) * 100;
+                console.log(`📈 ${position.symbol} BUY: Novo máximo $${updatedHighestPrice.toFixed(2)} (+${profitFromEntry.toFixed(2)}%) | Trailing: $${(updatedHighestPrice * (1 - activeTrailingStop / 100)).toFixed(2)}`);
               }
 
               // Calcular trailing stop baseado no highest price
-              const trailingStopPrice = updatedHighestPrice * (1 - trailing_stop_percentage / 100);
+              const trailingStopPrice = updatedHighestPrice * (1 - activeTrailingStop / 100);
               
               if (current_price <= trailingStopPrice) {
                 shouldClose = true;
-                closeReason = `Trailing Stop ${trailing_stop_percentage}%`;
+                closeReason = `Trailing Stop ${activeTrailingStop}%`;
                 realized_pnl = (current_price - entry_price) * qty;
-                console.log(`🛑 ${position.symbol} BUY: Trailing stop acionado! Max: $${updatedHighestPrice.toFixed(2)} → Atual: $${current_price.toFixed(2)}`);
+                const maxProfit = ((updatedHighestPrice - entry_price) / entry_price) * 100;
+                console.log(`🛑 ${position.symbol} BUY: Trailing stop acionado! Max: $${updatedHighestPrice.toFixed(2)} (+${maxProfit.toFixed(2)}%) → Atual: $${current_price.toFixed(2)}`);
               }
             } else if (side === 'SELL') {
               // Para posições de venda: acompanhar o mínimo preço
@@ -126,16 +147,18 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                   .update({ highest_price: updatedHighestPrice })
                   .eq('id', id);
                 
-                console.log(`📉 ${position.symbol} SELL: Novo mínimo $${updatedHighestPrice.toFixed(2)} | Trailing: $${(updatedHighestPrice * (1 + trailing_stop_percentage / 100)).toFixed(2)}`);
+                const profitFromEntry = ((entry_price - current_price) / entry_price) * 100;
+                console.log(`📉 ${position.symbol} SELL: Novo mínimo $${updatedHighestPrice.toFixed(2)} (+${profitFromEntry.toFixed(2)}%) | Trailing: $${(updatedHighestPrice * (1 + activeTrailingStop / 100)).toFixed(2)}`);
               }
 
-              const trailingStopPrice = updatedHighestPrice * (1 + trailing_stop_percentage / 100);
+              const trailingStopPrice = updatedHighestPrice * (1 + activeTrailingStop / 100);
               
               if (current_price >= trailingStopPrice) {
                 shouldClose = true;
-                closeReason = `Trailing Stop ${trailing_stop_percentage}%`;
+                closeReason = `Trailing Stop ${activeTrailingStop}%`;
                 realized_pnl = (entry_price - current_price) * qty;
-                console.log(`🛑 ${position.symbol} SELL: Trailing stop acionado! Min: $${updatedHighestPrice.toFixed(2)} → Atual: $${current_price.toFixed(2)}`);
+                const maxProfit = ((entry_price - updatedHighestPrice) / entry_price) * 100;
+                console.log(`🛑 ${position.symbol} SELL: Trailing stop acionado! Min: $${updatedHighestPrice.toFixed(2)} (+${maxProfit.toFixed(2)}%) → Atual: $${current_price.toFixed(2)}`);
               }
             }
           }
