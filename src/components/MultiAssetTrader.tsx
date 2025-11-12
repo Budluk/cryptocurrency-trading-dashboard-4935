@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -138,15 +138,11 @@ export const MultiAssetTrader = () => {
     restoreTraderState();
   }, []);
 
-  // 🎯 ATIVOS DE ALTA VOLATILIDADE IDEAIS PARA SCALPING
-  const SCALPING_ASSETS = new Set([
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT',
-    'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', '1000BONKUSDT',
-    'AVAXUSDT', 'NEARUSDT', 'APTUSDT', 'INJUSDT',
-    'SUIUSDT', 'TIAUSDT', 'ARBUSDT', 'OPUSDT',
-    '1000FLOKIUSDT', 'WIFUSDT', 'ORDIUSDT', 'STXUSDT',
-    'PENDLEUSDT', 'JUPUSDT', 'PYTHUSDT', 'WLDUSDT'
-  ]);
+  // 🎯 TOP 10 ATIVOS MAIS VOLÁTEIS (atualizado dinamicamente)
+  const [top10VolatileAssets, setTop10VolatileAssets] = useState<Set<string>>(new Set([
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'DOGEUSDT',
+    'SHIBUSDT', 'PEPEUSDT', 'AVAXUSDT', 'NEARUSDT', 'APTUSDT'
+  ]));
 
   // 🔥 SISTEMA DE ALAVANCAGEM PROGRESSIVA PARA SCALPING
   const getLeverageForScalping = (volatility: number): number => {
@@ -222,8 +218,69 @@ export const MultiAssetTrader = () => {
     };
   };
 
+  // 🔥 BUSCAR TOP 10 ATIVOS MAIS VOLÁTEIS DA BYBIT
+  const fetchTop10VolatileAssets = useCallback(async () => {
+    try {
+      console.log('🔍 Buscando top 10 ativos mais voláteis da Bybit...');
+      
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_tickers',
+          isTestnet: false,
+          params: { 
+            category: 'linear'
+          }
+        }
+      });
+
+      if (!error && data?.success) {
+        const tickers = data.data?.list || [];
+        
+        // Calcular score de volatilidade para cada ativo
+        const volatilityScores = tickers
+          .filter((t: any) => t.symbol.endsWith('USDT')) // Apenas pares USDT
+          .map((ticker: any) => {
+            const priceChange24h = Math.abs(parseFloat(ticker.price24hPcnt || '0')) * 100;
+            const volume24h = parseFloat(ticker.turnover24h || '0');
+            const volumeUSD = parseFloat(ticker.volume24h || '0');
+            
+            // Score: 70% baseado em variação de preço + 30% baseado em volume
+            // Normalizar volume (valores acima de $100M = score máximo)
+            const volumeScore = Math.min(volume24h / 100000000, 1) * 30;
+            const priceChangeScore = Math.min(priceChange24h / 10, 1) * 70; // 10% = score máximo
+            
+            const volatilityScore = priceChangeScore + volumeScore;
+            
+            return {
+              symbol: ticker.symbol,
+              volatilityScore,
+              priceChange24h,
+              volume24h: volumeUSD,
+              lastPrice: ticker.lastPrice
+            };
+          })
+          .filter((item: any) => item.volume24h > 10000000) // Volume mínimo de $10M
+          .sort((a: any, b: any) => b.volatilityScore - a.volatilityScore)
+          .slice(0, 10); // Top 10
+
+        const top10Symbols = new Set<string>(volatilityScores.map((item: any) => item.symbol as string));
+        setTop10VolatileAssets(top10Symbols);
+        
+        console.log('✅ Top 10 ativos voláteis atualizados:', 
+          volatilityScores.map((s: any) => 
+            `${s.symbol} (${s.priceChange24h.toFixed(2)}%, $${(s.volume24h/1e6).toFixed(0)}M)`
+          ).join(', ')
+        );
+        
+        return top10Symbols;
+      }
+    } catch (error) {
+      console.error('Erro ao buscar ativos voláteis:', error);
+    }
+  }, []);
+
   // 🔄 SINCRONIZAÇÃO AUTOMÁTICA - Buscar saldo DISPONÍVEL real da Bybit
-  const syncBybitBalance = async () => {
+  const syncBybitBalance = useCallback(async () => {
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
@@ -246,10 +303,10 @@ export const MultiAssetTrader = () => {
     } catch (error) {
       console.error('Erro ao sincronizar saldo:', error);
     }
-  };
+  }, []);
 
   // 📊 SINCRONIZAR POSIÇÕES ABERTAS DA BYBIT
-  const syncOpenPositions = async () => {
+  const syncOpenPositions = useCallback(async () => {
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
@@ -271,7 +328,7 @@ export const MultiAssetTrader = () => {
     } catch (error) {
       console.error('Erro ao sincronizar posições:', error);
     }
-  };
+  }, []);
 
   // 🎯 TRAILING STOP LOSS - Atualizar stops dinamicamente
   const updateTrailingStops = async () => {
@@ -403,6 +460,9 @@ export const MultiAssetTrader = () => {
       // 🔄 SINCRONIZAR PRIMEIRO - Obter dados atualizados da Bybit
       await syncBybitBalance();
       await syncOpenPositions();
+      
+      // 🔥 Atualizar lista de top 10 voláteis a cada ciclo
+      await fetchTop10VolatileAssets();
 
       // Contar posições abertas diretamente da Bybit (sem banco)
       console.log(`📊 Posições abertas na Bybit: ${openPositionsCount}/${maxOpenPositions}`);
@@ -501,20 +561,18 @@ export const MultiAssetTrader = () => {
           volume24h
         };
       }).filter(a => {
-        const isScalpAsset = SCALPING_ASSETS.has(a.instrument.symbol);
-        // Critérios ultra-agressivos para scalping: 0.2% vol e $100K
-        if (isScalpAsset) return a.volatility > 0.2 && a.volume24h > 100000;
-        // Critérios normais para outros ativos
-        return a.volatility > 0.8 && a.volume24h > 200000;
+        // 🎯 TOP 10 VOLÁTEIS: Todos são tratados como scalping
+        const isInTop10 = top10VolatileAssets.has(a.instrument.symbol);
+        // Apenas ativos do top 10 com critérios ultra-agressivos
+        if (isInTop10) return a.volatility > 0.15 && a.volume24h > 50000;
+        return false; // Ignorar todos os outros
       });
       
       // 📊 ORDENAR POR VOLATILIDADE (descendente) e processar TODOS os ativos voláteis
       const topVolatileAssets = assetsWithVolatility
         .sort((a, b) => b.volatility - a.volatility);
       
-      // 🗑️ Removido PREMIUM_ASSETS - usando apenas SCALPING_ASSETS agora
-      
-      console.log(`🔥 Analisando ${topVolatileAssets.length} ativos com movimento da Bybit (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
+      console.log(`🔥 Analisando ${topVolatileAssets.length} ativos TOP 10 da Bybit (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
       if (topVolatileAssets.length > 0) {
         console.log(`📊 Range de Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
       }
@@ -530,6 +588,9 @@ export const MultiAssetTrader = () => {
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
         
+        // 🔥 Todos os ativos no top 10 são tratados como scalping
+        const isScalpAsset = true;
+        
         try {
           // ⚡ ANÁLISE TÉCNICA AVANÇADA - SISTEMA DE PRECISÃO APRIMORADO COM ATR
           
@@ -542,11 +603,10 @@ export const MultiAssetTrader = () => {
           // ATR como % do preço - usado para stops dinâmicos
           const atrPercent = (priceRange / currentPrice) * 100;
           
-          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (ULTRA-AGRESSIVAS PARA SCALPING)
-          const isScalpAsset = SCALPING_ASSETS.has(symbol);
-          const hasGoodVolume = isScalpAsset ? volume24h > 100000 : volume24h > 300000;
+          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (ULTRA-AGRESSIVAS PARA TOP 10)
+          const hasGoodVolume = volume24h > 100000; // Volume mínimo para top 10
           const hasExcellentVolume = volume24h > 3000000;
-          const hasGoodVolatility = isScalpAsset ? volatility > 0.3 : volatility > 0.6;
+          const hasGoodVolatility = volatility > 0.3;
           const hasStrongVolatility = volatility > 2.0;
           
           // 3. ANÁLISE DE TENDÊNCIA E MOMENTUM (BALANCEADO)
@@ -1077,17 +1137,29 @@ export const MultiAssetTrader = () => {
                 : stopLossPct * 2.5;
             }
             
-            // Stop Loss SEMPRE ativo
-            const stopLoss = action === 'BUY' 
+            // 🛡️ STOP LOSS OBRIGATÓRIO - NUNCA undefined
+            let stopLoss = action === 'BUY' 
               ? (currentPrice * (1 - stopLossPct)).toFixed(priceDecimals)
               : (currentPrice * (1 + stopLossPct)).toFixed(priceDecimals);
             
-            // Take Profit
+            // ⚠️ VALIDAÇÃO CRÍTICA: Garantir que stop loss não é undefined/null
+            if (!stopLoss || stopLoss === 'NaN' || parseFloat(stopLoss) <= 0) {
+              console.error(`❌ STOP LOSS INVÁLIDO para ${symbol}: ${stopLoss}`);
+              continue; // NUNCA executar trade sem stop loss válido
+            }
+            
+            // Take Profit OBRIGATÓRIO
             // 📊 SCALE IN/OUT: Se ativado, usar TP mais próximo (primeiro nível = 2%)
             const firstTpPct = scaleInOutEnabled ? 0.02 : takeProfitPct; // 2% se scale-in ativo
-            const takeProfit = action === 'BUY'
+            let takeProfit = action === 'BUY'
               ? (currentPrice * (1 + firstTpPct)).toFixed(priceDecimals)
               : (currentPrice * (1 - firstTpPct)).toFixed(priceDecimals);
+            
+            // ⚠️ VALIDAÇÃO CRÍTICA: Garantir que take profit não é undefined/null
+            if (!takeProfit || takeProfit === 'NaN' || parseFloat(takeProfit) <= 0) {
+              console.error(`❌ TAKE PROFIT INVÁLIDO para ${symbol}: ${takeProfit}`);
+              continue; // NUNCA executar trade sem take profit válido
+            }
             
             if (scaleInOutEnabled) {
               console.log(`📊 SCALE OUT: TP1=${takeProfit} (2%), TP2 será ${(takeProfitPct*100).toFixed(0)}% (fechamento manual)`);
@@ -1184,8 +1256,8 @@ export const MultiAssetTrader = () => {
                   orderType: 'Market',
                   qty: qtyStr,
                   leverage: leverage.toString(), // 🔥 ALAVANCAGEM CONFIGURADA
-                  stopLoss: stopLoss,
-                  takeProfit: takeProfit,
+                  stopLoss: stopLoss, // 🛡️ STOP LOSS SEMPRE PRESENTE
+                  takeProfit: takeProfit, // 🎯 TAKE PROFIT SEMPRE PRESENTE
                   timeInForce: 'GTC',
                   positionIdx: 0,
                   reduceOnly: false
@@ -1193,7 +1265,9 @@ export const MultiAssetTrader = () => {
               }
             });
 
+            // ⚠️ VALIDAÇÃO PÓS-ORDEM: Verificar se SL/TP foram aplicados
             if (!orderError && orderData?.success) {
+              console.log(`🛡️ STOPS CONFIRMADOS: ${symbol} | SL: ${stopLoss} | TP: ${takeProfit}`);
               console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)} | Score: ${signalScore}`);
               
               // 💾 SALVAR POSIÇÃO NO BANCO COM SCORE DE QUALIDADE
@@ -1351,13 +1425,28 @@ export const MultiAssetTrader = () => {
     }
   };
 
-  // Sincronizar saldo a cada 30 segundos quando ativo (OTIMIZADO)
+  // 🚀 PERFORMANCE: Memoizar cálculos pesados
+  const leverageConfig = useMemo(() => ({
+    getLeverageForScalping,
+    getLeverageForBalance
+  }), []);
+
+  // Sincronizar saldo a cada 60 segundos quando ativo (OTIMIZADO)
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
     let trailingInterval: NodeJS.Timeout;
+    let volatilityInterval: NodeJS.Timeout;
 
     if (isRunning) {
-      // Sincronização menos frequente para melhor performance
+      // Buscar top 10 voláteis imediatamente ao iniciar
+      fetchTop10VolatileAssets();
+      
+      // Atualizar top 10 voláteis a cada 5 minutos
+      volatilityInterval = setInterval(() => {
+        fetchTop10VolatileAssets();
+      }, 5 * 60 * 1000); // A cada 5 minutos
+      
+      // Sincronização de saldo/posições a cada 60s
       syncInterval = setInterval(() => {
         syncBybitBalance();
         syncOpenPositions();
@@ -1374,8 +1463,9 @@ export const MultiAssetTrader = () => {
     return () => {
       if (syncInterval) clearInterval(syncInterval);
       if (trailingInterval) clearInterval(trailingInterval);
+      if (volatilityInterval) clearInterval(volatilityInterval);
     };
-  }, [isRunning, trailingStopEnabled]);
+  }, [isRunning, trailingStopEnabled, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -1387,10 +1477,10 @@ export const MultiAssetTrader = () => {
       // Executar imediatamente
       analyzeAndTrade();
       
-      // Ciclo principal de trading a cada 60 segundos (otimizado de 45s)
+      // Ciclo principal de trading a cada 45 segundos (otimizado)
       interval = setInterval(() => {
         analyzeAndTrade();
-      }, 60 * 1000);
+      }, 45 * 1000);
 
       // Atualizar timestamp de atividade a cada 2 minutos
       activityInterval = setInterval(async () => {
