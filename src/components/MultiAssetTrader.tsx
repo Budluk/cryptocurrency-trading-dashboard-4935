@@ -959,34 +959,35 @@ export const MultiAssetTrader = () => {
             setCurrentLeverage(dynamicLeverage);
             const leverage = dynamicLeverage;
             
-            // 🚀 CAPITAL ALLOCATION INTELIGENTE: Usar saldo disponível com segurança
+            // 🚀 CAPITAL ALLOCATION ULTRA CONSERVADOR: Evitar saldo insuficiente
             // META: $15+ por dia SEM erros de saldo insuficiente
             const dailyTargetProfit = 15;
             
-            // ⚠️ AJUSTE CRÍTICO: Saldo mínimo de segurança para evitar liquidação
-            const MIN_SAFETY_BALANCE = 5; // Manter $5 sempre disponível
+            // ⚠️ AJUSTE CRÍTICO: Saldo mínimo de segurança MAIOR para evitar erros
+            const MIN_SAFETY_BALANCE = 8; // Manter $8 sempre disponível
+            const FEE_BUFFER = 0.002; // 0.2% para taxas de trading
             const safeBalance = Math.max(0, currentBalance - MIN_SAFETY_BALANCE);
             
-            // Usar 70-80% do saldo DISPONÍVEL (não total) por trade
-            const capitalAllocation = isScalpAsset ? 0.70 : 0.60;
+            // 🛡️ USAR APENAS 30-40% DO SALDO DISPONÍVEL (ultra conservador)
+            const capitalAllocation = isScalpAsset ? 0.35 : 0.30; // 35% scalp, 30% normal
             let usdSize = safeBalance * capitalAllocation;
             
-            // 🛑 VERIFICAÇÃO: Garantir que não excede saldo disponível
-            const initialMargin = usdSize / leverage;
-            if (initialMargin > safeBalance) {
-              usdSize = safeBalance * 0.5; // Reduzir para 50% se necessário
-              console.log(`⚠️ Ajustando tamanho para evitar margem insuficiente: $${usdSize.toFixed(2)}`);
+            // 🛑 VERIFICAÇÃO: Garantir que margem + fees não excede disponível
+            const initialMargin = (usdSize / leverage) * (1 + FEE_BUFFER);
+            if (initialMargin > safeBalance * 0.4) {
+              usdSize = (safeBalance * 0.3) * leverage; // Reduzir drasticamente
+              console.log(`⚠️ Ajustando tamanho para margem segura: $${usdSize.toFixed(2)}`);
             }
             
-            // Calcular lucro esperado com este trade
+            // Calcular lucro esperado com este trade (já considerando fees)
             const stopLossPctEstimate = isScalpAsset ? 0.008 : 0.025;
             const takeProfitPctEstimate = isScalpAsset ? 0.015 : (stopLossPctEstimate * 2.5);
-            const expectedProfit = (usdSize * takeProfitPctEstimate * leverage);
-            const expectedLoss = (usdSize * stopLossPctEstimate * leverage);
+            const expectedProfit = (usdSize * takeProfitPctEstimate * leverage) * (1 - FEE_BUFFER);
+            const expectedLoss = (usdSize * stopLossPctEstimate * leverage) * (1 + FEE_BUFFER);
             
-            console.log(`💰 CAPITAL: $${usdSize.toFixed(2)} (${(capitalAllocation*100).toFixed(0)}% de $${safeBalance.toFixed(2)} disponível)`);
-            console.log(`📊 LEVERAGE: ${leverage.toFixed(0)}x | Margem: $${initialMargin.toFixed(2)} | Profit: +$${expectedProfit.toFixed(2)}`);
-            console.log(`🎯 META: $${dailyTargetProfit}/dia | Trade contribui: ${(expectedProfit/dailyTargetProfit*100).toFixed(1)}%`);
+            console.log(`💰 CAPITAL ULTRA CONSERVADOR: $${usdSize.toFixed(2)} (${(capitalAllocation*100).toFixed(0)}% de $${safeBalance.toFixed(2)} disponível)`);
+            console.log(`📊 LEVERAGE: ${leverage.toFixed(0)}x | Margem+Fees: $${initialMargin.toFixed(2)} | Profit: +$${expectedProfit.toFixed(2)} | Loss: -$${expectedLoss.toFixed(2)}`);
+            console.log(`🎯 META: $${dailyTargetProfit}/dia | Trade contribui: ${(expectedProfit/dailyTargetProfit*100).toFixed(1)}% | Buffer: $${MIN_SAFETY_BALANCE}`);
             
             // Manter referências para compatibilidade
             const marginUsed = initialMargin;
@@ -1214,10 +1215,10 @@ export const MultiAssetTrader = () => {
               continue;
             }
 
-            // 🛡️ VERIFICAÇÃO DUPLA DE SALDO (garantir que não mudou durante o processamento)
+            // 🛡️ VERIFICAÇÃO TRIPLA DE SALDO (garantir margem suficiente com folga)
             const freshBalanceFinal = parseFloat(balanceCheck.data?.list?.[0]?.totalAvailableBalance || '0');
-            const requiredMarginFinal = parseFloat(orderValueUSD) / leverage;
-            const MIN_SAFE_BALANCE_FINAL = 10; // Manter sempre $10 de margem de segurança
+            const requiredMarginFinal = (parseFloat(orderValueUSD) / leverage) * (1 + FEE_BUFFER);
+            const MIN_SAFE_BALANCE_FINAL = 12; // Manter sempre $12 de margem de segurança
 
             // 🛑 VERIFICAÇÃO CRÍTICA: Parar se saldo negativo ou insuficiente
             if (freshBalanceFinal < 0) {
@@ -1230,6 +1231,13 @@ export const MultiAssetTrader = () => {
                 variant: "destructive",
               });
               break; // Sair do loop imediatamente
+            }
+
+            // 🛡️ VALIDAÇÃO EXTRA: Margem não pode exceder 40% do saldo disponível
+            const maxAllowedMargin = freshBalanceFinal * 0.40;
+            if (requiredMarginFinal > maxAllowedMargin) {
+              console.log(`🛑 ${symbol}: Margem muito alta - Necessário: $${requiredMarginFinal.toFixed(2)} | Max permitido: $${maxAllowedMargin.toFixed(2)}`);
+              continue; // Pular este trade
             }
 
             if (freshBalanceFinal < requiredMarginFinal + MIN_SAFE_BALANCE_FINAL) {
