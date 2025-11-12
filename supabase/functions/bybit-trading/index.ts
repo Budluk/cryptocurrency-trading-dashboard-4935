@@ -55,6 +55,9 @@ serve(async (req) => {
       case 'get_ticker':
         result = await getTicker(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
+      case 'get_tickers':
+        result = await getTickers(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
       case 'get_instruments':
         result = await getInstruments(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
@@ -233,6 +236,18 @@ async function getTicker(baseUrl: string, apiKey: string, apiSecret: string, par
     apiSecret,
     'GET',
     { category: params.category || 'linear', symbol: params.symbol }
+  );
+}
+
+async function getTickers(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  // Get all tickers for a category (without specifying symbol)
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/market/tickers',
+    apiKey,
+    apiSecret,
+    'GET',
+    { category: params.category || 'linear' }
   );
 }
 
