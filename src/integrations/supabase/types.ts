@@ -202,6 +202,7 @@ export type Database = {
           closed_at: string | null
           confidence: number | null
           current_price: number | null
+          daily_pnl: number | null
           entry_price: number
           exchange_order_id: string | null
           exit_price: number | null
@@ -209,6 +210,9 @@ export type Database = {
           id: string
           leverage: number | null
           opened_at: string
+          order_source: string | null
+          original_quantity: number | null
+          partial_tp_executed: boolean | null
           pnl: number | null
           qty: number
           realized_pnl: number | null
@@ -220,12 +224,14 @@ export type Database = {
           trailing_stop_percentage: number | null
           unrealized_pnl: number | null
           user_id: string
+          volatility: number | null
         }
         Insert: {
           close_reason?: string | null
           closed_at?: string | null
           confidence?: number | null
           current_price?: number | null
+          daily_pnl?: number | null
           entry_price: number
           exchange_order_id?: string | null
           exit_price?: number | null
@@ -233,6 +239,9 @@ export type Database = {
           id?: string
           leverage?: number | null
           opened_at?: string
+          order_source?: string | null
+          original_quantity?: number | null
+          partial_tp_executed?: boolean | null
           pnl?: number | null
           qty: number
           realized_pnl?: number | null
@@ -244,12 +253,14 @@ export type Database = {
           trailing_stop_percentage?: number | null
           unrealized_pnl?: number | null
           user_id: string
+          volatility?: number | null
         }
         Update: {
           close_reason?: string | null
           closed_at?: string | null
           confidence?: number | null
           current_price?: number | null
+          daily_pnl?: number | null
           entry_price?: number
           exchange_order_id?: string | null
           exit_price?: number | null
@@ -257,6 +268,9 @@ export type Database = {
           id?: string
           leverage?: number | null
           opened_at?: string
+          order_source?: string | null
+          original_quantity?: number | null
+          partial_tp_executed?: boolean | null
           pnl?: number | null
           qty?: number
           realized_pnl?: number | null
@@ -268,6 +282,7 @@ export type Database = {
           trailing_stop_percentage?: number | null
           unrealized_pnl?: number | null
           user_id?: string
+          volatility?: number | null
         }
         Relationships: []
       }
@@ -1600,6 +1615,42 @@ export type Database = {
         }
         Relationships: []
       }
+      risk_management_settings: {
+        Row: {
+          created_at: string | null
+          current_daily_loss: number | null
+          id: string
+          last_reset_date: string | null
+          max_daily_loss: number | null
+          max_positions: number | null
+          trading_paused: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          current_daily_loss?: number | null
+          id?: string
+          last_reset_date?: string | null
+          max_daily_loss?: number | null
+          max_positions?: number | null
+          trading_paused?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          current_daily_loss?: number | null
+          id?: string
+          last_reset_date?: string | null
+          max_daily_loss?: number | null
+          max_positions?: number | null
+          trading_paused?: boolean | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       sentiment_analysis: {
         Row: {
           analyzed_at: string
@@ -2314,6 +2365,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      reset_daily_loss: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "trader" | "viewer"
