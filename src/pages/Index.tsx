@@ -11,6 +11,8 @@ import { SentimentDashboard } from "@/components/SentimentDashboard";
 import { PortfolioRebalancer } from "@/components/PortfolioRebalancer";
 import { OrderFlowDashboard } from "@/components/OrderFlowDashboard";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
+import { TrailingStopVisual } from "@/components/TrailingStopVisual";
+import { RiskManagementPanel } from "@/components/RiskManagementPanel";
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -68,9 +70,13 @@ const Index = () => {
             {/* Trading Tab */}
             <TabsContent value="trading" className="space-y-6">
               <BybitPositionsPanel />
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <MultiAssetTrader />
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="xl:col-span-2 space-y-6">
+                  <MultiAssetTrader />
+                  <TrailingStopVisual />
+                </div>
                 <div className="space-y-6">
+                  <RiskManagementPanel />
                   <CryptoChart />
                   <AdvancedAISignals />
                 </div>

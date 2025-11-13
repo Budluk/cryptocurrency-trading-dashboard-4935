@@ -16,6 +16,7 @@ interface Position {
   unrealized_pnl: number;
   realized_pnl: number | null;
   trailing_stop_percentage: number | null;
+  partial_tp_executed: boolean | null;
   status: string;
   exchange_order_id: string | null;
 }
@@ -197,6 +198,59 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
           // Calcular quantidade reduzida (detectar fechamentos anteriores)
           const qtyReduced = position.qty < entry_price * 0.75; // Se qty é menor que esperado, já houve fechamento
 
+          // 🎯 TAKE PROFIT PARCIAL AUTOMÁTICO - 50% em +2% de lucro
+          const partialTpTriggered = position.partial_tp_executed || false;
+          
+          if (!partialTpTriggered && pnlPercent >= 2.0) {
+            // Fechar 50% da posição
+            const partialQty = qty * 0.5;
+            
+            try {
+              // Fechar 50% via Bybit
+              const { data: closeResult, error: closeError } = await supabase.functions.invoke('bybit-trading', {
+                body: {
+                  action: 'close_position',
+                  isTestnet: false,
+                  params: {
+                    category: 'linear',
+                    symbol: position.symbol.replace('/', ''),
+                    side: side === 'BUY' ? 'Sell' : 'Buy',
+                    qty: partialQty.toString(),
+                    orderType: 'Market',
+                    positionIdx: 0
+                  }
+                }
+              });
+
+              if (!closeError && closeResult?.success) {
+                // Atualizar posição no banco
+                const partialPnl = side === 'BUY' 
+                  ? (current_price - entry_price) * partialQty
+                  : (entry_price - current_price) * partialQty;
+
+                await supabase
+                  .from('auto_trader_positions')
+                  .update({
+                    qty: qty - partialQty,
+                    partial_tp_executed: true,
+                    realized_pnl: (position.realized_pnl || 0) + partialPnl,
+                    unrealized_pnl: position.unrealized_pnl - partialPnl,
+                    trailing_stop_percentage: 1.0 // Trailing mais agressivo após parcial
+                  })
+                  .eq('id', id);
+
+                console.log(`💰 ${position.symbol}: Take Profit Parcial executado! 50% fechado em +${pnlPercent.toFixed(2)}% = $${partialPnl.toFixed(2)}`);
+                
+                toast({
+                  title: "Take Profit Parcial! 🎯",
+                  description: `${position.symbol}: 50% fechado em +${pnlPercent.toFixed(2)}% (+$${partialPnl.toFixed(2)})`,
+                });
+              }
+            } catch (error) {
+              console.error('Erro no take profit parcial:', error);
+            }
+          }
+
           // 📊 PRIMEIRO FECHAMENTO: 25% em +1% de lucro
           if (!shouldClose && pnlPercent >= 1.0 && pnlPercent < 1.95 && qty > 0.003) {
             // Verificar se ainda tem quantidade suficiente (não fechou ainda)
@@ -294,6 +348,36 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
             if (!closeError) {
               // Criar log
               const { data: { user } } = await supabase.auth.getUser();
+              
+              // 🛡️ ATUALIZAR GESTÃO DE RISCO SE PERDA
+              if (user && realized_pnl < 0) {
+                const { data: riskSettings } = await supabase
+                  .from('risk_management_settings')
+                  .select('*')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                if (riskSettings) {
+                  const newDailyLoss = riskSettings.current_daily_loss + realized_pnl;
+                  const shouldPause = Math.abs(newDailyLoss) >= riskSettings.max_daily_loss;
+
+                  await supabase
+                    .from('risk_management_settings')
+                    .update({
+                      current_daily_loss: newDailyLoss,
+                      trading_paused: shouldPause
+                    })
+                    .eq('user_id', user.id);
+
+                  if (shouldPause) {
+                    toast({
+                      title: "🛑 Limite Diário Atingido",
+                      description: `Trading pausado. Perda diária: $${Math.abs(newDailyLoss).toFixed(2)}`,
+                      variant: "destructive"
+                    });
+                  }
+                }
+              }
               if (user) {
                 await supabase.from('auto_trader_logs').insert({
                   user_id: user.id,

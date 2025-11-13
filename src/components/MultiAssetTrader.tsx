@@ -218,7 +218,25 @@ export const MultiAssetTrader = () => {
     };
   };
 
-  // 🔥 BUSCAR TOP 10 ATIVOS MAIS VOLÁTEIS DA BYBIT
+  // 🧠 FUNÇÃO: CALCULAR TRAILING STOP DINÂMICO BASEADO NA VOLATILIDADE
+  const calculateDynamicTrailingStop = (volatility: number): number => {
+    // Volatilidade baixa (< 2%): trailing stop apertado 1.0%
+    // Volatilidade média (2-5%): trailing stop normal 1.5%
+    // Volatilidade alta (5-10%): trailing stop largo 2.5%
+    // Volatilidade extrema (> 10%): trailing stop muito largo 3.5%
+    
+    if (volatility < 2) {
+      return 1.0; // Ativo estável, trailing apertado
+    } else if (volatility < 5) {
+      return 1.5; // Volatilidade normal
+    } else if (volatility < 10) {
+      return 2.5; // Alta volatilidade, dar mais espaço
+    } else {
+      return 3.5; // Volatilidade extrema, máximo espaço
+    }
+  };
+
+  // 🔥 BUSCAR TOP 10 ATIVOS MAIS VOLÁTEIS DA BYBIT + CALCULAR VOLATILIDADE
   const fetchTop10VolatileAssets = useCallback(async () => {
     try {
       console.log('🔍 Buscando top 10 ativos mais voláteis da Bybit...');
@@ -265,6 +283,12 @@ export const MultiAssetTrader = () => {
 
         const top10Symbols = new Set<string>(volatilityScores.map((item: any) => item.symbol as string));
         setTop10VolatileAssets(top10Symbols);
+        
+        // 📊 Armazenar volatilidade de cada ativo para uso posterior
+        const volatilityMap = new Map(
+          volatilityScores.map((s: any) => [s.symbol, s.priceChange24h])
+        );
+        (window as any).assetVolatility = volatilityMap;
         
         console.log('✅ Top 10 ativos voláteis atualizados:', 
           volatilityScores.map((s: any) => 
@@ -1292,8 +1316,12 @@ export const MultiAssetTrader = () => {
                     leverage,
                     stop_loss: parseFloat(stopLoss),
                     take_profit: parseFloat(takeProfit),
-                    trailing_stop_percentage: 1.5, // 🎯 TRAILING STOP AUTOMÁTICO: 1.5%
+                    // 🎯 TRAILING STOP DINÂMICO POR VOLATILIDADE
+                    trailing_stop_percentage: calculateDynamicTrailingStop(currentVolatility),
                     highest_price: currentPrice, // Inicializar com preço de entrada
+                    volatility: currentVolatility, // Armazenar volatilidade do ativo
+                    partial_tp_executed: false, // Controle de take profit parcial
+                    original_quantity: qty, // Salvar quantidade original
                     confidence: signalScore, // 🎯 SALVAR SCORE DE QUALIDADE
                     status: 'OPEN',
                     exchange_order_id: orderData.data?.orderId
@@ -1518,6 +1546,38 @@ export const MultiAssetTrader = () => {
         variant: "destructive",
       });
       return;
+    }
+
+    // 🛡️ VERIFICAR GESTÃO DE RISCO ANTES DE INICIAR
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) {
+      toast({
+        title: "Erro",
+        description: "Você precisa estar logado para iniciar o trading",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Verificar se trading está pausado por gestão de risco
+    const { data: riskSettings } = await supabase
+      .from('risk_management_settings')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+
+    if (riskSettings?.trading_paused) {
+      toast({
+        title: "🛑 Trading Pausado",
+        description: `Limite diário de perdas atingido: $${Math.abs(riskSettings.current_daily_loss).toFixed(2)} / $${riskSettings.max_daily_loss}`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Atualizar max_positions baseado nas configurações de risco
+    if (riskSettings?.max_positions) {
+      setMaxOpenPositions(riskSettings.max_positions);
     }
 
     if (isTestnet) {
