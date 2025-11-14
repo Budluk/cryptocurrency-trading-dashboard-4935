@@ -27,7 +27,59 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { trader_user_id, symbol, side, qty, entry_price, stop_loss, take_profit, leverage, confidence } = await req.json() as CopyTradeRequest;
+    const body = await req.json() as CopyTradeRequest;
+    
+    // Input validation
+    if (!body.trader_user_id || typeof body.trader_user_id !== 'string') {
+      return new Response(
+        JSON.stringify({ error: 'Invalid trader_user_id' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    if (!body.symbol || typeof body.symbol !== 'string' || !/^[A-Z]+\/[A-Z]+$/.test(body.symbol)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid symbol format' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    if (!['Buy', 'Sell'].includes(body.side)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid side, must be Buy or Sell' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    if (typeof body.qty !== 'number' || body.qty <= 0 || body.qty > 1000000) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid qty' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    if (typeof body.entry_price !== 'number' || body.entry_price <= 0) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid entry_price' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    if (typeof body.leverage !== 'number' || body.leverage < 1 || body.leverage > 100) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid leverage, must be between 1 and 100' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    if (typeof body.confidence !== 'number' || body.confidence < 0 || body.confidence > 100) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid confidence, must be between 0 and 100' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+    
+    const { trader_user_id, symbol, side, qty, entry_price, stop_loss, take_profit, leverage, confidence } = body;
 
     console.log(`📋 Copy Trading Sync: ${symbol} ${side} for trader ${trader_user_id}`);
 
