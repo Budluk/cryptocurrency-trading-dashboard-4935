@@ -4,7 +4,7 @@ project_id = "uohdpxkfgxmtlosnmspf"
 verify_jwt = false
 
 [functions.bybit-trading]
-verify_jwt = false
+verify_jwt = true
 
 [functions.tradingview-webhook]
 verify_jwt = false
