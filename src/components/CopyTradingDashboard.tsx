@@ -41,19 +41,16 @@ export const CopyTradingDashboard = () => {
   const { data: myFollows, refetch: refetchFollows } = useQuery({
     queryKey: ['my-copy-follows'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-
       const { data, error } = await supabase
         .from('copy_trading_followers')
         .select(`
           *,
           trader_profiles!copy_trading_followers_trader_user_id_fkey(*)
         `)
-        .eq('follower_user_id', user.id);
+        .limit(10);
 
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
@@ -61,14 +58,11 @@ export const CopyTradingDashboard = () => {
   const { data: copyConfig, refetch: refetchConfig } = useQuery({
     queryKey: ['copy-trading-config'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-
       const { data, error } = await supabase
         .from('copy_trading_config')
         .select('*')
-        .eq('user_id', user.id)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data;
@@ -76,54 +70,11 @@ export const CopyTradingDashboard = () => {
   });
 
   const followTrader = async (traderId: string) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          title: "❌ Não autenticado",
-          description: "Faça login para seguir traders",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { error } = await supabase
-        .from('copy_trading_followers')
-        .insert({
-          follower_user_id: user.id,
-          trader_user_id: traderId,
-          capital_allocation_percent: allocationPercent,
-          min_confidence: minConfidence,
-          is_active: true,
-        });
-
-      if (error) {
-        if (error.code === '23505') {
-          toast({
-            title: "⚠️ Já está seguindo",
-            description: "Você já está seguindo este trader",
-            variant: "destructive",
-          });
-        } else {
-          throw error;
-        }
-        return;
-      }
-
-      toast({
-        title: "✅ Trader seguido com sucesso",
-        description: `Alocação: ${allocationPercent}% | Min. Confiança: ${minConfidence}%`,
-      });
-
-      refetchFollows();
-      setSelectedTrader(null);
-    } catch (error: any) {
-      toast({
-        title: "❌ Erro ao seguir trader",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    toast({
+      title: "ℹ️ Funcionalidade Desabilitada",
+      description: "Sistema de copy trading requer autenticação",
+      variant: "default",
+    });
   };
 
   const unfollowTrader = async (followId: string) => {

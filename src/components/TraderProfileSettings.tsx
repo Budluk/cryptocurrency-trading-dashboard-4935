@@ -20,14 +20,11 @@ export const TraderProfileSettings = () => {
   const { data: profile, refetch } = useQuery({
     queryKey: ['trader-profile'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-
       const { data, error } = await supabase
         .from('trader_profiles')
         .select('*')
-        .eq('user_id', user.id)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data;
@@ -37,17 +34,14 @@ export const TraderProfileSettings = () => {
   const { data: followers } = useQuery({
     queryKey: ['my-followers'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-
       const { data, error } = await supabase
         .from('copy_trading_followers')
         .select('*')
-        .eq('trader_user_id', user.id)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .limit(10);
 
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
@@ -60,40 +54,11 @@ export const TraderProfileSettings = () => {
   }, [profile]);
 
   const saveProfile = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          title: "❌ Não autenticado",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { error } = await supabase
-        .from('trader_profiles')
-        .upsert({
-          user_id: user.id,
-          display_name: displayName,
-          bio: bio,
-          is_public: isPublic,
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "✅ Perfil atualizado",
-        description: isPublic ? "Seu perfil está público e pode ser seguido" : "Perfil privado",
-      });
-
-      refetch();
-    } catch (error: any) {
-      toast({
-        title: "❌ Erro ao atualizar perfil",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    toast({
+      title: "ℹ️ Funcionalidade Desabilitada",
+      description: "Salvamento de perfil requer autenticação",
+      variant: "default",
+    });
   };
 
   return (
