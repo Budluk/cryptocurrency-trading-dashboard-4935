@@ -16,77 +16,12 @@ import { RiskManagementPanel } from "@/components/RiskManagementPanel";
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRealtimePrice } from "@/hooks/useRealtimePrice";
-import { Activity, BarChart3, Settings, TrendingUp, LogOut } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { User, Session } from "@supabase/supabase-js";
-import { useToast } from "@/hooks/use-toast";
+import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 const Index = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  
   // Hook para preços em tempo real
   useRealtimePrice();
-
-  useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-        
-        if (!session) {
-          navigate('/auth');
-        }
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-      
-      if (!session) {
-        navigate('/auth');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    toast({
-      title: "Logout realizado",
-      description: "Você saiu da plataforma",
-    });
-    navigate('/auth');
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -100,16 +35,10 @@ const Index = () => {
               </h1>
               <p className="text-muted-foreground mt-1">Sistema profissional de trading com IA avançada</p>
             </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="default" className="h-8 px-4">
-                <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
-                AO VIVO
-              </Badge>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sair
-              </Button>
-            </div>
+            <Badge variant="default" className="h-8 px-4">
+              <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
+              AO VIVO
+            </Badge>
           </div>
         </header>
         
