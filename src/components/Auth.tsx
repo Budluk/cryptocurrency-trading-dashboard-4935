@@ -42,7 +42,7 @@ export const Auth = () => {
       if (isSignUp) {
         const redirectUrl = `${window.location.origin}/`;
         
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -52,10 +52,19 @@ export const Auth = () => {
 
         if (error) throw error;
 
-        toast({
-          title: "✅ Conta criada!",
-          description: "Verifique seu email para confirmar a conta.",
-        });
+        // Check if email confirmation is required
+        if (data?.user && !data.session) {
+          toast({
+            title: "✅ Conta criada!",
+            description: "Verifique seu email para confirmar a conta antes de fazer login.",
+          });
+        } else if (data?.session) {
+          toast({
+            title: "✅ Conta criada e login realizado!",
+            description: "Bem-vindo ao AI Trading Platform",
+          });
+          navigate('/');
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -73,9 +82,20 @@ export const Auth = () => {
         navigate('/');
       }
     } catch (error: any) {
+      let errorMessage = error.message;
+      
+      // Provide more user-friendly error messages
+      if (error.message.includes("Invalid login credentials")) {
+        errorMessage = "Email ou senha incorretos. Verifique suas credenciais.";
+      } else if (error.message.includes("Email not confirmed")) {
+        errorMessage = "Por favor, confirme seu email antes de fazer login. Verifique sua caixa de entrada.";
+      } else if (error.message.includes("User already registered")) {
+        errorMessage = "Este email já está cadastrado. Tente fazer login.";
+      }
+      
       toast({
         title: "❌ Erro",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -98,7 +118,7 @@ export const Auth = () => {
           </CardTitle>
           <CardDescription>
             {isSignUp 
-              ? "Crie sua conta para começar a operar" 
+              ? "Crie sua conta para começar a operar. Você receberá um email de confirmação." 
               : "Entre com suas credenciais para continuar"}
           </CardDescription>
         </CardHeader>
