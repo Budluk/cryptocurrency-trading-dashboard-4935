@@ -26,6 +26,16 @@ interface NewsAnalysis {
   confidence: number;
 }
 
+// Função auxiliar para calcular EMA
+function calculateEMA(data: number[], period: number): number {
+  const k = 2 / (period + 1);
+  let ema = data[0];
+  for (let i = 1; i < data.length; i++) {
+    ema = data[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -92,27 +102,98 @@ serve(async (req) => {
       console.log('Perplexity API key not configured, skipping news analysis');
     }
 
-    // 2. Dados de mercado ESTÁVEIS com indicadores técnicos consistentes
-    // Usar timestamp como seed para criar consistência temporal
-    const timeSeed = Math.floor(Date.now() / (1000 * 60 * 15)); // Muda a cada 15 minutos
-    const priceVariation = Math.sin(timeSeed * 0.1) * 300; // Variação suave e previsível
-    const currentPrice = 111200 + priceVariation;
-    const volume24h = 28000000000 + (Math.sin(timeSeed * 0.05) * 2000000000);
+    // 2. Buscar dados REAIS de mercado da Bybit
+    console.log('Fetching real market data from Bybit...');
+    let currentPrice = 0;
+    let volume24h = 0;
+    let klineData: any[] = [];
     
-    // Indicadores técnicos ESTÁVEIS - mudam gradualmente ao longo do tempo
-    const rsiBase = 50 + Math.sin(timeSeed * 0.08) * 15; // RSI oscila entre 35-65 suavemente
-    const rsi = rsiBase + (Math.random() - 0.5) * 3; // Pequena variação aleatória
+    try {
+      // Buscar ticker atual (preço e volume 24h)
+      const tickerResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol.replace('/', '')}`);
+      const tickerData = await tickerResponse.json();
+      
+      if (tickerData.retCode === 0 && tickerData.result?.list?.length > 0) {
+        const ticker = tickerData.result.list[0];
+        currentPrice = parseFloat(ticker.lastPrice);
+        volume24h = parseFloat(ticker.volume24h) * currentPrice; // Volume em USD
+        console.log(`Bybit Ticker: Price=${currentPrice}, Volume24h=${volume24h}`);
+      } else {
+        throw new Error('Failed to fetch ticker data');
+      }
+
+      // Buscar klines (candlesticks) para calcular indicadores técnicos
+      const interval = timeframe === '15m' ? '15' : timeframe === '1h' ? '60' : timeframe === '4h' ? '240' : '60';
+      const klineResponse = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol.replace('/', '')}&interval=${interval}&limit=100`);
+      const klineResult = await klineResponse.json();
+      
+      if (klineResult.retCode === 0) {
+        klineData = klineResult.result.list.map((k: any) => ({
+          timestamp: parseInt(k[0]),
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4]),
+          volume: parseFloat(k[5])
+        })).reverse(); // Bybit retorna em ordem decrescente, precisamos crescente
+        console.log(`Fetched ${klineData.length} klines from Bybit`);
+      }
+    } catch (error) {
+      console.error('Error fetching Bybit data:', error);
+      // Fallback para dados sintéticos se falhar
+      const timeSeed = Math.floor(Date.now() / (1000 * 60 * 15));
+      currentPrice = 111200 + Math.sin(timeSeed * 0.1) * 300;
+      volume24h = 28000000000 + (Math.sin(timeSeed * 0.05) * 2000000000);
+    }
     
-    const macdBase = Math.sin(timeSeed * 0.12) * 80; // MACD oscila suavemente
-    const macd = macdBase + (Math.random() - 0.5) * 10;
-    
-    const volumeProfile = 1.0 + Math.sin(timeSeed * 0.06) * 0.3; // Volume estável
-    
-    const trendBase = Math.abs(Math.sin(timeSeed * 0.1)) * 60; // Tendência consistente
-    const ema9 = currentPrice * (1 + (Math.sin(timeSeed * 0.09) * 0.008));
-    const ema21 = currentPrice * (1 + (Math.sin(timeSeed * 0.07) * 0.015));
-    const bollingerUpper = currentPrice * 1.02;
-    const bollingerLower = currentPrice * 0.98;
+    // Indicadores técnicos REAIS calculados dos dados da Bybit
+    let rsi = 50;
+    let macd = 0;
+    let volumeProfile = 0.5;
+    let trendStrength = 50;
+
+    // Calcular indicadores reais se temos dados de kline
+    if (klineData.length >= 14) {
+      // Calcular RSI (14 períodos)
+      const closes = klineData.slice(-14).map(k => k.close);
+      let gains = 0;
+      let losses = 0;
+      for (let i = 1; i < closes.length; i++) {
+        const change = closes[i] - closes[i - 1];
+        if (change > 0) gains += change;
+        else losses += Math.abs(change);
+      }
+      const avgGain = gains / 14;
+      const avgLoss = losses / 14;
+      const rs = avgGain / (avgLoss || 1);
+      rsi = 100 - (100 / (1 + rs));
+
+      // Calcular MACD (12, 26, 9)
+      if (klineData.length >= 26) {
+        const ema12 = calculateEMA(klineData.slice(-12).map(k => k.close), 12);
+        const ema26 = calculateEMA(klineData.slice(-26).map(k => k.close), 26);
+        macd = ema12 - ema26;
+      }
+
+      // Volume Profile (volume médio recente vs histórico)
+      const recentVolume = klineData.slice(-5).reduce((sum, k) => sum + k.volume, 0) / 5;
+      const historicVolume = klineData.reduce((sum, k) => sum + k.volume, 0) / klineData.length;
+      volumeProfile = recentVolume / (historicVolume || 1);
+
+      // Trend Strength (baseado em SMA 20 vs preço atual)
+      const sma20 = klineData.slice(-20).reduce((sum, k) => sum + k.close, 0) / 20;
+      trendStrength = ((currentPrice - sma20) / sma20) * 100 + 50;
+      trendStrength = Math.max(0, Math.min(100, trendStrength)); // Clamp 0-100
+
+      console.log('Real indicators calculated:', { rsi, macd, volumeProfile, trendStrength });
+    } else {
+      // Fallback para dados sintéticos se não temos dados suficientes
+      const timeSeed = Math.floor(Date.now() / (1000 * 60 * 15));
+      rsi = 50 + Math.sin(timeSeed * 0.08) * 15;
+      macd = Math.sin(timeSeed * 0.12) * 80;
+      volumeProfile = 1.0 + Math.sin(timeSeed * 0.06) * 0.3;
+      trendStrength = Math.abs(Math.sin(timeSeed * 0.1)) * 60;
+    }
     
     const marketData: MarketData = {
       price: currentPrice,
@@ -122,7 +203,7 @@ serve(async (req) => {
         rsi,
         macd,
         volume_profile: volumeProfile,
-        trend_strength: trendBase // Força da tendência estável
+        trend_strength: trendStrength
       }
     };
 
