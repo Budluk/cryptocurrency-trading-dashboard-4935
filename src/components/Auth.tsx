@@ -38,6 +38,8 @@ export const Auth = () => {
     e.preventDefault();
     setLoading(true);
 
+    console.log('🔐 Tentando autenticação:', { isSignUp, email });
+
     try {
       if (isSignUp) {
         const redirectUrl = `${window.location.origin}/`;
@@ -50,7 +52,12 @@ export const Auth = () => {
           }
         });
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Erro no signup:', error);
+          throw error;
+        }
+
+        console.log('✅ Signup bem sucedido:', { user: data?.user?.id, hasSession: !!data?.session });
 
         // Check if email confirmation is required
         if (data?.user && !data.session) {
@@ -66,12 +73,17 @@ export const Auth = () => {
           navigate('/');
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Erro no login:', error);
+          throw error;
+        }
+
+        console.log('✅ Login bem sucedido:', { user: data?.user?.id });
 
         toast({
           title: "✅ Login realizado!",
