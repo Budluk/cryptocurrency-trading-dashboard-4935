@@ -7,12 +7,30 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, TrendingUp } from "lucide-react";
+import { z } from "zod";
+
+// Validation schema for authentication
+const authSchema = z.object({
+  email: z
+    .string()
+    .min(1, "Email é obrigatório")
+    .email("Formato de email inválido")
+    .max(255, "Email muito longo"),
+  password: z
+    .string()
+    .min(8, "Senha deve ter pelo menos 8 caracteres")
+    .max(72, "Senha muito longa")
+    .regex(/[A-Z]/, "Senha deve conter pelo menos uma letra maiúscula")
+    .regex(/[a-z]/, "Senha deve conter pelo menos uma letra minúscula")
+    .regex(/[0-9]/, "Senha deve conter pelo menos um número"),
+});
 
 export const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -36,8 +54,30 @@ export const Auth = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
+    
+    // Validate input
+    const result = authSchema.safeParse({ email, password });
+    
+    if (!result.success) {
+      const fieldErrors: { email?: string; password?: string } = {};
+      result.error.errors.forEach((error) => {
+        if (error.path[0] === "email") {
+          fieldErrors.email = error.message;
+        } else if (error.path[0] === "password") {
+          fieldErrors.password = error.message;
+        }
+      });
+      setErrors(fieldErrors);
+      toast({
+        title: "❌ Erro de validação",
+        description: "Por favor, corrija os erros no formulário",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setLoading(true);
-
     console.log('🔐 Tentando autenticação:', { isSignUp, email });
 
     try {
@@ -143,10 +183,17 @@ export const Auth = () => {
                 type="email"
                 placeholder="seu@email.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setErrors((prev) => ({ ...prev, email: undefined }));
+                }}
                 required
                 disabled={loading}
+                className={errors.email ? "border-destructive" : ""}
               />
+              {errors.email && (
+                <p className="text-sm text-destructive mt-1">{errors.email}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
@@ -155,11 +202,18 @@ export const Auth = () => {
                 type="password"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setErrors((prev) => ({ ...prev, password: undefined }));
+                }}
                 required
                 disabled={loading}
-                minLength={6}
+                minLength={8}
+                className={errors.password ? "border-destructive" : ""}
               />
+              {errors.password && (
+                <p className="text-sm text-destructive mt-1">{errors.password}</p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
