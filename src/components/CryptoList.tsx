@@ -167,9 +167,9 @@ const CryptoList = () => {
                   
                   <td className="py-4">
                     <div className="font-mono">
-                      ${crypto.current_price >= 1 
+                      ${crypto.current_price && crypto.current_price >= 1 
                         ? crypto.current_price.toLocaleString(undefined, {maximumFractionDigits: 2})
-                        : crypto.current_price.toFixed(6)
+                        : (crypto.current_price || 0).toFixed(6)
                       }
                     </div>
                   </td>
@@ -191,14 +191,14 @@ const CryptoList = () => {
                       
                       <div className="flex items-center gap-2 text-sm">
                         <span className={`flex items-center gap-1 ${
-                          crypto.price_change_percentage_24h >= 0 ? "text-success" : "text-destructive"
+                          (crypto.price_change_percentage_24h || 0) >= 0 ? "text-success" : "text-destructive"
                         }`}>
-                          {crypto.price_change_percentage_24h >= 0 ? (
+                          {(crypto.price_change_percentage_24h || 0) >= 0 ? (
                             <ArrowUpIcon className="w-3 h-3" />
                           ) : (
                             <ArrowDownIcon className="w-3 h-3" />
                           )}
-                          {Math.abs(crypto.price_change_percentage_24h).toFixed(1)}%
+                          {Math.abs(crypto.price_change_percentage_24h || 0).toFixed(1)}%
                         </span>
                       </div>
                       
@@ -219,10 +219,10 @@ const CryptoList = () => {
                   
                   <td className="py-4">
                     <div className="text-sm">
-                      ${(crypto.total_volume / 1e9).toFixed(2)}B
+                      ${((crypto.total_volume || 0) / 1e9).toFixed(2)}B
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Vol/MC: {((crypto.total_volume / crypto.market_cap) * 100).toFixed(1)}%
+                      Vol/MC: {(((crypto.total_volume || 0) / (crypto.market_cap || 1)) * 100).toFixed(1)}%
                     </div>
                   </td>
                   

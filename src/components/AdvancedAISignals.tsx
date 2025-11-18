@@ -172,12 +172,12 @@ const AdvancedAISignals = () => {
         {aiAnalysis && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-background/50 rounded-lg">
-              <div className="text-2xl font-bold">${aiAnalysis.market_data.price.toFixed(2)}</div>
+              <div className="text-2xl font-bold">${(aiAnalysis.market_data?.price || 0).toFixed(2)}</div>
               <div className="text-sm text-muted-foreground">Preço Atual</div>
             </div>
             <div className="text-center p-4 bg-background/50 rounded-lg">
-              <div className={`text-2xl font-bold ${getRecommendationColor(aiAnalysis.ml_score.recommendation)}`}>
-                {aiAnalysis.ml_score.overall.toFixed(0)}/100
+              <div className={`text-2xl font-bold ${getRecommendationColor(aiAnalysis.ml_score?.recommendation || '')}`}>
+                {(aiAnalysis.ml_score?.overall || 0).toFixed(0)}/100
               </div>
               <div className="text-sm text-muted-foreground">ML Score</div>
             </div>
@@ -236,13 +236,13 @@ const AdvancedAISignals = () => {
                   <div>
                     <div className="text-sm text-muted-foreground">Target</div>
                     <div className="font-mono font-bold text-green-500">
-                      ${aiAnalysis.ai_prediction.target.toFixed(2)}
+                      ${(aiAnalysis.ai_prediction?.target || 0).toFixed(2)}
                     </div>
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Stop Loss</div>
                     <div className="font-mono font-bold text-red-500">
-                      ${aiAnalysis.ai_prediction.stop.toFixed(2)}
+                      ${(aiAnalysis.ai_prediction?.stop || 0).toFixed(2)}
                     </div>
                   </div>
                 </div>

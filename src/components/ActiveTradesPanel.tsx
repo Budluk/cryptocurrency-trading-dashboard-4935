@@ -382,23 +382,23 @@ export const ActiveTradesPanel = () => {
                 <div className="grid grid-cols-5 gap-3 mb-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Entrada</p>
-                    <p className="font-semibold">${position.entry_price.toFixed(2)}</p>
+                    <p className="font-semibold">${(position.entry_price || 0).toFixed(2)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Atual {livePrice && '🟢'}</p>
-                    <p className="font-semibold">${displayPrice.toFixed(2)}</p>
+                    <p className="font-semibold">${(displayPrice || 0).toFixed(2)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Quantidade</p>
-                    <p className="font-semibold">{position.qty}</p>
+                    <p className="font-semibold">{position.qty || 0}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Confiança</p>
-                    <p className="font-semibold">{position.confidence}%</p>
+                    <p className="font-semibold">{position.confidence || 0}%</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Trailing</p>
-                    <p className="font-semibold">{position.trailing_stop_percentage}%</p>
+                    <p className="font-semibold">{position.trailing_stop_percentage || 0}%</p>
                   </div>
                 </div>
 
@@ -412,7 +412,7 @@ export const ActiveTradesPanel = () => {
                     <p className="text-lg font-bold">${position.stop_loss?.toFixed(2) || 'N/A'}</p>
                     {position.stop_loss && (
                       <p className="text-xs text-red-500 mt-1">
-                        {distanceToStop.toFixed(2)}% até atingir
+                        {(distanceToStop || 0).toFixed(2)}% até atingir
                       </p>
                     )}
                   </div>
@@ -425,7 +425,7 @@ export const ActiveTradesPanel = () => {
                     <p className="text-lg font-bold">${position.take_profit?.toFixed(2) || 'N/A'}</p>
                     {position.take_profit && (
                       <p className="text-xs text-green-500 mt-1">
-                        {distanceToTarget.toFixed(2)}% até atingir
+                        {(distanceToTarget || 0).toFixed(2)}% até atingir
                       </p>
                     )}
                   </div>
@@ -439,7 +439,7 @@ export const ActiveTradesPanel = () => {
                       livePnl > 0 ? 'text-green-500' : 
                       livePnl < 0 ? 'text-red-500' : 'text-muted-foreground'
                     }`}>
-                      ${livePnl.toFixed(2)}
+                      ${(livePnl || 0).toFixed(2)}
                     </p>
                   </div>
                   <div className="text-right">
@@ -448,7 +448,7 @@ export const ActiveTradesPanel = () => {
                       pnlPercentage > 0 ? 'text-green-500' : 
                       pnlPercentage < 0 ? 'text-red-500' : 'text-muted-foreground'
                     }`}>
-                      {pnlPercentage > 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%
+                      {pnlPercentage > 0 ? '+' : ''}{(pnlPercentage || 0).toFixed(2)}%
                     </p>
                   </div>
                 </div>
