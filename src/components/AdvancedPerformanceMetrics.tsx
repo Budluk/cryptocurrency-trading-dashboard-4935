@@ -100,11 +100,11 @@ export const AdvancedPerformanceMetrics = () => {
             <Target className="h-4 w-4 text-primary" />
           </div>
           <div className="text-2xl font-bold mb-2">
-            {stats.win_rate.toFixed(1)}%
+            {(stats.win_rate || 0).toFixed(1)}%
           </div>
-          <Progress value={stats.win_rate} className="h-2" />
+          <Progress value={stats.win_rate || 0} className="h-2" />
           <div className="mt-2 text-xs text-muted-foreground">
-            {stats.winning_trades}W / {stats.losing_trades}L de {stats.total_trades} trades
+            {stats.winning_trades || 0}W / {stats.losing_trades || 0}L de {stats.total_trades || 0} trades
           </div>
         </div>
 
@@ -114,11 +114,11 @@ export const AdvancedPerformanceMetrics = () => {
             <span className="text-sm text-muted-foreground">Profit Factor</span>
             <DollarSign className="h-4 w-4 text-primary" />
           </div>
-          <div className={`text-2xl font-bold ${stats.profit_factor >= 2 ? 'text-green-500' : stats.profit_factor >= 1 ? 'text-yellow-500' : 'text-red-500'}`}>
-            {stats.profit_factor.toFixed(2)}x
+          <div className={`text-2xl font-bold ${(stats.profit_factor || 0) >= 2 ? 'text-green-500' : (stats.profit_factor || 0) >= 1 ? 'text-yellow-500' : 'text-red-500'}`}>
+            {(stats.profit_factor || 0).toFixed(2)}x
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
-            {stats.profit_factor >= 2 ? 'Excelente' : stats.profit_factor >= 1 ? 'Bom' : 'Precisa Melhorar'}
+            {(stats.profit_factor || 0) >= 2 ? 'Excelente' : (stats.profit_factor || 0) >= 1 ? 'Bom' : 'Precisa Melhorar'}
           </div>
         </div>
 
@@ -129,7 +129,7 @@ export const AdvancedPerformanceMetrics = () => {
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </div>
           <div className="text-2xl font-bold text-red-500">
-            -${stats.max_drawdown.toFixed(2)}
+            -${(stats.max_drawdown || 0).toFixed(2)}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             Maior sequência de perdas
@@ -143,7 +143,7 @@ export const AdvancedPerformanceMetrics = () => {
             <TrendingUp className="h-4 w-4 text-green-500" />
           </div>
           <div className="text-2xl font-bold text-green-500">
-            +${stats.avg_win.toFixed(2)}
+            +${(stats.avg_win || 0).toFixed(2)}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             Por trade vencedor
@@ -157,7 +157,7 @@ export const AdvancedPerformanceMetrics = () => {
             <TrendingDown className="h-4 w-4 text-red-500" />
           </div>
           <div className="text-2xl font-bold text-red-500">
-            -${stats.avg_loss.toFixed(2)}
+            -${(stats.avg_loss || 0).toFixed(2)}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             Por trade perdedor
@@ -170,11 +170,11 @@ export const AdvancedPerformanceMetrics = () => {
             <span className="text-sm text-muted-foreground">P&L Total</span>
             <BarChart3 className="h-4 w-4 text-primary" />
           </div>
-          <div className={`text-2xl font-bold ${stats.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {stats.total_pnl >= 0 ? '+' : ''}${stats.total_pnl.toFixed(2)}
+          <div className={`text-2xl font-bold ${(stats.total_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {(stats.total_pnl || 0) >= 0 ? '+' : ''}${(stats.total_pnl || 0).toFixed(2)}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
-            Em {stats.total_trades} trades fechados
+            Em {stats.total_trades || 0} trades fechados
           </div>
         </div>
 
@@ -185,7 +185,7 @@ export const AdvancedPerformanceMetrics = () => {
             <TrendingUp className="h-4 w-4 text-green-500" />
           </div>
           <div className="text-2xl font-bold text-green-500">
-            +${stats.largest_win.toFixed(2)}
+            +${(stats.largest_win || 0).toFixed(2)}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             Maior lucro individual
@@ -199,7 +199,7 @@ export const AdvancedPerformanceMetrics = () => {
             <TrendingDown className="h-4 w-4 text-red-500" />
           </div>
           <div className="text-2xl font-bold text-red-500">
-            ${stats.largest_loss.toFixed(2)}
+            ${(stats.largest_loss || 0).toFixed(2)}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             Maior perda individual
@@ -213,7 +213,7 @@ export const AdvancedPerformanceMetrics = () => {
             <Target className="h-4 w-4 text-primary" />
           </div>
           <div className="text-2xl font-bold text-primary">
-            1:{stats.avg_loss > 0 ? (stats.avg_win / stats.avg_loss).toFixed(2) : '0'}
+            1:{(stats.avg_loss || 0) > 0 ? ((stats.avg_win || 0) / (stats.avg_loss || 1)).toFixed(2) : '0'}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             Ganho médio vs perda média
