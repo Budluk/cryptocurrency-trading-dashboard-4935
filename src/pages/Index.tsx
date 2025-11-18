@@ -18,12 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtimePrice } from "@/hooks/useRealtimePrice";
-import { Activity, BarChart3, Settings, TrendingUp, LogIn } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 const Index = () => {
-  const navigate = useNavigate();
-  
   // Hook para preços em tempo real
   useRealtimePrice();
 
@@ -39,20 +36,10 @@ const Index = () => {
               </h1>
               <p className="text-muted-foreground mt-1">Sistema profissional de trading com IA avançada</p>
             </div>
-            <div className="flex items-center gap-4">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => navigate('/auth')}
-              >
-                <LogIn className="mr-2 h-4 w-4" />
-                Login
-              </Button>
-              <Badge variant="default" className="h-8 px-4">
-                <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
-                AO VIVO
-              </Badge>
-            </div>
+            <Badge variant="default" className="h-8 px-4">
+              <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
+              AO VIVO
+            </Badge>
           </div>
         </header>
         
