@@ -17,7 +17,7 @@ import { RiskManagementPanel } from "@/components/RiskManagementPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useRealtimePrice } from "@/hooks/useRealtimePrice";
+import { RealtimePriceProvider } from "@/contexts/RealtimePriceContext";
 import { Activity, BarChart3, Settings, TrendingUp, LogOut, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -28,9 +28,6 @@ const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  
-  // Hook para preços em tempo real
-  useRealtimePrice();
 
   useEffect(() => {
     // Verificar se usuário está autenticado
@@ -72,7 +69,8 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <RealtimePriceProvider>
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="max-w-[1600px] mx-auto p-6">
         {/* Header */}
         <header className="mb-8">
@@ -175,7 +173,8 @@ const Index = () => {
           </Tabs>
         </div>
       </div>
-    </div>
+      </div>
+    </RealtimePriceProvider>
   );
 };
 
