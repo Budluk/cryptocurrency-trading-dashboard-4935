@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { getCurrentUserId } from "@/lib/anonymousUser";
+
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
@@ -94,7 +94,9 @@ export const MultiAssetTrader = () => {
   // 💾 RESTAURAR ESTADO AUTOMATICAMENTE AO CARREGAR
   useEffect(() => {
     const restoreTraderState = async () => {
-      const userId = await getCurrentUserId(supabase);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const userId = user.id;
 
       // Buscar configuração do ML adaptativo
       const { data: mlData } = await supabase
@@ -853,7 +855,12 @@ export const MultiAssetTrader = () => {
           if (shouldTrade && action) {
             // 🎯 SISTEMA DE PRIORIZAÇÃO: Se limite atingido, verificar se vale a pena substituir
             if (shouldCheckPrioritization) {
-              const priorityUserId = await getCurrentUserId(supabase);
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) {
+                toast({ title: "❌ Autenticação necessária", variant: "destructive" });
+                return;
+              }
+              const priorityUserId = user.id;
 
               // Buscar posições abertas no banco com seus scores
               const { data: openDbPositions } = await supabase
@@ -1302,7 +1309,12 @@ export const MultiAssetTrader = () => {
               console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)} | Score: ${signalScore}`);
               
               // 💾 SALVAR POSIÇÃO NO BANCO COM SCORE DE QUALIDADE
-              const savePositionUserId = await getCurrentUserId(supabase);
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) {
+                console.warn('⚠️ Posição executada mas não salva - usuário não autenticado');
+                return;
+              }
+              const savePositionUserId = user.id;
               await supabase
                 .from('auto_trader_positions')
                 .insert({
@@ -1519,7 +1531,9 @@ export const MultiAssetTrader = () => {
 
       // Atualizar timestamp de atividade a cada 2 minutos
       activityInterval = setInterval(async () => {
-        const activityUserId = await getCurrentUserId(supabase);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const activityUserId = user.id;
         await supabase
           .from('auto_trader_config')
           .update({ last_activity_at: new Date().toISOString() })
@@ -1543,8 +1557,17 @@ export const MultiAssetTrader = () => {
       return;
     }
 
-    // 🛡️ VERIFICAR GESTÃO DE RISCO ANTES DE INICIAR (opcional se houver usuário)
-    const currentUserId = await getCurrentUserId(supabase);
+    // 🛡️ VERIFICAR GESTÃO DE RISCO ANTES DE INICIAR
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast({
+        title: "❌ Autenticação Necessária",
+        description: "Você precisa estar logado para iniciar o trading",
+        variant: "destructive"
+      });
+      return;
+    }
+    const currentUserId = user.id;
     
     // Verificar se trading está pausado por gestão de risco
     const { data: riskSettings } = await supabase
@@ -1583,7 +1606,9 @@ export const MultiAssetTrader = () => {
     setIsRunning(true);
 
     // 💾 SALVAR ESTADO NO BANCO
-    const startUserId = await getCurrentUserId(supabase);
+    const { data: { user: startUser } } = await supabase.auth.getUser();
+    if (!startUser) return;
+    const startUserId = startUser.id;
     await supabase
       .from('auto_trader_config')
       .upsert({
@@ -1608,7 +1633,9 @@ export const MultiAssetTrader = () => {
     setIsRunning(false);
 
     // 💾 SALVAR ESTADO NO BANCO
-    const stopUserId = await getCurrentUserId(supabase);
+    const { data: { user: stopUser } } = await supabase.auth.getUser();
+    if (!stopUser) return;
+    const stopUserId = stopUser.id;
     await supabase
       .from('auto_trader_config')
       .update({

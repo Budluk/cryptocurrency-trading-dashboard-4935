@@ -186,10 +186,16 @@ export const ActiveTradesPanel = () => {
   const { data: positions, refetch } = useQuery({
     queryKey: ['active-trades-panel'],
     queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Você precisa estar logado para ver posições ativas");
+      }
+
       const { data, error } = await supabase
         .from('auto_trader_positions')
         .select('*')
         .eq('status', 'OPEN')
+        .eq('user_id', user.id)
         .order('opened_at', { ascending: false });
 
       if (error) {
