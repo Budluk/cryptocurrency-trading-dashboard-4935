@@ -146,7 +146,7 @@ const CryptoList = () => {
             </tr>
           </thead>
           <tbody>
-            {cryptos?.map((crypto: any) => {
+            {cryptos?.filter((crypto: any) => crypto && crypto.current_price != null).map((crypto: any) => {
               const technicalScore = calculateTechnicalScore(crypto);
               const signal = getSignalBadge(technicalScore);
               
