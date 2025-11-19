@@ -115,11 +115,8 @@ export const Auth = () => {
         });
 
         if (error) {
-          console.error('❌ Erro no login:', error);
           throw error;
         }
-
-        console.log('✅ Login bem sucedido:', { user: data?.user?.id });
 
         toast({
           title: "✅ Login realizado!",
