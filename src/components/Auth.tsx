@@ -78,7 +78,6 @@ export const Auth = () => {
     }
     
     setLoading(true);
-    console.log('🔐 Tentando autenticação:', { isSignUp, email });
 
     try {
       if (isSignUp) {
@@ -93,11 +92,8 @@ export const Auth = () => {
         });
 
         if (error) {
-          console.error('❌ Erro no signup:', error);
           throw error;
         }
-
-        console.log('✅ Signup bem sucedido:', { user: data?.user?.id, hasSession: !!data?.session });
 
         // Check if email confirmation is required
         if (data?.user && !data.session) {

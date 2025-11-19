@@ -1,7 +1,7 @@
 project_id = "uohdpxkfgxmtlosnmspf"
 
 [functions.ai-market-analysis]
-verify_jwt = false
+verify_jwt = true
 
 [functions.bybit-trading]
 verify_jwt = true
@@ -16,10 +16,10 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.sentiment-analysis]
-verify_jwt = false
+verify_jwt = true
 
 [functions.portfolio-rebalancer]
 verify_jwt = true
 
 [functions.order-flow-analysis]
-verify_jwt = false
+verify_jwt = true
