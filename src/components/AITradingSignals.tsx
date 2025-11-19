@@ -355,11 +355,11 @@ const AITradingSignals = () => {
             <div className="text-center p-4 bg-muted/30 rounded-lg">
               <div className="text-2xl font-bold mb-1">{data.analysis.trend}</div>
               <div className="text-sm text-muted-foreground">Tendência</div>
-              <div className="text-xs mt-1">{data.analysis.strength.toFixed(0)}% força</div>
+              <div className="text-xs mt-1">{(data.analysis.strength || 0).toFixed(0)}% força</div>
             </div>
             
             <div className="text-center p-4 bg-muted/30 rounded-lg">
-              <div className="text-2xl font-bold mb-1">{data.analysis.next_move_probability.toFixed(0)}%</div>
+              <div className="text-2xl font-bold mb-1">{(data.analysis.next_move_probability || 0).toFixed(0)}%</div>
               <div className="text-sm text-muted-foreground">Prob. Próximo Movimento</div>
             </div>
             

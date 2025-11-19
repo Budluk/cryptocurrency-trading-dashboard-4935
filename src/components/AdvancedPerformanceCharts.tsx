@@ -222,7 +222,7 @@ export const AdvancedPerformanceCharts = () => {
                   borderRadius: '8px',
                 }}
                 formatter={(value: any, name: string) => {
-                  if (name === 'totalPnl') return [`$${value.toFixed(2)}`, 'P&L Total'];
+                  if (name === 'totalPnl') return [`$${(value || 0).toFixed(2)}`, 'P&L Total'];
                   return [value, name];
                 }}
               />
@@ -273,7 +273,7 @@ export const AdvancedPerformanceCharts = () => {
                           ? `rgba(239, 68, 68, ${intensity})` // Vermelho
                           : 'hsl(var(--muted))',
                       }}
-                      title={`${day} ${hourIndex}:00 - ${cell ? `${cell.count} trades, $${avgPnl.toFixed(2)} avg` : 'Sem dados'}`}
+                      title={`${day} ${hourIndex}:00 - ${cell ? `${cell.count} trades, $${(avgPnl || 0).toFixed(2)} avg` : 'Sem dados'}`}
                     />
                   );
                 })}
