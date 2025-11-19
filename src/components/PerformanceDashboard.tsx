@@ -211,9 +211,9 @@ const PerformanceDashboard = () => {
             <h3 className="font-semibold text-sm text-muted-foreground">SALDO ATUAL</h3>
             <DollarSignIcon className="w-5 h-5 text-primary" />
           </div>
-          <div className="text-3xl font-bold">${currentBalance.toFixed(2)}</div>
+          <div className="text-3xl font-bold">${(currentBalance || 0).toFixed(2)}</div>
           <p className="text-sm text-muted-foreground mt-2">
-            Inicial: ${initialBalance.toFixed(2)}
+            Inicial: ${(initialBalance || 0).toFixed(2)}
           </p>
         </Card>
 
@@ -223,7 +223,7 @@ const PerformanceDashboard = () => {
             <PercentIcon className="w-5 h-5 text-green-500" />
           </div>
           <div className={`text-3xl font-bold ${getPerformanceColor(roi, 'pnl')}`}>
-            {roi > 0 ? '+' : ''}{roi.toFixed(2)}%
+            {roi > 0 ? '+' : ''}{(roi || 0).toFixed(2)}%
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             Retorno total
@@ -274,7 +274,7 @@ const PerformanceDashboard = () => {
             <ShieldIcon className="w-5 h-5 text-blue-500" />
           </div>
           <div className={`text-3xl font-bold ${getPerformanceColor(sharpeRatio, 'pnl')}`}>
-            {sharpeRatio.toFixed(2)}
+            {(sharpeRatio || 0).toFixed(2)}
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             Risco ajustado
@@ -312,7 +312,7 @@ const PerformanceDashboard = () => {
               <XAxis dataKey="date" />
               <YAxis />
               <Tooltip 
-                formatter={(value: any) => [`$${value.toFixed(2)}`, 'Saldo']}
+                formatter={(value: any) => [`$${(value || 0).toFixed(2)}`, 'Saldo']}
               />
               <Area 
                 type="monotone" 
@@ -335,7 +335,7 @@ const PerformanceDashboard = () => {
               <YAxis />
               <Tooltip 
                 formatter={(value: any, name: string) => [
-                  name === 'totalPnl' ? `$${value.toFixed(2)}` : value,
+                  name === 'totalPnl' ? `$${(value || 0).toFixed(2)}` : value,
                   name === 'totalPnl' ? 'P&L Total' : 'Trades'
                 ]}
               />
@@ -367,7 +367,7 @@ const PerformanceDashboard = () => {
                     <Badge variant="outline" className="text-xs">{trade.side}</Badge>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    ${trade.entry_price.toFixed(2)} → ${trade.current_price?.toFixed(2) || '-'}
+                    ${(trade.entry_price || 0).toFixed(2)} → ${trade.current_price ? trade.current_price.toFixed(2) : '-'}
                   </div>
                 </div>
               </div>

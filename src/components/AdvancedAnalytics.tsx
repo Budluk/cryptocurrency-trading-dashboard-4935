@@ -176,7 +176,7 @@ export const AdvancedAnalytics = () => {
           </div>
           <div className="text-2xl font-bold">{symbolData[0]?.symbol || 'N/A'}</div>
           <p className="text-sm text-green-500 mt-2">
-            +${symbolData[0]?.totalPnl?.toFixed(2) || '0.00'}
+            +${symbolData[0]?.totalPnl ? symbolData[0].totalPnl.toFixed(2) : '0.00'}
           </p>
         </Card>
 
@@ -189,7 +189,7 @@ export const AdvancedAnalytics = () => {
             {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.hour || 0}h
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.winRate?.toFixed(0) || 0}% win rate
+            {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.winRate ? hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0].winRate.toFixed(0) : '0'}% win rate
           </p>
         </Card>
       </div>
@@ -206,7 +206,7 @@ export const AdvancedAnalytics = () => {
               <YAxis />
               <Tooltip 
                 formatter={(value: any, name: string) => [
-                  name === 'totalPnl' ? `$${value.toFixed(2)}` : `${value.toFixed(1)}%`,
+                  name === 'totalPnl' ? `$${(value || 0).toFixed(2)}` : `${(value || 0).toFixed(1)}%`,
                   name === 'totalPnl' ? 'P&L Total' : 'Win Rate'
                 ]}
               />
@@ -223,7 +223,7 @@ export const AdvancedAnalytics = () => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="hour" label={{ value: 'Hora', position: 'insideBottom', offset: -5 }} />
               <YAxis label={{ value: 'Win Rate %', angle: -90, position: 'insideLeft' }} />
-              <Tooltip formatter={(value: any) => `${value.toFixed(1)}%`} />
+              <Tooltip formatter={(value: any) => `${(value || 0).toFixed(1)}%`} />
               <Line type="monotone" dataKey="winRate" stroke="hsl(var(--primary))" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
@@ -261,7 +261,7 @@ export const AdvancedAnalytics = () => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `$${value.toFixed(2)}`} />
+              <Tooltip formatter={(value: any) => `$${(value || 0).toFixed(2)}`} />
               <Bar dataKey="totalPnl" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]}>
                 {weekdayData.map((entry: any, index) => (
                   <Cell key={`cell-${index}`} fill={entry.totalPnl > 0 ? '#10b981' : '#ef4444'} />
@@ -293,14 +293,14 @@ export const AdvancedAnalytics = () => {
                   <td className="py-3 px-4 text-right">{item.trades}</td>
                   <td className="py-3 px-4 text-right">
                     <Badge variant={item.winRate > 50 ? 'default' : 'destructive'}>
-                      {item.winRate.toFixed(1)}%
+                      {(item.winRate || 0).toFixed(1)}%
                     </Badge>
                   </td>
                   <td className={`py-3 px-4 text-right font-semibold ${item.totalPnl > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    ${item.totalPnl.toFixed(2)}
+                    ${(item.totalPnl || 0).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-right">
-                    ${(item.totalPnl / item.trades).toFixed(2)}
+                    ${item.trades > 0 ? (item.totalPnl / item.trades).toFixed(2) : '0.00'}
                   </td>
                 </tr>
               ))}
