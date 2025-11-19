@@ -18,15 +18,10 @@ export const ActiveTradesPanel = () => {
     try {
       console.log('🔄 Iniciando sincronização com Bybit...');
       
-      // Verificar autenticação primeiro
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        console.error('❌ Usuário não autenticado:', userError);
-        toast({
-          title: "❌ Erro de autenticação",
-          description: "Faça login para sincronizar posições",
-          variant: "destructive",
-        });
+      // Verificar autenticação primeiro (opcional)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn('⚠️ Usuário não autenticado - continuando sem sincronização');
         return;
       }
 

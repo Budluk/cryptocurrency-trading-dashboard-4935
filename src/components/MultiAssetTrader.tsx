@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { getCurrentUserId } from "@/lib/anonymousUser";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
@@ -93,14 +94,13 @@ export const MultiAssetTrader = () => {
   // 💾 RESTAURAR ESTADO AUTOMATICAMENTE AO CARREGAR
   useEffect(() => {
     const restoreTraderState = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = await getCurrentUserId(supabase);
 
       // Buscar configuração do ML adaptativo
       const { data: mlData } = await supabase
         .from('ml_adaptive_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single();
 
       if (mlData && mlData.is_enabled) {
@@ -111,7 +111,7 @@ export const MultiAssetTrader = () => {
       const { data: config } = await supabase
         .from('auto_trader_config')
         .select('trader_is_running, last_activity_at')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single();
 
       if (config?.trader_is_running) {
@@ -130,7 +130,7 @@ export const MultiAssetTrader = () => {
           await supabase
             .from('auto_trader_config')
             .update({ trader_is_running: false })
-            .eq('user_id', user.id);
+            .eq('user_id', userId);
         }
       }
     };
@@ -853,14 +853,13 @@ export const MultiAssetTrader = () => {
           if (shouldTrade && action) {
             // 🎯 SISTEMA DE PRIORIZAÇÃO: Se limite atingido, verificar se vale a pena substituir
             if (shouldCheckPrioritization) {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (!user) continue;
+              const priorityUserId = await getCurrentUserId(supabase);
 
               // Buscar posições abertas no banco com seus scores
               const { data: openDbPositions } = await supabase
                 .from('auto_trader_positions')
                 .select('*')
-                .eq('user_id', user.id)
+                .eq('user_id', priorityUserId)
                 .eq('status', 'OPEN')
                 .order('confidence', { ascending: true }); // Menor score primeiro
 
@@ -1303,30 +1302,28 @@ export const MultiAssetTrader = () => {
               console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${leverage}x | USD: $${usdSize.toFixed(2)} | Score: ${signalScore}`);
               
               // 💾 SALVAR POSIÇÃO NO BANCO COM SCORE DE QUALIDADE
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase
-                  .from('auto_trader_positions')
-                  .insert({
-                    user_id: user.id,
-                    symbol,
-                    side: action === 'BUY' ? 'Buy' : 'Sell',
-                    entry_price: currentPrice,
-                    qty,
-                    leverage,
-                    stop_loss: parseFloat(stopLoss),
-                    take_profit: parseFloat(takeProfit),
-                    // 🎯 TRAILING STOP DINÂMICO POR VOLATILIDADE
-                    trailing_stop_percentage: calculateDynamicTrailingStop(currentVolatility),
-                    highest_price: currentPrice, // Inicializar com preço de entrada
-                    volatility: currentVolatility, // Armazenar volatilidade do ativo
-                    partial_tp_executed: false, // Controle de take profit parcial
-                    original_quantity: qty, // Salvar quantidade original
-                    confidence: signalScore, // 🎯 SALVAR SCORE DE QUALIDADE
-                    status: 'OPEN',
-                    exchange_order_id: orderData.data?.orderId
-                  });
-              }
+              const savePositionUserId = await getCurrentUserId(supabase);
+              await supabase
+                .from('auto_trader_positions')
+                .insert({
+                  user_id: savePositionUserId,
+                  symbol,
+                  side: action === 'BUY' ? 'Buy' : 'Sell',
+                  entry_price: currentPrice,
+                  qty,
+                  leverage,
+                  stop_loss: parseFloat(stopLoss),
+                  take_profit: parseFloat(takeProfit),
+                  // 🎯 TRAILING STOP DINÂMICO POR VOLATILIDADE
+                  trailing_stop_percentage: calculateDynamicTrailingStop(currentVolatility),
+                  highest_price: currentPrice, // Inicializar com preço de entrada
+                  volatility: currentVolatility, // Armazenar volatilidade do ativo
+                  partial_tp_executed: false, // Controle de take profit parcial
+                  original_quantity: qty, // Salvar quantidade original
+                  confidence: signalScore, // 🎯 SALVAR SCORE DE QUALIDADE
+                  status: 'OPEN',
+                  exchange_order_id: orderData.data?.orderId
+                });
               
               // 🎯 TRAILING STOP: Inicializar tracking
               if (trailingStopEnabled) {
@@ -1522,13 +1519,11 @@ export const MultiAssetTrader = () => {
 
       // Atualizar timestamp de atividade a cada 2 minutos
       activityInterval = setInterval(async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase
-            .from('auto_trader_config')
-            .update({ last_activity_at: new Date().toISOString() })
-            .eq('user_id', user.id);
-        }
+        const activityUserId = await getCurrentUserId(supabase);
+        await supabase
+          .from('auto_trader_config')
+          .update({ last_activity_at: new Date().toISOString() })
+          .eq('user_id', activityUserId);
       }, 2 * 60 * 1000);
     }
 
@@ -1548,22 +1543,14 @@ export const MultiAssetTrader = () => {
       return;
     }
 
-    // 🛡️ VERIFICAR GESTÃO DE RISCO ANTES DE INICIAR
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) {
-      toast({
-        title: "Erro",
-        description: "Você precisa estar logado para iniciar o trading",
-        variant: "destructive"
-      });
-      return;
-    }
-
+    // 🛡️ VERIFICAR GESTÃO DE RISCO ANTES DE INICIAR (opcional se houver usuário)
+    const currentUserId = await getCurrentUserId(supabase);
+    
     // Verificar se trading está pausado por gestão de risco
     const { data: riskSettings } = await supabase
       .from('risk_management_settings')
       .select('*')
-      .eq('user_id', currentUser.id)
+      .eq('user_id', currentUserId)
       .maybeSingle();
 
     if (riskSettings?.trading_paused) {
@@ -1596,16 +1583,14 @@ export const MultiAssetTrader = () => {
     setIsRunning(true);
 
     // 💾 SALVAR ESTADO NO BANCO
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase
-        .from('auto_trader_config')
-        .upsert({
-          user_id: user.id,
-          trader_is_running: true,
-          last_activity_at: new Date().toISOString(),
-        });
-    }
+    const startUserId = await getCurrentUserId(supabase);
+    await supabase
+      .from('auto_trader_config')
+      .upsert({
+        user_id: startUserId,
+        trader_is_running: true,
+        last_activity_at: new Date().toISOString(),
+      });
 
     toast({
       title: "⚡ TRADER REAL 24/7 ATIVADO",
@@ -1623,16 +1608,14 @@ export const MultiAssetTrader = () => {
     setIsRunning(false);
 
     // 💾 SALVAR ESTADO NO BANCO
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase
-        .from('auto_trader_config')
-        .update({
-          trader_is_running: false,
-          last_activity_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-    }
+    const stopUserId = await getCurrentUserId(supabase);
+    await supabase
+      .from('auto_trader_config')
+      .update({
+        trader_is_running: false,
+        last_activity_at: new Date().toISOString(),
+      })
+      .eq('user_id', stopUserId);
 
     toast({
       title: "⏸️ Trader pausado",
