@@ -212,7 +212,7 @@ const AITradingSignals = () => {
   const { data, isLoading, error } = useQuery({
     queryKey: ['aiTradingSignals'],
     queryFn: fetchAITradingData,
-    refetchInterval: 2000, // Atualização a cada 2 segundos
+    refetchInterval: false, // DESABILITADO para evitar sobrecarga
     retry: 2
   });
 

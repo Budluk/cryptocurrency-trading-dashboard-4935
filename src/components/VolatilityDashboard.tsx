@@ -33,7 +33,7 @@ export const VolatilityDashboard = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 10000,
+    refetchInterval: false, // DESABILITADO
   });
 
   // Buscar dados históricos de mercado para calcular volatilidade

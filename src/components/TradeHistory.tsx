@@ -40,7 +40,7 @@ export const TradeHistory = () => {
         realized_pnl: t.pnl || 0,
       })) as Trade[];
     },
-    refetchInterval: 10000,
+    refetchInterval: false, // DESABILITADO
   });
 
   const getPnLColor = (pnl: number) => {

@@ -341,7 +341,7 @@ const TradingSignals = () => {
   const { data, isLoading, error } = useQuery({
     queryKey: ['technicalAnalysis', 'BTC'],
     queryFn: () => fetchTechnicalAnalysis('BTC'),
-    refetchInterval: 15000,
+    refetchInterval: false, // DESABILITADO
     retry: 1,
     retryOnMount: false
   });

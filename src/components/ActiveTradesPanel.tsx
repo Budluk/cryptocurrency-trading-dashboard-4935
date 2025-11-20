@@ -206,7 +206,7 @@ export const ActiveTradesPanel = () => {
       console.log('📊 Posições abertas carregadas:', data?.length || 0);
       return data;
     },
-    refetchInterval: 10000, // Otimizado de 5s para 10s
+    refetchInterval: false, // DESABILITADO - use botão Sincronizar manualmente
   });
 
   const closePosition = async (positionId: string, symbol: string) => {

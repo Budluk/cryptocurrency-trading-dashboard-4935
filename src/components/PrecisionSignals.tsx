@@ -168,7 +168,7 @@ const PrecisionSignals = () => {
   const { data: signal, isLoading } = useQuery({
     queryKey: ['precisionSignals'],
     queryFn: fetchPrecisionSignals,
-    refetchInterval: 10000, // Menos frequente, mais preciso
+    refetchInterval: false, // DESABILITADO
   });
 
   const precisionLevel = useMemo(() => {
