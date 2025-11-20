@@ -10,8 +10,12 @@ export const useBybitSync = (isEnabled: boolean = true) => {
 
   useEffect(() => {
     if (!isEnabled) return;
+    
+    let isActive = true;
 
     const syncPositions = async () => {
+      if (!isActive) return;
+      
       try {
         // Verificar autenticação
         const { data: { user } } = await supabase.auth.getUser();
@@ -145,11 +149,21 @@ export const useBybitSync = (isEnabled: boolean = true) => {
       }
     };
 
-    // Executar imediatamente e depois a cada 30 segundos
-    syncPositions();
-    const interval = setInterval(syncPositions, 30000);
+    // Esperar 10 segundos antes da primeira execução
+    const initialTimeout = setTimeout(() => {
+      if (isActive) syncPositions();
+    }, 10000);
+    
+    // Depois executar a cada 60 segundos (aumentado para reduzir carga)
+    const interval = setInterval(() => {
+      if (isActive) syncPositions();
+    }, 60000);
 
-    return () => clearInterval(interval);
+    return () => {
+      isActive = false;
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
   }, [isEnabled, toast]);
 
   return null;
