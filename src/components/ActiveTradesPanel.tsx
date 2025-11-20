@@ -214,7 +214,7 @@ export const ActiveTradesPanel = () => {
       const position = positions?.find(p => p.id === positionId);
       if (!position) return;
 
-      const realized_pnl = position.unrealized_pnl || 0;
+      const realized_pnl = Number(position.unrealized_pnl) || 0;
       
       const { error } = await supabase
         .from('auto_trader_positions')
@@ -292,7 +292,7 @@ export const ActiveTradesPanel = () => {
           </Button>
           {positions && positions.length > 0 && (
             <Badge variant="default" className="text-lg px-4 py-2">
-              Total P&L: ${positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0).toFixed(2)}
+              Total P&L: ${(positions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) || 0).toFixed(2)}
             </Badge>
           )}
         </div>
