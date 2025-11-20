@@ -29,7 +29,7 @@ export const TradingViewWebhookStatus = () => {
       if (error) throw error;
       return data as LastSignal | null;
     },
-    refetchInterval: 5000,
+    refetchInterval: false, // DESABILITADO
   });
 
   const webhookUrl = "https://uohdpxkfgxmtlosnmspf.supabase.co/functions/v1/tradingview-webhook";

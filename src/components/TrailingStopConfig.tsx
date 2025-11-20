@@ -34,7 +34,7 @@ export const TrailingStopConfig = () => {
       if (error) throw error;
       return data as Position[];
     },
-    refetchInterval: 10000,
+    refetchInterval: false, // DESABILITADO
   });
 
   const updateTrailingStop = async (positionId: string, percentage: number) => {

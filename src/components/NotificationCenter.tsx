@@ -32,7 +32,7 @@ export const NotificationCenter = () => {
       if (error) throw error;
       return data as Notification[];
     },
-    refetchInterval: 15000,
+    refetchInterval: false, // DESABILITADO
   });
 
   useEffect(() => {

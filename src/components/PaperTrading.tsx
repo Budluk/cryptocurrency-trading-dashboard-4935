@@ -83,7 +83,7 @@ const PaperTrading = () => {
       if (error) throw error;
       return data as PaperTrade[];
     },
-    refetchInterval: 5000
+    refetchInterval: false, // DESABILITADO
   });
 
   // Create trade mutation

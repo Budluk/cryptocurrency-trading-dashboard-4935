@@ -92,7 +92,7 @@ const CryptoList = () => {
   const { data: cryptos, isLoading } = useQuery({
     queryKey: ['cryptos'],
     queryFn: fetchCryptoData,
-    refetchInterval: 15000, // Atualização mais frequente
+    refetchInterval: 120000, // 2 minutos
   });
 
   if (isLoading) {

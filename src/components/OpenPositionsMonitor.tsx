@@ -44,7 +44,7 @@ export const OpenPositionsMonitor = () => {
       if (error) throw error;
       return data as Position[];
     },
-    refetchInterval: 15000, // Otimizado de 10s para 15s
+    refetchInterval: false, // DESABILITADO
     staleTime: 10000
   });
 

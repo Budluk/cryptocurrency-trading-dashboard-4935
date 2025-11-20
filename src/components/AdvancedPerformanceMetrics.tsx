@@ -80,7 +80,7 @@ export const AdvancedPerformanceMetrics = () => {
         max_drawdown: maxDrawdown,
       } as PositionStats;
     },
-    refetchInterval: 10000,
+    refetchInterval: false, // DESABILITADO
   });
 
   if (!stats) return null;

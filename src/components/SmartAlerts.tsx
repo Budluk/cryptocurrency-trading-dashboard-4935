@@ -59,7 +59,7 @@ const SmartAlerts = () => {
         notifications: item.notifications as any
       })) as AlertConfig[];
     },
-    refetchInterval: 30000
+    refetchInterval: false, // DESABILITADO
   });
 
   // Fetch triggered alerts
@@ -75,7 +75,7 @@ const SmartAlerts = () => {
       if (error) throw error;
       return data as TriggeredAlert[];
     },
-    refetchInterval: 10000
+    refetchInterval: false, // DESABILITADO
   });
 
   // Create alert mutation
