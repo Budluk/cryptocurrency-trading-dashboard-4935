@@ -22,6 +22,10 @@ interface Position {
 }
 
 export const useReversalMonitor = (reversalPatterns: ReversalPattern[] = []) => {
+  // Hook DESABILITADO temporariamente para evitar travamentos
+  return;
+  
+  /* CÓDIGO ORIGINAL DESABILITADO
   const { toast } = useToast();
   const { getPrice } = useRealtimePrice();
   const [lastCheck, setLastCheck] = useState<number>(Date.now());
@@ -132,4 +136,5 @@ export const useReversalMonitor = (reversalPatterns: ReversalPattern[] = []) => 
   }, [reversalPatterns, toast, getPrice, lastCheck]);
 
   return null;
+  */ // FIM DO CÓDIGO DESABILITADO
 };

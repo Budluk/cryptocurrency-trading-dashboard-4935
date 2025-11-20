@@ -16,6 +16,9 @@ export const RealtimePriceProvider: React.FC<{ children: React.ReactNode }> = ({
   const [prices, setPrices] = useState<PriceData>({});
   const [isConnected, setIsConnected] = useState(false);
 
+  // WebSocket DESABILITADO temporariamente para evitar travamentos
+  // Descomente quando necessário
+  /*
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout;
@@ -89,6 +92,7 @@ export const RealtimePriceProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     };
   }, []);
+  */
 
   const getPrice = (symbol: string): number | null => {
     if (prices[symbol]) return prices[symbol];

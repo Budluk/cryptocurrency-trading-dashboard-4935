@@ -3,9 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Hook para sincronizar posições da Bybit automaticamente a cada 30 segundos
+ * Hook DESABILITADO temporariamente - causava travamentos
+ * Use sincronização manual ou Realtime ao invés de polling
  */
 export const useBybitSync = (isEnabled: boolean = true) => {
+  // Hook desabilitado para evitar travamentos
+  return null;
+};
+
+export const useBybitSyncOLD = (isEnabled: boolean = true) => {
   const { toast } = useToast();
 
   useEffect(() => {

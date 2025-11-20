@@ -40,7 +40,7 @@ const CryptoChart = memo(() => {
       setCurrentPrice(Math.round(price));
     };
 
-    const interval = setInterval(generateSignal, 5000);
+    const interval = setInterval(generateSignal, 10000); // Aumentado para 10s
     generateSignal();
 
     return () => clearInterval(interval);
