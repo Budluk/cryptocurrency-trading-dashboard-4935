@@ -1488,22 +1488,22 @@ export const MultiAssetTrader = () => {
       // Buscar top 10 voláteis imediatamente ao iniciar
       fetchTop10VolatileAssets();
       
-      // Atualizar top 10 voláteis a cada 5 minutos
+      // Atualizar top 10 voláteis a cada 10 minutos (reduzido de 5min)
       volatilityInterval = setInterval(() => {
         fetchTop10VolatileAssets();
-      }, 5 * 60 * 1000); // A cada 5 minutos
+      }, 10 * 60 * 1000);
       
-      // Sincronização de saldo/posições a cada 60s
+      // Sincronização de saldo/posições a cada 2 minutos (reduzido de 60s)
       syncInterval = setInterval(() => {
         syncBybitBalance();
         syncOpenPositions();
-      }, 60 * 1000); // A cada 60s
+      }, 2 * 60 * 1000);
       
-      // 🎯 TRAILING STOP: Atualizar a cada 15 segundos (mais frequente que sync)
+      // 🎯 TRAILING STOP: Atualizar a cada 30 segundos (reduzido de 15s)
       if (trailingStopEnabled) {
         trailingInterval = setInterval(() => {
           updateTrailingStops();
-        }, 15 * 1000); // A cada 15s
+        }, 30 * 1000);
       }
     }
 
@@ -1524,12 +1524,12 @@ export const MultiAssetTrader = () => {
       // Executar imediatamente
       analyzeAndTrade();
       
-      // Ciclo principal de trading a cada 45 segundos (otimizado)
+      // Ciclo principal de trading a cada 2 minutos (otimizado para performance)
       interval = setInterval(() => {
         analyzeAndTrade();
-      }, 45 * 1000);
+      }, 2 * 60 * 1000);
 
-      // Atualizar timestamp de atividade a cada 2 minutos
+      // Atualizar timestamp de atividade a cada 5 minutos
       activityInterval = setInterval(async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -1538,7 +1538,7 @@ export const MultiAssetTrader = () => {
           .from('auto_trader_config')
           .update({ last_activity_at: new Date().toISOString() })
           .eq('user_id', activityUserId);
-      }, 2 * 60 * 1000);
+      }, 5 * 60 * 1000);
     }
 
     return () => {

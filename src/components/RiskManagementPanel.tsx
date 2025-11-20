@@ -25,8 +25,9 @@ export const RiskManagementPanel = () => {
 
   useEffect(() => {
     fetchSettings();
-    const interval = setInterval(fetchSettings, 10000);
-    return () => clearInterval(interval);
+    // Interval desabilitado temporariamente para melhorar performance
+    // const interval = setInterval(fetchSettings, 30000); // Aumentado para 30s
+    // return () => clearInterval(interval);
   }, []);
 
   const fetchSettings = async () => {

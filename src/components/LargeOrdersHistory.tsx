@@ -25,8 +25,9 @@ export function LargeOrdersHistory() {
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 10000); // Refresh every 10s
-    return () => clearInterval(interval);
+    // Interval desabilitado temporariamente para melhorar performance
+    // const interval = setInterval(fetchOrders, 30000); // Aumentado para 30s
+    // return () => clearInterval(interval);
   }, []);
 
   const fetchOrders = async () => {

@@ -35,7 +35,8 @@ export const TrailingStopVisual = () => {
     };
 
     fetchPositions();
-    const interval = setInterval(fetchPositions, 3000);
+    // Interval reduzido para 10 segundos
+    const interval = setInterval(fetchPositions, 10000);
     return () => clearInterval(interval);
   }, []);
 

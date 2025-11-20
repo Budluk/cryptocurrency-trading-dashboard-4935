@@ -2,10 +2,15 @@ import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * Hook para atualizar preços de posições abertas em tempo real
- * Busca preços atuais da Bybit a cada 10 segundos
+ * Hook DESABILITADO temporariamente - causava travamentos
+ * Use Realtime Supabase ao invés de polling
  */
 export const usePriceUpdater = () => {
+  // Hook desabilitado para evitar travamentos
+  return null;
+};
+
+export const usePriceUpdaterOLD = () => {
   useEffect(() => {
     let isActive = true;
 
