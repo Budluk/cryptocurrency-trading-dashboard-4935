@@ -176,7 +176,7 @@ export const BybitPositionsPanel = () => {
                 variant={totalPnL >= 0 ? "default" : "destructive"} 
                 className="text-lg px-4 py-2"
               >
-                P&L Total: ${totalPnL.toFixed(2)}
+                P&L Total: ${(totalPnL || 0).toFixed(2)}
               </Badge>
             </>
           )}
@@ -200,8 +200,9 @@ export const BybitPositionsPanel = () => {
       ) : (
         <div className="space-y-3">
           {positions.map((position: any, idx: number) => {
-            const pnl = parseFloat(position.unrealisedPnl || 0);
-            const pnlPercentage = (pnl / parseFloat(position.positionValue || 1)) * 100;
+            const pnl = parseFloat(position.unrealisedPnl || '0') || 0;
+            const positionValue = parseFloat(position.positionValue || '1') || 1;
+            const pnlPercentage = (pnl / positionValue) * 100;
 
             return (
               <div 
@@ -236,22 +237,22 @@ export const BybitPositionsPanel = () => {
                 <div className="grid grid-cols-4 gap-3 mt-3 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground">Entrada</p>
-                    <p className="font-semibold">${parseFloat(position.avgPrice).toFixed(4)}</p>
+                    <p className="font-semibold">${(parseFloat(position.avgPrice) || 0).toFixed(4)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Preço Atual</p>
-                    <p className="font-semibold">${parseFloat(position.markPrice).toFixed(4)}</p>
+                    <p className="font-semibold">${(parseFloat(position.markPrice) || 0).toFixed(4)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Stop Loss</p>
                     <p className="font-semibold">
-                      {position.stopLoss ? `$${parseFloat(position.stopLoss).toFixed(4)}` : 'N/A'}
+                      {position.stopLoss ? `$${(parseFloat(position.stopLoss) || 0).toFixed(4)}` : 'N/A'}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Take Profit</p>
                     <p className="font-semibold">
-                      {position.takeProfit ? `$${parseFloat(position.takeProfit).toFixed(4)}` : 'N/A'}
+                      {position.takeProfit ? `$${(parseFloat(position.takeProfit) || 0).toFixed(4)}` : 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -264,7 +265,7 @@ export const BybitPositionsPanel = () => {
                         pnl > 0 ? 'text-green-500' : 
                         pnl < 0 ? 'text-red-500' : 'text-muted-foreground'
                       }`}>
-                        ${pnl.toFixed(2)}
+                        ${(pnl || 0).toFixed(2)}
                       </p>
                     </div>
                     <div className="text-right">
@@ -273,7 +274,7 @@ export const BybitPositionsPanel = () => {
                         pnlPercentage > 0 ? 'text-green-500' : 
                         pnlPercentage < 0 ? 'text-red-500' : 'text-muted-foreground'
                       }`}>
-                        {pnlPercentage > 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%
+                        {pnlPercentage > 0 ? '+' : ''}{(pnlPercentage || 0).toFixed(2)}%
                       </p>
                     </div>
                   </div>
@@ -312,7 +313,7 @@ export const BybitPositionsPanel = () => {
                       P&L Total: <span className={`font-bold ${
                         totalPnL > 0 ? 'text-green-500' : 'text-red-500'
                       }`}>
-                        ${totalPnL.toFixed(2)}
+                        ${(totalPnL || 0).toFixed(2)}
                       </span>
                     </p>
                   </div>
@@ -332,7 +333,7 @@ export const BybitPositionsPanel = () => {
                         P&L Atual: <span className={`font-bold ${
                           parseFloat(confirmClose.unrealisedPnl) > 0 ? 'text-green-500' : 'text-red-500'
                         }`}>
-                          ${parseFloat(confirmClose.unrealisedPnl || 0).toFixed(2)}
+                          ${(parseFloat(confirmClose.unrealisedPnl) || 0).toFixed(2)}
                         </span>
                       </p>
                     </div>
