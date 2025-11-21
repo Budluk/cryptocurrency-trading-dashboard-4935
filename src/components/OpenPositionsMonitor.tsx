@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,21 +8,21 @@ import { TrendingUp, TrendingDown, X, Target, ShieldAlert, Edit2, Check } from "
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ProgressiveClosureIndicator } from "./ProgressiveClosureIndicator";
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface Position {
   id: string;
   symbol: string;
-  side: string; // BUY ou SELL
+  side: string;
   entry_price: number;
   qty: number;
   stop_loss: number | null;
   take_profit: number | null;
   current_price: number | null;
   unrealized_pnl: number;
-  confidence: number;
+  confidence: number | null;
   opened_at: string;
-  status: string;
-  trailing_stop_percentage?: number | null;
+  trailing_stop_percentage: number | null;
 }
 
 export const OpenPositionsMonitor = () => {
@@ -31,45 +30,8 @@ export const OpenPositionsMonitor = () => {
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
   const [editingStopLoss, setEditingStopLoss] = useState<string | null>(null);
   const [newStopLoss, setNewStopLoss] = useState<string>("");
-
-  const { data: positions, refetch } = useQuery({
-    queryKey: ['open-positions'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'OPEN')
-        .order('opened_at', { ascending: false });
-
-      if (error) throw error;
-      return data as Position[];
-    },
-    refetchInterval: false, // DESABILITADO
-    staleTime: 10000
-  });
-
-  // Realtime updates usando Supabase realtime
-  useEffect(() => {
-    const channel = supabase
-      .channel('positions-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'auto_trader_positions',
-          filter: 'status=eq.OPEN'
-        },
-        () => {
-          refetch();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [refetch]);
+  
+  const { openPositions: positions, refetch } = usePositions();
 
   const updateStopLoss = async (positionId: string) => {
     try {
