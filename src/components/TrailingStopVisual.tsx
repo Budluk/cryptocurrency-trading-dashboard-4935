@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { TrendingUp, TrendingDown, Target, Activity } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface Position {
   id: string;
@@ -19,53 +18,38 @@ interface Position {
 }
 
 export const TrailingStopVisual = () => {
-  const [positions, setPositions] = useState<Position[]>([]);
+  const { openPositions: positions } = usePositions();
 
-  useEffect(() => {
-    const fetchPositions = async () => {
-      const { data } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'OPEN')
-        .order('opened_at', { ascending: false });
-
-      if (data) {
-        setPositions(data as Position[]);
-      }
-    };
-
-    fetchPositions();
-    // Interval DESABILITADO para evitar travamentos
-    // const interval = setInterval(fetchPositions, 10000);
-    // return () => clearInterval(interval);
-  }, []);
-
-  const calculateTrailingStop = (pos: Position) => {
+  const calculateTrailingStop = (pos: any) => {
     if (!pos.trailing_stop_percentage) return null;
     
-    if (pos.side === 'BUY') {
-      return pos.highest_price * (1 - pos.trailing_stop_percentage / 100);
+    const highestPrice = pos.highest_price || pos.current_price;
+    
+    if (pos.side === 'Buy') {
+      return highestPrice * (1 - pos.trailing_stop_percentage / 100);
     } else {
-      return pos.highest_price * (1 + pos.trailing_stop_percentage / 100);
+      return highestPrice * (1 + pos.trailing_stop_percentage / 100);
     }
   };
 
-  const calculateProgress = (pos: Position) => {
+  const calculateProgress = (pos: any) => {
     const trailingStop = calculateTrailingStop(pos);
     if (!trailingStop) return 0;
 
-    if (pos.side === 'BUY') {
-      const range = pos.highest_price - trailingStop;
+    const highestPrice = pos.highest_price || pos.current_price;
+
+    if (pos.side === 'Buy') {
+      const range = highestPrice - trailingStop;
       const current = pos.current_price - trailingStop;
       return (current / range) * 100;
     } else {
-      const range = trailingStop - pos.highest_price;
+      const range = trailingStop - highestPrice;
       const current = trailingStop - pos.current_price;
       return (current / range) * 100;
     }
   };
 
-  if (positions.length === 0) {
+  if (!positions || positions.length === 0) {
     return (
       <Card className="p-6 bg-card/50 backdrop-blur">
         <div className="flex items-center gap-2 mb-4">
@@ -91,13 +75,14 @@ export const TrailingStopVisual = () => {
 
       <div className="space-y-4">
         {positions.map((pos) => {
-          const pnlPercent = pos.side === 'BUY'
-            ? ((pos.current_price - pos.entry_price) / pos.entry_price) * 100
-            : ((pos.entry_price - pos.current_price) / pos.entry_price) * 100;
+          const pnlPercent = pos.side === 'Buy'
+            ? ((pos.current_price! - pos.entry_price) / pos.entry_price) * 100
+            : ((pos.entry_price - pos.current_price!) / pos.entry_price) * 100;
 
           const trailingStop = calculateTrailingStop(pos);
           const progress = calculateProgress(pos);
           const isProfit = pnlPercent > 0;
+          const highestPrice = pos.highest_price || pos.current_price;
 
           return (
             <div key={pos.id} className="p-4 bg-background/50 rounded-lg border border-border/50">
@@ -135,9 +120,9 @@ export const TrailingStopVisual = () => {
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">
-                    {pos.side === 'BUY' ? 'Máximo' : 'Mínimo'}
+                    {pos.side === 'Buy' ? 'Máximo' : 'Mínimo'}
                   </div>
-                  <div className="font-mono text-xs text-primary">${pos.highest_price.toFixed(2)}</div>
+                  <div className="font-mono text-xs text-primary">${(highestPrice || 0).toFixed(2)}</div>
                 </div>
               </div>
 
@@ -152,7 +137,7 @@ export const TrailingStopVisual = () => {
                       <Badge variant="outline" className="text-xs">
                         {pos.trailing_stop_percentage}%
                       </Badge>
-                      {pos.volatility > 0 && (
+                      {pos.volatility && pos.volatility > 0 && (
                         <Badge variant="secondary" className="text-xs">
                           Vol: {pos.volatility.toFixed(1)}%
                         </Badge>
@@ -167,7 +152,7 @@ export const TrailingStopVisual = () => {
                         Stop: ${trailingStop.toFixed(2)}
                       </span>
                       <span className="text-muted-foreground">
-                        Distância: {Math.abs(((pos.current_price - trailingStop) / trailingStop) * 100).toFixed(2)}%
+                        Distância: {Math.abs(((pos.current_price! - trailingStop) / trailingStop) * 100).toFixed(2)}%
                       </span>
                     </div>
                   </div>

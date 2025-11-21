@@ -1,8 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Clock, DollarSign } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface Trade {
   id: string;
@@ -21,27 +20,12 @@ interface Trade {
 }
 
 export const TradeHistory = () => {
-  const { data: trades } = useQuery({
-    queryKey: ['trade-history'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'CLOSED')
-        .order('closed_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      return data.map((t: any) => ({
-        ...t,
-        side: t.side,
-        exit_price: t.exit_price,
-        leverage: t.leverage || 1,
-        realized_pnl: t.pnl || 0,
-      })) as Trade[];
-    },
-    refetchInterval: false, // DESABILITADO
-  });
+  const { closedPositions, isLoading } = usePositions();
+  
+  const trades = closedPositions.slice(0, 50).map((t: any) => ({
+    ...t,
+    quantity: t.qty,
+  })) as Trade[];
 
   const getPnLColor = (pnl: number) => {
     return pnl > 0 ? 'text-green-500' : pnl < 0 ? 'text-red-500' : 'text-muted-foreground';
@@ -58,10 +42,10 @@ export const TradeHistory = () => {
     return `${minutes}m`;
   };
 
-  const totalPnL = trades?.reduce((sum, trade) => sum + (trade.realized_pnl || 0), 0) || 0;
-  const winningTrades = trades?.filter(t => (t.realized_pnl || 0) > 0).length || 0;
-  const losingTrades = trades?.filter(t => (t.realized_pnl || 0) < 0).length || 0;
-  const winRate = trades?.length ? (winningTrades / trades.length) * 100 : 0;
+  const totalPnL = trades.reduce((sum, trade) => sum + (trade.realized_pnl || 0), 0);
+  const winningTrades = trades.filter(t => (t.realized_pnl || 0) > 0).length;
+  const losingTrades = trades.filter(t => (t.realized_pnl || 0) < 0).length;
+  const winRate = trades.length ? (winningTrades / trades.length) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -69,7 +53,7 @@ export const TradeHistory = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 bg-background/50">
           <div className="text-sm text-muted-foreground mb-1">Total de Trades</div>
-          <div className="text-2xl font-bold">{trades?.length || 0}</div>
+          <div className="text-2xl font-bold">{trades.length}</div>
         </Card>
         
         <Card className="p-4 bg-background/50">
@@ -89,8 +73,8 @@ export const TradeHistory = () => {
         
         <Card className="p-4 bg-background/50">
           <div className="text-sm text-muted-foreground mb-1">Média P&L</div>
-          <div className={`text-2xl font-bold ${getPnLColor(totalPnL / (trades?.length || 1))}`}>
-            ${(totalPnL / (trades?.length || 1)).toFixed(2)}
+          <div className={`text-2xl font-bold ${getPnLColor(totalPnL / (trades.length || 1))}`}>
+            ${(totalPnL / (trades.length || 1)).toFixed(2)}
           </div>
         </Card>
       </div>
@@ -99,7 +83,9 @@ export const TradeHistory = () => {
       <Card className="p-6">
         <h3 className="text-xl font-bold mb-4">Histórico de Operações</h3>
         
-        {!trades || trades.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Carregando...</div>
+        ) : trades.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             Nenhuma operação fechada ainda
           </div>
@@ -107,7 +93,7 @@ export const TradeHistory = () => {
           <div className="space-y-3">
             {trades.map((trade) => {
               const pnlPercentage = trade.exit_price && trade.entry_price
-                ? ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100 * (trade.side === 'BUY' ? 1 : -1)
+                ? ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100 * (trade.side === 'Buy' ? 1 : -1)
                 : 0;
 
               return (
@@ -118,9 +104,9 @@ export const TradeHistory = () => {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-full ${
-                        trade.side === 'BUY' ? 'bg-green-500/20' : 'bg-red-500/20'
+                        trade.side === 'Buy' ? 'bg-green-500/20' : 'bg-red-500/20'
                       }`}>
-                        {trade.side === 'BUY' ? (
+                        {trade.side === 'Buy' ? (
                           <TrendingUp className="w-4 h-4 text-green-500" />
                         ) : (
                           <TrendingDown className="w-4 h-4 text-red-500" />
@@ -129,7 +115,7 @@ export const TradeHistory = () => {
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="font-semibold">{trade.symbol}</h4>
-                          <Badge variant={trade.side === 'BUY' ? 'default' : 'destructive'} className="text-xs">
+                          <Badge variant={trade.side === 'Buy' ? 'default' : 'destructive'} className="text-xs">
                             {trade.side}
                           </Badge>
                           {trade.leverage && (

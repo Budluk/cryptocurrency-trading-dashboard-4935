@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUpIcon, TrendingDownIcon, ActivityIcon, TargetIcon, ShieldIcon, DollarSignIcon, PercentIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts';
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface PerformanceData {
   total_trades: number;
@@ -70,42 +71,34 @@ const PerformanceDashboard = () => {
     staleTime: 30000
   });
 
-  // Buscar histórico de trades do auto_trader_positions para equity curve
-  const { data: tradeHistory } = useQuery({
-    queryKey: ['trade-history-equity', period],
-    queryFn: async () => {
-      const endDate = new Date();
-      const startDate = new Date();
-      
-      switch (period) {
-        case '1d':
-          startDate.setDate(endDate.getDate() - 1);
-          break;
-        case '7d':
-          startDate.setDate(endDate.getDate() - 7);
-          break;
-        case '30d':
-          startDate.setDate(endDate.getDate() - 30);
-          break;
-        case '90d':
-          startDate.setDate(endDate.getDate() - 90);
-          break;
-      }
+  // Buscar histórico de trades do contexto filtrado por período
+  const { closedPositions: allClosedTrades } = usePositions();
+  
+  const tradeHistory = useMemo(() => {
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    switch (period) {
+      case '1d':
+        startDate.setDate(endDate.getDate() - 1);
+        break;
+      case '7d':
+        startDate.setDate(endDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(endDate.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(endDate.getDate() - 90);
+        break;
+    }
 
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'CLOSED')
-        .gte('closed_at', startDate.toISOString())
-        .lte('closed_at', endDate.toISOString())
-        .order('closed_at', { ascending: true });
-
-      if (error) throw error;
-      return data;
-    },
-    refetchInterval: 60000,
-    staleTime: 30000
-  });
+    return allClosedTrades.filter(trade => {
+      if (!trade.closed_at) return false;
+      const closedDate = new Date(trade.closed_at);
+      return closedDate >= startDate && closedDate <= endDate;
+    });
+  }, [allClosedTrades, period]);
 
   // Calcular equity curve (saldo cumulativo) - memoizado
   const equityCurve = useMemo(() => {

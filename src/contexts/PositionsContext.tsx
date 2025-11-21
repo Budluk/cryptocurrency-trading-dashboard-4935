@@ -19,6 +19,9 @@ interface Position {
   trailing_stop_percentage: number | null;
   close_reason: string | null;
   exit_price: number | null;
+  leverage: number | null;
+  highest_price: number | null;
+  volatility: number | null;
 }
 
 interface PositionsContextType {
@@ -46,13 +49,13 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
 
       if (openError) throw openError;
 
-      // Buscar últimas 20 posições fechadas
+      // Buscar últimas 100 posições fechadas (aumentado para analytics)
       const { data: closed, error: closedError } = await supabase
         .from('auto_trader_positions')
         .select('*')
         .eq('status', 'CLOSED')
         .order('closed_at', { ascending: false })
-        .limit(20);
+        .limit(100);
 
       if (closedError) throw closedError;
 

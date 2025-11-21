@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
 import { Settings, TrendingUp } from "lucide-react";
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface Position {
   id: string;
@@ -22,20 +22,7 @@ export const TrailingStopConfig = () => {
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
   const [trailingStopPct, setTrailingStopPct] = useState(1.5);
 
-  const { data: positions, refetch } = useQuery({
-    queryKey: ['trailing-stop-positions'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('id, symbol, side, trailing_stop_percentage, unrealized_pnl')
-        .eq('status', 'OPEN')
-        .order('opened_at', { ascending: false });
-
-      if (error) throw error;
-      return data as Position[];
-    },
-    refetchInterval: false, // DESABILITADO
-  });
+  const { openPositions: positions, refetch } = usePositions();
 
   const updateTrailingStop = async (positionId: string, percentage: number) => {
     try {
