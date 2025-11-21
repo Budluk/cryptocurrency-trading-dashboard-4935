@@ -81,9 +81,10 @@ const AdvancedAISignals = () => {
       console.log('AI Analysis result:', data);
       return data as AIAnalysisResult;
     },
-    refetchInterval: 60000, // Refetch every minute
+    refetchInterval: false, // DESABILITADO - use atualização manual
     retry: 2,
-    retryDelay: 3000
+    retryDelay: 3000,
+    enabled: false // Só executa quando manualmente solicitado
   });
 
   const handleManualRefresh = async () => {

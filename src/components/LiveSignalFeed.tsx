@@ -143,26 +143,26 @@ const LiveSignalFeed = memo(() => {
     // Adiciona sinal inicial
     setSignals([generateLiveSignal()]);
 
-    const interval = setInterval(() => {
-      setSignals(prev => {
-        const newSignal = generateLiveSignal();
-        const updated = [newSignal, ...prev.slice(0, 4)]; // Mantém últimos 5 sinais para melhor performance
-        
-        // Atualiza status dos sinais antigos de forma otimizada
-        return updated.map(signal => {
-          const age = Date.now() - signal.timestamp;
-          if (age > 120000) { // 2 minutos para day trading
-            return { ...signal, status: 'EXPIRED' as const };
-          } else if (age > 30000 && Math.random() > 0.7) { // 30 segundos + chance
-            return { ...signal, status: 'TRIGGERED' as const };
-          }
-          return signal;
-        });
-      });
-      setLastUpdateTime(Date.now());
-    }, 8000); // Sinais menos frequentes para maior precisão
+    // DESABILITADO temporariamente para evitar travamentos
+    // const interval = setInterval(() => {
+    //   setSignals(prev => {
+    //     const newSignal = generateLiveSignal();
+    //     const updated = [newSignal, ...prev.slice(0, 4)];
+    //     
+    //     return updated.map(signal => {
+    //       const age = Date.now() - signal.timestamp;
+    //       if (age > 120000) {
+    //         return { ...signal, status: 'EXPIRED' as const };
+    //       } else if (age > 30000 && Math.random() > 0.7) {
+    //         return { ...signal, status: 'TRIGGERED' as const };
+    //       }
+    //       return signal;
+    //     });
+    //   });
+    //   setLastUpdateTime(Date.now());
+    // }, 8000);
 
-    return () => clearInterval(interval);
+    // return () => clearInterval(interval);
   }, [generateLiveSignal]);
 
   const getSignalIcon = useMemo(() => (action: string) => {
