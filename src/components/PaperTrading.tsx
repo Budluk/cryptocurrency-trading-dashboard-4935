@@ -48,12 +48,12 @@ const PaperTrading = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Simular preço atual
+  // Simular preço atual - DESABILITADO para evitar travamentos
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentPrice(prev => prev + (Math.random() - 0.5) * 20);
-    }, 3000);
-    return () => clearInterval(interval);
+    // const interval = setInterval(() => {
+    //   setCurrentPrice(prev => prev + (Math.random() - 0.5) * 20);
+    // }, 3000);
+    // return () => clearInterval(interval);
   }, []);
 
   // Fetch demo account
