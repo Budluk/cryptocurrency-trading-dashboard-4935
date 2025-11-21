@@ -1,48 +1,39 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { usePositions } from "@/contexts/PositionsContext";
 
 const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
 
 export const AdvancedAnalytics = () => {
   const [period, setPeriod] = useState('30d');
+  const { closedPositions: allTrades } = usePositions();
 
-  const { data: trades } = useQuery({
-    queryKey: ['analytics-trades', period],
-    queryFn: async () => {
-      const endDate = new Date();
-      const startDate = new Date();
-      
-      switch (period) {
-        case '7d':
-          startDate.setDate(endDate.getDate() - 7);
-          break;
-        case '30d':
-          startDate.setDate(endDate.getDate() - 30);
-          break;
-        case '90d':
-          startDate.setDate(endDate.getDate() - 90);
-          break;
-      }
+  const trades = useMemo(() => {
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    switch (period) {
+      case '7d':
+        startDate.setDate(endDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(endDate.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(endDate.getDate() - 90);
+        break;
+    }
 
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'CLOSED')
-        .gte('closed_at', startDate.toISOString())
-        .order('closed_at', { ascending: true });
-
-      if (error) throw error;
-      return data;
-    },
-    refetchInterval: 60000,
-    staleTime: 30000
-  });
+    return allTrades.filter(trade => {
+      if (!trade.closed_at) return false;
+      const closedDate = new Date(trade.closed_at);
+      return closedDate >= startDate && closedDate <= endDate;
+    });
+  }, [allTrades, period]);
 
   // 1. Performance por Símbolo - memoizado
   const symbolPerformance = useMemo(() => {

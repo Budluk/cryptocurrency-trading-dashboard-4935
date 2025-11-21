@@ -6,6 +6,7 @@ import { TrendingUp, Activity, Zap, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface VolatilityData {
   symbol: string;
@@ -21,20 +22,8 @@ export const VolatilityDashboard = () => {
   const [volatilityData, setVolatilityData] = useState<VolatilityData[]>([]);
   const [highVolatilityAssets, setHighVolatilityAssets] = useState<VolatilityData[]>([]);
 
-  // Buscar posições abertas para calcular volatilidade
-  const { data: positions } = useQuery({
-    queryKey: ['volatility-positions'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('symbol, entry_price, current_price, opened_at')
-        .eq('status', 'OPEN');
-
-      if (error) throw error;
-      return data;
-    },
-    refetchInterval: false, // DESABILITADO
-  });
+  // Usar posições abertas do contexto
+  const { openPositions: positions } = usePositions();
 
   // Buscar dados históricos de mercado para calcular volatilidade
   const { data: marketData } = useQuery({

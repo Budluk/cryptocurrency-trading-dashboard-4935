@@ -1,9 +1,9 @@
+import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { TrendingUp, TrendingDown, Target, AlertTriangle, BarChart3, DollarSign } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface PositionStats {
   total_trades: number;
@@ -20,68 +20,57 @@ interface PositionStats {
 }
 
 export const AdvancedPerformanceMetrics = () => {
-  const { data: stats } = useQuery({
-    queryKey: ['performance-metrics'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('realized_pnl, unrealized_pnl, status')
-        .or('status.eq.CLOSED,status.eq.OPEN');
+  const { closedPositions } = usePositions();
 
-      if (error) throw error;
+  const stats = useMemo(() => {
+    const winningTrades = closedPositions.filter(t => (t.realized_pnl || 0) > 0);
+    const losingTrades = closedPositions.filter(t => (t.realized_pnl || 0) < 0);
 
-      const closedTrades = data.filter(t => t.status === 'CLOSED');
-      const winningTrades = closedTrades.filter(t => (t.realized_pnl || 0) > 0);
-      const losingTrades = closedTrades.filter(t => (t.realized_pnl || 0) < 0);
+    const totalPnl = closedPositions.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
+    const grossProfit = winningTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
+    const grossLoss = Math.abs(losingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0));
 
-      const totalPnl = closedTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
-      const grossProfit = winningTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
-      const grossLoss = Math.abs(losingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0));
+    const avgWin = winningTrades.length > 0 ? grossProfit / winningTrades.length : 0;
+    const avgLoss = losingTrades.length > 0 ? grossLoss / losingTrades.length : 0;
 
-      const avgWin = winningTrades.length > 0 ? grossProfit / winningTrades.length : 0;
-      const avgLoss = losingTrades.length > 0 ? grossLoss / losingTrades.length : 0;
+    const largestWin = winningTrades.length > 0 
+      ? Math.max(...winningTrades.map(t => t.realized_pnl || 0))
+      : 0;
+    const largestLoss = losingTrades.length > 0
+      ? Math.min(...losingTrades.map(t => t.realized_pnl || 0))
+      : 0;
 
-      const largestWin = winningTrades.length > 0 
-        ? Math.max(...winningTrades.map(t => t.realized_pnl || 0))
-        : 0;
-      const largestLoss = losingTrades.length > 0
-        ? Math.min(...losingTrades.map(t => t.realized_pnl || 0))
-        : 0;
+    const winRate = closedPositions.length > 0 
+      ? (winningTrades.length / closedPositions.length) * 100
+      : 0;
 
-      const winRate = closedTrades.length > 0 
-        ? (winningTrades.length / closedTrades.length) * 100
-        : 0;
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : 0;
 
-      const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : 0;
+    let peak = 0;
+    let maxDrawdown = 0;
+    let runningPnl = 0;
+    
+    closedPositions.forEach(trade => {
+      runningPnl += trade.realized_pnl || 0;
+      if (runningPnl > peak) peak = runningPnl;
+      const drawdown = peak - runningPnl;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    });
 
-      // Calcular max drawdown
-      let peak = 0;
-      let maxDrawdown = 0;
-      let runningPnl = 0;
-      
-      closedTrades.forEach(trade => {
-        runningPnl += trade.realized_pnl || 0;
-        if (runningPnl > peak) peak = runningPnl;
-        const drawdown = peak - runningPnl;
-        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-      });
-
-      return {
-        total_trades: closedTrades.length,
-        winning_trades: winningTrades.length,
-        losing_trades: losingTrades.length,
-        total_pnl: totalPnl,
-        avg_win: avgWin,
-        avg_loss: avgLoss,
-        largest_win: largestWin,
-        largest_loss: largestLoss,
-        win_rate: winRate,
-        profit_factor: profitFactor,
-        max_drawdown: maxDrawdown,
-      } as PositionStats;
-    },
-    refetchInterval: false, // DESABILITADO
-  });
+    return {
+      total_trades: closedPositions.length,
+      winning_trades: winningTrades.length,
+      losing_trades: losingTrades.length,
+      total_pnl: totalPnl,
+      avg_win: avgWin,
+      avg_loss: avgLoss,
+      largest_win: largestWin,
+      largest_loss: largestLoss,
+      win_rate: winRate,
+      profit_factor: profitFactor,
+      max_drawdown: maxDrawdown,
+    };
+  }, [closedPositions]);
 
   if (!stats) return null;
 

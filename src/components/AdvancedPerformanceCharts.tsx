@@ -1,8 +1,7 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { usePositions } from "@/contexts/PositionsContext";
 
 interface TradeData {
   id: string;
@@ -15,23 +14,7 @@ interface TradeData {
 }
 
 export const AdvancedPerformanceCharts = () => {
-  const { data: trades } = useQuery({
-    queryKey: ['closed-trades'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'CLOSED')
-        .not('realized_pnl', 'is', null)
-        .order('closed_at', { ascending: true })
-        .limit(200);
-
-      if (error) throw error;
-      return data as TradeData[];
-    },
-    refetchInterval: 60000,
-    staleTime: 30000
-  });
+  const { closedPositions: trades } = usePositions();
 
   // Equity Curve - P&L cumulativo ao longo do tempo
   const equityCurveData = trades?.reduce((acc, trade, index) => {

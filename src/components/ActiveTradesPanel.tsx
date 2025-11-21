@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useRealtimePrice } from "@/hooks/useRealtimePrice";
+import { usePositions } from "@/contexts/PositionsContext";
 
 export const ActiveTradesPanel = () => {
   const { toast } = useToast();
@@ -183,31 +183,7 @@ export const ActiveTradesPanel = () => {
     syncBybitPositions();
   }, []);
 
-  const { data: positions, refetch } = useQuery({
-    queryKey: ['active-trades-panel'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("Você precisa estar logado para ver posições ativas");
-      }
-
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'OPEN')
-        .eq('user_id', user.id)
-        .order('opened_at', { ascending: false });
-
-      if (error) {
-        console.error('Erro ao carregar posições:', error);
-        throw error;
-      }
-      
-      console.log('📊 Posições abertas carregadas:', data?.length || 0);
-      return data;
-    },
-    refetchInterval: false, // DESABILITADO - use botão Sincronizar manualmente
-  });
+  const { openPositions: positions, refetch } = usePositions();
 
   const closePosition = async (positionId: string, symbol: string) => {
     try {
@@ -366,7 +342,7 @@ export const ActiveTradesPanel = () => {
                   
                   <div className="flex items-center gap-2">
                     <Badge variant={position.side === 'Buy' ? 'default' : 'destructive'}>
-                      {position.side} {position.leverage}x
+                      {position.side} {position.leverage || 1}x
                     </Badge>
                     <Button
                       size="sm"
