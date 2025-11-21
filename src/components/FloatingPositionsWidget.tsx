@@ -1,68 +1,20 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, TrendingDown, Minimize2, Maximize2, Activity, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-
-interface Position {
-  id: string;
-  symbol: string;
-  side: string; // BUY ou SELL
-  entry_price: number;
-  qty: number;
-  current_price: number | null;
-  unrealized_pnl: number;
-  opened_at: string;
-  stop_loss: number | null;
-  take_profit: number | null;
-}
+import { usePositions } from "@/contexts/PositionsContext";
 
 export const FloatingPositionsWidget = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const { toast } = useToast();
+  const { openPositions, refetch } = usePositions();
 
-  const { data: positions, refetch } = useQuery({
-    queryKey: ['floating-positions'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('auto_trader_positions')
-        .select('*')
-        .eq('status', 'OPEN')
-        .order('opened_at', { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
-      return data as Position[];
-    },
-    refetchInterval: false, // DESABILITADO
-  });
-
-  // Realtime updates
-  useEffect(() => {
-    const channel = supabase
-      .channel('floating-positions')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'auto_trader_positions',
-          filter: 'status=eq.OPEN'
-        },
-        () => {
-          refetch();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [refetch]);
+  // Limita a 5 posições mais recentes
+  const positions = openPositions.slice(0, 5);
 
   const closePosition = async (positionId: string, symbol: string) => {
     try {

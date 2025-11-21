@@ -1,57 +1,45 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, DollarSign, Calendar } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { usePositions } from "@/contexts/PositionsContext";
 
 export const DailyPnLSummary = () => {
-  const { data: pnlData } = useQuery({
-    queryKey: ['daily-pnl'],
-    queryFn: async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const { data: closedToday, error: closedError } = await supabase
-        .from('auto_trader_positions')
-        .select('realized_pnl')
-        .eq('status', 'CLOSED')
-        .gte('closed_at', today.toISOString());
+  const { openPositions, closedPositions } = usePositions();
 
-      const { data: openPositions, error: openError } = await supabase
-        .from('auto_trader_positions')
-        .select('unrealized_pnl, realized_pnl')
-        .eq('status', 'OPEN');
+  const pnlData = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      if (closedError || openError) throw closedError || openError;
+    // Posições fechadas hoje
+    const closedToday = closedPositions.filter(p => 
+      p.closed_at && new Date(p.closed_at) >= today
+    );
 
-      const dailyRealized = closedToday?.reduce((sum, p) => sum + (p.realized_pnl || 0), 0) || 0;
-      const currentUnrealized = openPositions?.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0) || 0;
-      const partialRealized = openPositions?.reduce((sum, p) => sum + (p.realized_pnl || 0), 0) || 0;
+    const dailyRealized = closedToday.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
+    const currentUnrealized = openPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+    const partialRealized = openPositions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
 
-      // P&L Total de Hoje (Realizados + Não Realizados)
-      const dailyTotal = dailyRealized + partialRealized + currentUnrealized;
+    // P&L Total de Hoje
+    const dailyTotal = dailyRealized + partialRealized + currentUnrealized;
 
-      // P&L Total (últimos 30 dias)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // P&L Total (últimos 30 dias)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      const { data: last30Days } = await supabase
-        .from('auto_trader_positions')
-        .select('realized_pnl')
-        .eq('status', 'CLOSED')
-        .gte('closed_at', thirtyDaysAgo.toISOString());
+    const last30Days = closedPositions.filter(p => 
+      p.closed_at && new Date(p.closed_at) >= thirtyDaysAgo
+    );
 
-      const totalRealized = last30Days?.reduce((sum, p) => sum + (p.realized_pnl || 0), 0) || 0;
+    const totalRealized = last30Days.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
 
-      return {
-        dailyRealized,
-        dailyTotal,
-        currentUnrealized,
-        totalRealized: totalRealized + currentUnrealized,
-      };
-    },
-    refetchInterval: false, // DESABILITADO - use botão refresh manual
-  });
+    return {
+      dailyRealized,
+      dailyTotal,
+      currentUnrealized,
+      totalRealized: totalRealized + currentUnrealized,
+    };
+  }, [openPositions, closedPositions]);
 
   const getDailyColor = (value: number) => {
     return value > 0 ? 'text-green-500' : value < 0 ? 'text-red-500' : 'text-muted-foreground';
