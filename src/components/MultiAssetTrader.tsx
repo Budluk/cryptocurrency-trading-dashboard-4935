@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { usePositions } from "@/contexts/PositionsContext";
 
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -71,25 +72,17 @@ export const MultiAssetTrader = () => {
   const [winningPatterns, setWinningPatterns] = useState<any[]>([]);
   const [currentLeverage, setCurrentLeverage] = useState(10);
 
-  // Calcular win rate histórico
+  const { openPositions, closedPositions } = usePositions();
+  
+  // Calcular win rate histórico usando closedPositions do contexto
   useEffect(() => {
-    const fetchWinRate = async () => {
-      const { data } = await supabase
-        .from('auto_trader_positions')
-        .select('realized_pnl')
-        .eq('status', 'CLOSED')
-        .order('closed_at', { ascending: false })
-        .limit(20);
-
-      if (data && data.length > 0) {
-        const wins = data.filter(t => (t.realized_pnl || 0) > 0).length;
-        const winRate = (wins / data.length) * 100;
-        setHistoricalWinRate(winRate);
-      }
-    };
-
-    fetchWinRate();
-  }, [cycleCount]);
+    if (closedPositions.length > 0) {
+      const recent20 = closedPositions.slice(0, 20);
+      const wins = recent20.filter(t => (t.realized_pnl || 0) > 0).length;
+      const rate = (wins / recent20.length) * 100;
+      setHistoricalWinRate(rate);
+    }
+  }, [closedPositions]);
 
   // 💾 RESTAURAR ESTADO AUTOMATICAMENTE AO CARREGAR
   useEffect(() => {

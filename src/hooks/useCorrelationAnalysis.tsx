@@ -1,14 +1,4 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-
-interface Position {
-  symbol: string;
-  side: string;
-}
-
-interface CorrelationData {
-  [key: string]: number; // symbol pair -> correlation coefficient
-}
+import { usePositions } from "@/contexts/PositionsContext";
 
 // Pares de ativos conhecidos com alta correlação (>0.7)
 const HIGH_CORRELATION_PAIRS: { [key: string]: string[] } = {
@@ -22,42 +12,7 @@ const HIGH_CORRELATION_PAIRS: { [key: string]: string[] } = {
 };
 
 export const useCorrelationAnalysis = () => {
-  const [openPositions, setOpenPositions] = useState<Position[]>([]);
-  const [correlationMatrix, setCorrelationMatrix] = useState<CorrelationData>({});
-
-  useEffect(() => {
-    loadOpenPositions();
-    
-    const channel = supabase
-      .channel('correlation-positions')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'auto_trader_positions',
-        },
-        () => {
-          loadOpenPositions();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const loadOpenPositions = async () => {
-    const { data } = await supabase
-      .from('auto_trader_positions')
-      .select('symbol, side')
-      .eq('status', 'OPEN');
-
-    if (data) {
-      setOpenPositions(data);
-    }
-  };
+  const { openPositions } = usePositions();
 
   const getBaseAsset = (symbol: string): string => {
     // Remove /USD, /USDT, USDT suffix
