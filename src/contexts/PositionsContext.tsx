@@ -22,6 +22,8 @@ interface Position {
   leverage: number | null;
   highest_price: number | null;
   volatility: number | null;
+  partial_tp_executed: boolean | null;
+  exchange_order_id: string | null;
 }
 
 interface PositionsContextType {

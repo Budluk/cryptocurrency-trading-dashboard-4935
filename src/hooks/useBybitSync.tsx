@@ -3,15 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Hook DESABILITADO temporariamente - causava travamentos
- * Use sincronização manual ou Realtime ao invés de polling
+ * Sincronização otimizada com Bybit usando intervalo maior
  */
 export const useBybitSync = (isEnabled: boolean = true) => {
-  // Hook desabilitado para evitar travamentos
-  return null;
-};
-
-export const useBybitSyncOLD = (isEnabled: boolean = true) => {
   const { toast } = useToast();
 
   useEffect(() => {
@@ -155,15 +149,15 @@ export const useBybitSyncOLD = (isEnabled: boolean = true) => {
       }
     };
 
-    // Esperar 10 segundos antes da primeira execução
+    // Esperar 30 segundos antes da primeira execução
     const initialTimeout = setTimeout(() => {
       if (isActive) syncPositions();
-    }, 10000);
+    }, 30000);
     
-    // Depois executar a cada 60 segundos (aumentado para reduzir carga)
+    // Depois executar a cada 2 minutos para reduzir carga
     const interval = setInterval(() => {
       if (isActive) syncPositions();
-    }, 60000);
+    }, 120000);
 
     return () => {
       isActive = false;

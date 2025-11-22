@@ -1,81 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimePrice } from "./useRealtimePrice";
-
-interface Position {
-  id: string;
-  symbol: string;
-  side: string; // 'BUY' ou 'SELL'
-  entry_price: number;
-  qty: number;
-  stop_loss: number | null;
-  take_profit: number | null;
-  current_price: number | null;
-  highest_price: number | null;
-  unrealized_pnl: number;
-  realized_pnl: number | null;
-  trailing_stop_percentage: number | null;
-  partial_tp_executed: boolean | null;
-  status: string;
-  exchange_order_id: string | null;
-}
+import { usePositions } from "@/contexts/PositionsContext";
 
 export const usePositionMonitor = (reversalPatterns: any[] = []) => {
-  // Hook DESABILITADO temporariamente para evitar travamentos
-  // Ative apenas quando necessário para trading ativo
-  return;
-  
-  /* CÓDIGO ORIGINAL DESABILITADO
   const { toast } = useToast();
   const { getPrice } = useRealtimePrice();
-  const [lastPriceUpdate, setLastPriceUpdate] = useState<number>(Date.now());
+  const { openPositions } = usePositions();
 
   useEffect(() => {
+    // Usar as posições do contexto ao invés de buscar diretamente
+    if (!openPositions || openPositions.length === 0) return;
+
     const monitorPositions = async () => {
       try {
-        const { data: positions, error } = await supabase
-          .from('auto_trader_positions')
-          .select('*')
-          .eq('status', 'OPEN');
-
-        if (error) throw error;
-        if (!positions || positions.length === 0) return;
-
-        // Atualizar preços em tempo real antes de processar posições
-        const now = Date.now();
-        if (now - lastPriceUpdate > 5000) { // Atualizar a cada 5 segundos
-          for (const position of positions as Position[]) {
-            const symbol = position.symbol.replace('/', '').replace('USD', 'USDT');
-            const realtimePrice = getPrice(symbol);
-            
-            if (realtimePrice && realtimePrice !== position.current_price) {
-              // Calcular P&L atualizado
-              const unrealizedPnl = position.side === 'BUY'
-                ? (realtimePrice - position.entry_price) * position.qty
-                : (position.entry_price - realtimePrice) * position.qty;
-
-              await supabase
-                .from('auto_trader_positions')
-                .update({
-                  current_price: realtimePrice,
-                  unrealized_pnl: unrealizedPnl,
-                })
-                .eq('id', position.id);
-            }
-          }
-          setLastPriceUpdate(now);
-        }
-
-        // Recarregar posições com preços atualizados
-        const { data: updatedPositions } = await supabase
-          .from('auto_trader_positions')
-          .select('*')
-          .eq('status', 'OPEN');
-
-        if (!updatedPositions) return;
-
-        for (const position of updatedPositions as Position[]) {
+        for (const position of openPositions) {
           if (!position.current_price) continue;
 
           const { 
@@ -195,145 +135,6 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
             }
           }
 
-          // 🎯 FECHAMENTO PARCIAL PROGRESSIVO
-          const pnlPercent = side === 'BUY' 
-            ? ((current_price - entry_price) / entry_price) * 100
-            : ((entry_price - current_price) / entry_price) * 100;
-
-          // Calcular quantidade reduzida (detectar fechamentos anteriores)
-          const qtyReduced = position.qty < entry_price * 0.75; // Se qty é menor que esperado, já houve fechamento
-
-          // 🎯 TAKE PROFIT PARCIAL AUTOMÁTICO - 50% em +2% de lucro
-          const partialTpTriggered = position.partial_tp_executed || false;
-          
-          if (!partialTpTriggered && pnlPercent >= 2.0) {
-            // Fechar 50% da posição
-            const partialQty = qty * 0.5;
-            
-            try {
-              // Fechar 50% via Bybit
-              const { data: closeResult, error: closeError } = await supabase.functions.invoke('bybit-trading', {
-                body: {
-                  action: 'close_position',
-                  isTestnet: false,
-                  params: {
-                    category: 'linear',
-                    symbol: position.symbol.replace('/', ''),
-                    side: side === 'BUY' ? 'Sell' : 'Buy',
-                    qty: partialQty.toString(),
-                    orderType: 'Market',
-                    positionIdx: 0
-                  }
-                }
-              });
-
-              if (!closeError && closeResult?.success) {
-                // Atualizar posição no banco
-                const partialPnl = side === 'BUY' 
-                  ? (current_price - entry_price) * partialQty
-                  : (entry_price - current_price) * partialQty;
-
-                await supabase
-                  .from('auto_trader_positions')
-                  .update({
-                    qty: qty - partialQty,
-                    partial_tp_executed: true,
-                    realized_pnl: (position.realized_pnl || 0) + partialPnl,
-                    unrealized_pnl: position.unrealized_pnl - partialPnl,
-                    trailing_stop_percentage: 1.0 // Trailing mais agressivo após parcial
-                  })
-                  .eq('id', id);
-
-                console.log(`💰 ${position.symbol}: Take Profit Parcial executado! 50% fechado em +${pnlPercent.toFixed(2)}% = $${partialPnl.toFixed(2)}`);
-                
-                toast({
-                  title: "Take Profit Parcial! 🎯",
-                  description: `${position.symbol}: 50% fechado em +${pnlPercent.toFixed(2)}% (+$${partialPnl.toFixed(2)})`,
-                });
-              }
-            } catch (error) {
-              console.error('Erro no take profit parcial:', error);
-            }
-          }
-
-          // 📊 PRIMEIRO FECHAMENTO: 25% em +1% de lucro
-          if (!shouldClose && pnlPercent >= 1.0 && pnlPercent < 1.95 && qty > 0.003) {
-            // Verificar se ainda tem quantidade suficiente (não fechou ainda)
-            console.log(`🎯 ${position.symbol}: Nível 1 (+${pnlPercent.toFixed(2)}%) - Fechando 25%`);
-            
-            const qtyToClose = qty * 0.25;
-            const remainingQty = qty - qtyToClose;
-            const partialPnl = side === 'BUY'
-              ? (current_price - entry_price) * qtyToClose
-              : (entry_price - current_price) * qtyToClose;
-
-            await supabase
-              .from('auto_trader_positions')
-              .update({
-                qty: remainingQty,
-                realized_pnl: (position.realized_pnl || 0) + partialPnl,
-              })
-              .eq('id', id);
-
-            toast({
-              title: "🎯 Fechamento 1/3: +1%",
-              description: `${position.symbol}: 25% fechado | P&L: +$${partialPnl.toFixed(2)} | Restante: ${(remainingQty / qty * 100).toFixed(0)}%`,
-            });
-
-            // Log
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase.from('auto_trader_logs').insert({
-                user_id: user.id,
-                log_type: 'PARTIAL_TP',
-                position_id: id,
-                symbol: position.symbol,
-                message: `Parcial 1/3: 25% fechado em +${pnlPercent.toFixed(2)}%`,
-                metadata: { level: 1, pnl: partialPnl, remaining_qty: remainingQty },
-              });
-            }
-          }
-
-          // 📊 SEGUNDO FECHAMENTO: 25% em +2% de lucro e MOVE STOP PARA BREAKEVEN
-          if (!shouldClose && pnlPercent >= 2.0 && pnlPercent < 2.95 && qty > 0.002) {
-            console.log(`🎯 ${position.symbol}: Nível 2 (+${pnlPercent.toFixed(2)}%) - Fechando 25% e movendo stop para breakeven`);
-            
-            const qtyToClose = qty * 0.333; // 25% do total original (≈33% do que restou)
-            const remainingQty = qty - qtyToClose;
-            const partialPnl = side === 'BUY'
-              ? (current_price - entry_price) * qtyToClose
-              : (entry_price - current_price) * qtyToClose;
-
-            await supabase
-              .from('auto_trader_positions')
-              .update({
-                qty: remainingQty,
-                stop_loss: entry_price, // 🛡️ MOVE STOP PARA BREAKEVEN
-                realized_pnl: (position.realized_pnl || 0) + partialPnl,
-              })
-              .eq('id', id);
-
-            toast({
-              title: "🎯 Fechamento 2/3: +2%",
-              description: `${position.symbol}: 25% fechado | Stop → Breakeven | 50% livre com trailing stop`,
-            });
-
-            // Log
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase.from('auto_trader_logs').insert({
-                user_id: user.id,
-                log_type: 'PARTIAL_TP',
-                position_id: id,
-                symbol: position.symbol,
-                message: `Parcial 2/3: 25% fechado em +${pnlPercent.toFixed(2)}% - Stop → Breakeven`,
-                metadata: { level: 2, pnl: partialPnl, remaining_qty: remainingQty, new_stop: entry_price },
-              });
-            }
-          }
-
-          // 🚀 50% RESTANTE: Trailing stop automático (já implementado abaixo)
-
           // 🔥 FECHAR POSIÇÃO AUTOMATICAMENTE
           if (shouldClose) {
             console.log(`💰 Fechando ${position.symbol} ${side}: ${closeReason} | P&L: $${realized_pnl.toFixed(2)}`);
@@ -415,15 +216,7 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
       }
     };
 
-    // Executar imediatamente
+    // Executar apenas quando as posições mudarem (via Realtime)
     monitorPositions();
-
-    // Executar a cada 10 segundos
-    const interval = setInterval(monitorPositions, 10000);
-
-    return () => clearInterval(interval);
-  }, [toast]);
-
-  return null;
-  */ // FIM DO CÓDIGO DESABILITADO
+  }, [openPositions, toast, getPrice]);
 };
