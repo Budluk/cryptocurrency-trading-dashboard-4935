@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Sincronização otimizada com Bybit usando intervalo maior
+ * Sincronização otimizada com Bybit usando intervalo maior e debounce
  */
 export const useBybitSync = (isEnabled: boolean = true) => {
   const { toast } = useToast();
@@ -12,9 +12,11 @@ export const useBybitSync = (isEnabled: boolean = true) => {
     if (!isEnabled) return;
     
     let isActive = true;
+    let isProcessing = false;
 
     const syncPositions = async () => {
-      if (!isActive) return;
+      if (!isActive || isProcessing) return;
+      isProcessing = true;
       
       try {
         // Verificar autenticação
@@ -70,19 +72,23 @@ export const useBybitSync = (isEnabled: boolean = true) => {
           const bybitPosition = bybitPositionsMap.get(key) as any;
 
           if (bybitPosition) {
-            // Posição existe na Bybit - atualizar preço e P&L
             const currentPrice = parseFloat(bybitPosition.markPrice || bybitPosition.avgPrice || 0);
             const unrealizedPnl = parseFloat(bybitPosition.unrealisedPnl || 0);
 
-            await supabase
-              .from('auto_trader_positions')
-              .update({
-                current_price: currentPrice,
-                unrealized_pnl: unrealizedPnl,
-              })
-              .eq('id', dbPosition.id);
+            // Só atualizar se houver mudança significativa (> 0.5%)
+            const priceDiff = Math.abs(currentPrice - dbPosition.current_price) / dbPosition.current_price * 100;
+            
+            if (priceDiff > 0.5) {
+              await supabase
+                .from('auto_trader_positions')
+                .update({
+                  current_price: currentPrice,
+                  unrealized_pnl: unrealizedPnl,
+                })
+                .eq('id', dbPosition.id);
 
-            updated++;
+              updated++;
+            }
           } else {
             // Posição não existe mais na Bybit - fechar no banco
             await supabase
@@ -146,18 +152,20 @@ export const useBybitSync = (isEnabled: boolean = true) => {
 
       } catch (error) {
         console.error('❌ Erro na sincronização automática:', error);
+      } finally {
+        isProcessing = false;
       }
     };
 
-    // Esperar 30 segundos antes da primeira execução
+    // Esperar 1 minuto antes da primeira execução
     const initialTimeout = setTimeout(() => {
       if (isActive) syncPositions();
-    }, 30000);
+    }, 60000);
     
-    // Depois executar a cada 2 minutos para reduzir carga
+    // Depois executar a cada 5 minutos para reduzir carga
     const interval = setInterval(() => {
       if (isActive) syncPositions();
-    }, 120000);
+    }, 300000);
 
     return () => {
       isActive = false;

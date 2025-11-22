@@ -10,10 +10,15 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
   const { openPositions } = usePositions();
 
   useEffect(() => {
-    // Usar as posições do contexto ao invés de buscar diretamente
     if (!openPositions || openPositions.length === 0) return;
 
+    // Debounce para evitar updates muito frequentes
+    let isProcessing = false;
+
     const monitorPositions = async () => {
+      if (isProcessing) return;
+      isProcessing = true;
+
       try {
         for (const position of openPositions) {
           if (!position.current_price) continue;
@@ -35,6 +40,7 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
           let exit_price = current_price;
           let realized_pnl = position.unrealized_pnl;
           let updatedHighestPrice = highest_price || entry_price;
+          let needsUpdate = false;
 
           // 🎯 ATIVAR TRAILING STOP AUTOMÁTICO quando lucrativo
           const pnlPercentForTrailing = side === 'BUY' 
@@ -44,7 +50,7 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
           // Ativar trailing stop automaticamente quando > +0.5% de lucro
           let activeTrailingStop = trailing_stop_percentage;
           if (pnlPercentForTrailing > 0.5 && (!trailing_stop_percentage || trailing_stop_percentage === 0)) {
-            activeTrailingStop = 1.5; // Ativar com 1.5% de trailing
+            activeTrailingStop = 1.5;
             await supabase
               .from('auto_trader_positions')
               .update({ 
@@ -52,49 +58,41 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                 highest_price: current_price 
               })
               .eq('id', id);
-            console.log(`🎯 ${position.symbol}: Trailing stop ativado automaticamente em +${pnlPercentForTrailing.toFixed(2)}%`);
+            console.log(`🎯 ${position.symbol}: Trailing stop ativado em +${pnlPercentForTrailing.toFixed(2)}%`);
+            continue; // Skip resto do loop para esta posição
           }
 
-          // 🎯 TRAILING STOP DINÂMICO - Acompanha preço para maximizar ganhos
+          // 🎯 TRAILING STOP DINÂMICO - Acompanha preço
           if (activeTrailingStop && activeTrailingStop > 0) {
             if (side === 'BUY') {
-              // Para posições de compra: acompanhar o máximo preço
-              if (current_price > updatedHighestPrice) {
+              // Só atualizar se mudança > 0.1% para evitar updates constantes
+              const priceChangePercent = ((current_price - updatedHighestPrice) / updatedHighestPrice) * 100;
+              
+              if (priceChangePercent > 0.1) {
                 updatedHighestPrice = current_price;
-                
-                // Atualizar highest_price no banco imediatamente
-                await supabase
-                  .from('auto_trader_positions')
-                  .update({ highest_price: updatedHighestPrice })
-                  .eq('id', id);
+                needsUpdate = true;
                 
                 const profitFromEntry = ((current_price - entry_price) / entry_price) * 100;
-                console.log(`📈 ${position.symbol} BUY: Novo máximo $${updatedHighestPrice.toFixed(2)} (+${profitFromEntry.toFixed(2)}%) | Trailing: $${(updatedHighestPrice * (1 - activeTrailingStop / 100)).toFixed(2)}`);
+                console.log(`📈 ${position.symbol} BUY: Novo máximo $${updatedHighestPrice.toFixed(2)} (+${profitFromEntry.toFixed(2)}%)`);
               }
 
-              // Calcular trailing stop baseado no highest price
               const trailingStopPrice = updatedHighestPrice * (1 - activeTrailingStop / 100);
               
               if (current_price <= trailingStopPrice) {
                 shouldClose = true;
                 closeReason = `Trailing Stop ${activeTrailingStop}%`;
                 realized_pnl = (current_price - entry_price) * qty;
-                const maxProfit = ((updatedHighestPrice - entry_price) / entry_price) * 100;
-                console.log(`🛑 ${position.symbol} BUY: Trailing stop acionado! Max: $${updatedHighestPrice.toFixed(2)} (+${maxProfit.toFixed(2)}%) → Atual: $${current_price.toFixed(2)}`);
+                console.log(`🛑 ${position.symbol} BUY: Trailing stop acionado!`);
               }
             } else if (side === 'SELL') {
-              // Para posições de venda: acompanhar o mínimo preço
-              if (current_price < updatedHighestPrice) {
+              const priceChangePercent = ((updatedHighestPrice - current_price) / updatedHighestPrice) * 100;
+              
+              if (priceChangePercent > 0.1) {
                 updatedHighestPrice = current_price;
-                
-                // Atualizar highest_price no banco
-                await supabase
-                  .from('auto_trader_positions')
-                  .update({ highest_price: updatedHighestPrice })
-                  .eq('id', id);
+                needsUpdate = true;
                 
                 const profitFromEntry = ((entry_price - current_price) / entry_price) * 100;
-                console.log(`📉 ${position.symbol} SELL: Novo mínimo $${updatedHighestPrice.toFixed(2)} (+${profitFromEntry.toFixed(2)}%) | Trailing: $${(updatedHighestPrice * (1 + activeTrailingStop / 100)).toFixed(2)}`);
+                console.log(`📉 ${position.symbol} SELL: Novo mínimo $${updatedHighestPrice.toFixed(2)} (+${profitFromEntry.toFixed(2)}%)`);
               }
 
               const trailingStopPrice = updatedHighestPrice * (1 + activeTrailingStop / 100);
@@ -103,9 +101,16 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                 shouldClose = true;
                 closeReason = `Trailing Stop ${activeTrailingStop}%`;
                 realized_pnl = (entry_price - current_price) * qty;
-                const maxProfit = ((entry_price - updatedHighestPrice) / entry_price) * 100;
-                console.log(`🛑 ${position.symbol} SELL: Trailing stop acionado! Min: $${updatedHighestPrice.toFixed(2)} (+${maxProfit.toFixed(2)}%) → Atual: $${current_price.toFixed(2)}`);
+                console.log(`🛑 ${position.symbol} SELL: Trailing stop acionado!`);
               }
+            }
+            
+            // Atualizar apenas se houve mudança significativa
+            if (needsUpdate && !shouldClose) {
+              await supabase
+                .from('auto_trader_positions')
+                .update({ highest_price: updatedHighestPrice })
+                .eq('id', id);
             }
           }
 
@@ -213,10 +218,16 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
         }
       } catch (error) {
         console.error('Erro no monitoramento de posições:', error);
+      } finally {
+        isProcessing = false;
       }
     };
 
-    // Executar apenas quando as posições mudarem (via Realtime)
-    monitorPositions();
+    // Debounce de 5 segundos para evitar execuções muito frequentes
+    const timeoutId = setTimeout(() => {
+      monitorPositions();
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
   }, [openPositions, toast, getPrice]);
 };

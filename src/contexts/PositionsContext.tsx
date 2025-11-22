@@ -73,6 +73,9 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     fetchPositions();
 
+    // Debounce para evitar refetch muito frequente
+    let timeoutId: NodeJS.Timeout;
+
     // Realtime subscription
     const channel = supabase
       .channel('positions-realtime')
@@ -84,12 +87,17 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
           table: 'auto_trader_positions'
         },
         () => {
-          fetchPositions();
+          // Debounce de 2 segundos
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            fetchPositions();
+          }, 2000);
         }
       )
       .subscribe();
 
     return () => {
+      clearTimeout(timeoutId);
       supabase.removeChannel(channel);
     };
   }, []);
