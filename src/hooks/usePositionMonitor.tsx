@@ -12,6 +12,9 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
   useEffect(() => {
     if (!openPositions || openPositions.length === 0) return;
 
+    // 🔴 DESABILITADO temporariamente para evitar travamentos
+    return;
+
     // Debounce para evitar updates muito frequentes
     let isProcessing = false;
 

@@ -73,32 +73,16 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     fetchPositions();
 
-    // Debounce para evitar refetch muito frequente
-    let timeoutId: NodeJS.Timeout;
-
-    // Realtime subscription
-    const channel = supabase
-      .channel('positions-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'auto_trader_positions'
-        },
-        () => {
-          // Debounce de 2 segundos
-          clearTimeout(timeoutId);
-          timeoutId = setTimeout(() => {
-            fetchPositions();
-          }, 2000);
-        }
-      )
-      .subscribe();
+    // 🔴 REALTIME DESABILITADO para evitar re-renders constantes
+    // As posições serão atualizadas apenas via refetch manual
+    
+    // Atualização periódica a cada 30 segundos (menos agressivo)
+    const intervalId = setInterval(() => {
+      fetchPositions();
+    }, 30000);
 
     return () => {
-      clearTimeout(timeoutId);
-      supabase.removeChannel(channel);
+      clearInterval(intervalId);
     };
   }, []);
 
