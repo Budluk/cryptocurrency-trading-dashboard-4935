@@ -11,6 +11,9 @@ export const useBybitSync = (isEnabled: boolean = true) => {
   useEffect(() => {
     if (!isEnabled) return;
     
+    // 🔴 DESABILITADO temporariamente para evitar travamentos
+    return;
+    
     let isActive = true;
     let isProcessing = false;
 
