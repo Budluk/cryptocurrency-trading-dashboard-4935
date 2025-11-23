@@ -42,6 +42,8 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchPositions = async () => {
     try {
+      setIsLoading(true);
+      
       // Buscar posições abertas
       const { data: open, error: openError } = await supabase
         .from('auto_trader_positions')
@@ -51,7 +53,7 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
 
       if (openError) throw openError;
 
-      // Buscar últimas 100 posições fechadas (aumentado para analytics)
+      // Buscar últimas 100 posições fechadas
       const { data: closed, error: closedError } = await supabase
         .from('auto_trader_positions')
         .select('*')
@@ -71,11 +73,17 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // Buscar posições apenas na montagem inicial
+    // Buscar posições na montagem
     fetchPositions();
     
-    // 🔴 TODAS as atualizações automáticas DESABILITADAS
-    // As posições só serão atualizadas via refetch() manual
+    // Atualizar a cada 60 segundos (intervalo moderado)
+    const intervalId = setInterval(() => {
+      fetchPositions();
+    }, 60000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, []);
 
   return (
