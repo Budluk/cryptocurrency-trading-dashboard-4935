@@ -1471,72 +1471,35 @@ export const MultiAssetTrader = () => {
     getLeverageForBalance
   }), []);
 
-  // Sincronizar saldo a cada 60 segundos quando ativo (OTIMIZADO)
+  // Sincronizar saldo a cada 60 segundos quando ativo (DESABILITADO)
   useEffect(() => {
-    let syncInterval: NodeJS.Timeout;
-    let trailingInterval: NodeJS.Timeout;
-    let volatilityInterval: NodeJS.Timeout;
-
+    // 🔴 TODOS OS INTERVALOS DESABILITADOS PARA EVITAR PISCAR DA TELA
+    // As atualizações devem ser feitas manualmente
+    
     if (isRunning) {
-      // Buscar top 10 voláteis imediatamente ao iniciar
+      // Buscar dados apenas uma vez ao iniciar
       fetchTop10VolatileAssets();
-      
-      // Atualizar top 10 voláteis a cada 10 minutos (reduzido de 5min)
-      volatilityInterval = setInterval(() => {
-        fetchTop10VolatileAssets();
-      }, 10 * 60 * 1000);
-      
-      // Sincronização de saldo/posições a cada 2 minutos (reduzido de 60s)
-      syncInterval = setInterval(() => {
-        syncBybitBalance();
-        syncOpenPositions();
-      }, 2 * 60 * 1000);
-      
-      // 🎯 TRAILING STOP: Atualizar a cada 30 segundos (reduzido de 15s)
-      if (trailingStopEnabled) {
-        trailingInterval = setInterval(() => {
-          updateTrailingStops();
-        }, 30 * 1000);
-      }
+      syncBybitBalance();
+      syncOpenPositions();
     }
 
     return () => {
-      if (syncInterval) clearInterval(syncInterval);
-      if (trailingInterval) clearInterval(trailingInterval);
-      if (volatilityInterval) clearInterval(volatilityInterval);
+      // Nenhum intervalo para limpar
     };
   }, [isRunning, trailingStopEnabled, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    let activityInterval: NodeJS.Timeout;
-
+    // 🔴 CICLO DE TRADING DESABILITADO PARA EVITAR PISCAR DA TELA
+    
     if (isRunning) {
-      console.log("🤖 Multi-Asset Trader iniciado - Operação 24/7");
+      console.log("🤖 Multi-Asset Trader iniciado - Modo Manual");
       
-      // Executar imediatamente
+      // Executar apenas uma vez ao iniciar
       analyzeAndTrade();
-      
-      // Ciclo principal de trading a cada 2 minutos (otimizado para performance)
-      interval = setInterval(() => {
-        analyzeAndTrade();
-      }, 2 * 60 * 1000);
-
-      // Atualizar timestamp de atividade a cada 5 minutos
-      activityInterval = setInterval(async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const activityUserId = user.id;
-        await supabase
-          .from('auto_trader_config')
-          .update({ last_activity_at: new Date().toISOString() })
-          .eq('user_id', activityUserId);
-      }, 5 * 60 * 1000);
     }
 
     return () => {
-      if (interval) clearInterval(interval);
-      if (activityInterval) clearInterval(activityInterval);
+      // Nenhum intervalo para limpar
     };
   }, [isRunning, currentBalance, isTestnet]);
 
