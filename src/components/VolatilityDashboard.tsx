@@ -40,7 +40,7 @@ export const VolatilityDashboard = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000,
+    refetchInterval: false, // DESABILITADO
   });
 
   useEffect(() => {

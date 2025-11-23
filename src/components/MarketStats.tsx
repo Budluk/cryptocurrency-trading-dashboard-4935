@@ -35,7 +35,7 @@ const MarketStats = () => {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['marketStats'],
     queryFn: fetchRealTimeStats,
-    refetchInterval: 30000,
+    refetchInterval: false, // DESABILITADO
   });
 
   if (isLoading) {

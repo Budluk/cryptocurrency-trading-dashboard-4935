@@ -34,7 +34,7 @@ export const CopyTradingDashboard = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000,
+    refetchInterval: false, // DESABILITADO
   });
 
   // Buscar seguidores do usuário atual

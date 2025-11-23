@@ -82,7 +82,7 @@ const MarketNews = () => {
   const { data: news, isLoading, error } = useQuery({
     queryKey: ['cryptoNews'],
     queryFn: fetchCryptoNews,
-    refetchInterval: 60000,
+    refetchInterval: false, // DESABILITADO
     retry: 1,
     retryOnMount: false
   });

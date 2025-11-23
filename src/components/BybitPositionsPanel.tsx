@@ -43,7 +43,11 @@ export const BybitPositionsPanel = () => {
       const positions = data.data?.list || [];
       return positions.filter((p: any) => parseFloat(p.size || 0) > 0);
     },
-    refetchInterval: false, // DESABILITADO para evitar sobrecarga
+    refetchInterval: false,
+    staleTime: Infinity, // Nunca considerar dados como stale
+    gcTime: Infinity, // Manter dados em cache indefinidamente
+    refetchOnWindowFocus: false, // Não refetch ao focar na janela
+    refetchOnMount: false, // Não refetch ao montar novamente
   });
 
   const totalPnL = positions?.reduce((sum: number, p: any) => 
