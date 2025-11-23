@@ -71,19 +71,11 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    // Buscar posições apenas na montagem inicial
     fetchPositions();
-
-    // 🔴 REALTIME DESABILITADO para evitar re-renders constantes
-    // As posições serão atualizadas apenas via refetch manual
     
-    // Atualização periódica a cada 30 segundos (menos agressivo)
-    const intervalId = setInterval(() => {
-      fetchPositions();
-    }, 30000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
+    // 🔴 TODAS as atualizações automáticas DESABILITADAS
+    // As posições só serão atualizadas via refetch() manual
   }, []);
 
   return (

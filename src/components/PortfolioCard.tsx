@@ -36,7 +36,7 @@ const PortfolioCard = () => {
   const { data: priceData, isLoading } = useQuery({
     queryKey: ['bitcoinPrices'],
     queryFn: fetchBitcoinPrices,
-    refetchInterval: 60000, // Refetch every minute
+    refetchInterval: false, // DESABILITADO
   });
 
   if (isLoading) {

@@ -23,7 +23,7 @@ export function SentimentDashboard() {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 60000, // 1 minuto
+    refetchInterval: false, // DESABILITADO
   });
 
   const runAnalysis = async () => {

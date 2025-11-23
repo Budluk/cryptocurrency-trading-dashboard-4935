@@ -67,7 +67,7 @@ const PerformanceDashboard = () => {
       if (error) throw error;
       return data?.[0] as PerformanceData;
     },
-    refetchInterval: 60000,
+    refetchInterval: false, // DESABILITADO
     staleTime: 30000
   });
 

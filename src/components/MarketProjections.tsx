@@ -88,7 +88,7 @@ const MarketProjections = () => {
   const { data: projections, isLoading } = useQuery({
     queryKey: ['marketProjections'],
     queryFn: fetchMarketProjections,
-    refetchInterval: 30000
+    refetchInterval: false // DESABILITADO
   });
 
   const currentProjection = projections?.find(p => p.timeframe === selectedTimeframe);

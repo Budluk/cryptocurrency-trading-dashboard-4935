@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, DollarSign, Calendar } from "lucide-react";
 import { usePositions } from "@/contexts/PositionsContext";
 
-export const DailyPnLSummary = () => {
+export const DailyPnLSummary = memo(() => {
   const { openPositions, closedPositions } = usePositions();
 
   const pnlData = useMemo(() => {
@@ -130,4 +130,4 @@ export const DailyPnLSummary = () => {
       </Card>
     </div>
   );
-};
+});
