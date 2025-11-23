@@ -1471,36 +1471,38 @@ export const MultiAssetTrader = () => {
     getLeverageForBalance
   }), []);
 
-  // Sincronizar saldo a cada 60 segundos quando ativo (DESABILITADO)
+  // Sincronizar saldo quando ativo (CONTROLADO)
   useEffect(() => {
-    // 🔴 TODOS OS INTERVALOS DESABILITADOS PARA EVITAR PISCAR DA TELA
-    // As atualizações devem ser feitas manualmente
-    
     if (isRunning) {
-      // Buscar dados apenas uma vez ao iniciar
+      // Buscar dados ao iniciar
       fetchTop10VolatileAssets();
       syncBybitBalance();
       syncOpenPositions();
+      
+      // Atualização controlada a cada 5 minutos
+      const syncInterval = setInterval(() => {
+        syncBybitBalance();
+        syncOpenPositions();
+      }, 5 * 60 * 1000);
+      
+      return () => clearInterval(syncInterval);
     }
-
-    return () => {
-      // Nenhum intervalo para limpar
-    };
-  }, [isRunning, trailingStopEnabled, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets]);
+  }, [isRunning, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets]);
 
   useEffect(() => {
-    // 🔴 CICLO DE TRADING DESABILITADO PARA EVITAR PISCAR DA TELA
-    
     if (isRunning) {
-      console.log("🤖 Multi-Asset Trader iniciado - Modo Manual");
+      console.log("🤖 Multi-Asset Trader iniciado");
       
-      // Executar apenas uma vez ao iniciar
+      // Executar ao iniciar
       analyzeAndTrade();
+      
+      // Ciclo de trading a cada 5 minutos (controlado)
+      const interval = setInterval(() => {
+        analyzeAndTrade();
+      }, 5 * 60 * 1000);
+      
+      return () => clearInterval(interval);
     }
-
-    return () => {
-      // Nenhum intervalo para limpar
-    };
   }, [isRunning, currentBalance, isTestnet]);
 
   const startTrading = async () => {

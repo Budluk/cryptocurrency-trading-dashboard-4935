@@ -44,10 +44,10 @@ export const BybitPositionsPanel = () => {
       return positions.filter((p: any) => parseFloat(p.size || 0) > 0);
     },
     refetchInterval: false,
-    staleTime: Infinity, // Nunca considerar dados como stale
-    gcTime: Infinity, // Manter dados em cache indefinidamente
-    refetchOnWindowFocus: false, // Não refetch ao focar na janela
-    refetchOnMount: false, // Não refetch ao montar novamente
+    staleTime: 60000, // Cache por 1 minuto
+    gcTime: 300000, // Manter em cache por 5 minutos
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   const totalPnL = positions?.reduce((sum: number, p: any) => 
