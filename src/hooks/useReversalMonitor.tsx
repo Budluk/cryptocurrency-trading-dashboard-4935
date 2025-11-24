@@ -129,10 +129,10 @@ export const useReversalMonitor = (reversalPatterns: ReversalPattern[] = []) => 
       checkReversals();
     }
 
-    // Executar a cada 10 segundos
-    const interval = setInterval(checkReversals, 10000);
-
-    return () => clearInterval(interval);
+    // 🔴 INTERVALO DESABILITADO para evitar piscar da tela
+    // Verificação apenas quando necessário
+    
+    return () => {};
   }, [reversalPatterns, toast, getPrice, lastCheck]);
 
   return null;

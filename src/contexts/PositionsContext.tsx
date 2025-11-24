@@ -73,17 +73,11 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // Buscar posições na montagem
+    // Buscar posições apenas na montagem inicial
     fetchPositions();
     
-    // Atualizar a cada 60 segundos (intervalo moderado)
-    const intervalId = setInterval(() => {
-      fetchPositions();
-    }, 60000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
+    // 🔴 INTERVALOS DESABILITADOS para evitar piscar da tela
+    // Atualização apenas via refetch() manual
   }, []);
 
   return (

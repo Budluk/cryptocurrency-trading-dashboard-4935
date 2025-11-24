@@ -160,20 +160,11 @@ export const useBybitSync = (isEnabled: boolean = true) => {
       }
     };
 
-    // Esperar 1 minuto antes da primeira execução
-    const initialTimeout = setTimeout(() => {
-      if (isActive) syncPositions();
-    }, 60000);
+    // 🔴 INTERVALOS DESABILITADOS para evitar piscar da tela
+    // Sincronização apenas manual via chamada direta quando necessário
     
-    // Depois executar a cada 5 minutos para reduzir carga
-    const interval = setInterval(() => {
-      if (isActive) syncPositions();
-    }, 300000);
-
     return () => {
       isActive = false;
-      clearTimeout(initialTimeout);
-      clearInterval(interval);
     };
   }, [isEnabled, toast]);
 
