@@ -11,9 +11,6 @@ export const useBybitSync = (isEnabled: boolean = true) => {
   useEffect(() => {
     if (!isEnabled) return;
     
-    // 🔴 DESABILITADO temporariamente para evitar travamentos
-    return;
-    
     let isActive = true;
     let isProcessing = false;
 
@@ -160,11 +157,20 @@ export const useBybitSync = (isEnabled: boolean = true) => {
       }
     };
 
-    // 🔴 INTERVALOS DESABILITADOS para evitar piscar da tela
-    // Sincronização apenas manual via chamada direta quando necessário
+    // Executar sincronização inicial após 2 segundos
+    const initialSync = setTimeout(() => {
+      if (isActive) syncPositions();
+    }, 2000);
+    
+    // Sincronizar a cada 3 minutos
+    const interval = setInterval(() => {
+      if (isActive) syncPositions();
+    }, 3 * 60 * 1000);
     
     return () => {
       isActive = false;
+      clearTimeout(initialSync);
+      clearInterval(interval);
     };
   }, [isEnabled, toast]);
 

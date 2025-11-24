@@ -1,18 +1,5 @@
-import CryptoChart from "@/components/CryptoChart";
-import AdvancedAISignals from "@/components/AdvancedAISignals";
-import { AutoTraderSettings } from "@/components/AutoTraderSettings";
-import PerformanceDashboard from "@/components/PerformanceDashboard";
-import { MultiAssetTrader } from "@/components/MultiAssetTrader";
 import { BybitPositionsPanel } from "@/components/BybitPositionsPanel";
-import { AdvancedAnalytics } from "@/components/AdvancedAnalytics";
-import { TraderProfileSettings } from "@/components/TraderProfileSettings";
-import { MLAdaptiveSettings } from "@/components/MLAdaptiveSettings";
-import { SentimentDashboard } from "@/components/SentimentDashboard";
-import { PortfolioRebalancer } from "@/components/PortfolioRebalancer";
-import { OrderFlowDashboard } from "@/components/OrderFlowDashboard";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
-import { TrailingStopVisual } from "@/components/TrailingStopVisual";
-import { RiskManagementPanel } from "@/components/RiskManagementPanel";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,11 +10,32 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useBybitSync } from "@/hooks/useBybitSync";
+
+// Lazy loaded components
+import {
+  LazyCryptoChart,
+  LazyAdvancedAISignals,
+  LazyPerformanceDashboard,
+  LazyMultiAssetTrader,
+  LazyAdvancedAnalytics,
+  LazySentimentDashboard,
+  LazyPortfolioRebalancer,
+  LazyOrderFlowDashboard,
+  LazyTrailingStopVisual,
+  LazyRiskManagementPanel,
+  LazyAutoTraderSettings,
+  LazyMLAdaptiveSettings,
+  LazyTraderProfileSettings,
+} from "@/pages/Index.lazy";
 
 const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  // Ativar sincronização automática com Bybit
+  useBybitSync(true);
 
   useEffect(() => {
     // Verificar se usuário está autenticado
@@ -136,39 +144,39 @@ const Index = () => {
               <BybitPositionsPanel />
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="xl:col-span-2 space-y-6">
-                  <MultiAssetTrader />
-                  <TrailingStopVisual />
+                  <LazyMultiAssetTrader />
+                  <LazyTrailingStopVisual />
                 </div>
                 <div className="space-y-6">
-                  <RiskManagementPanel />
-                  <CryptoChart />
-                  <AdvancedAISignals />
+                  <LazyRiskManagementPanel />
+                  <LazyCryptoChart />
+                  <LazyAdvancedAISignals />
                 </div>
               </div>
             </TabsContent>
 
             {/* Analytics Tab */}
             <TabsContent value="analytics" className="space-y-6">
-              <PerformanceDashboard />
-              <AdvancedAnalytics />
+              <LazyPerformanceDashboard />
+              <LazyAdvancedAnalytics />
             </TabsContent>
 
             {/* Advanced Tab */}
             <TabsContent value="advanced" className="space-y-6">
-              <OrderFlowDashboard />
+              <LazyOrderFlowDashboard />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <SentimentDashboard />
-                <PortfolioRebalancer />
+                <LazySentimentDashboard />
+                <LazyPortfolioRebalancer />
               </div>
             </TabsContent>
             
             {/* Settings Tab */}
             <TabsContent value="settings" className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <AutoTraderSettings />
-                <MLAdaptiveSettings />
+                <LazyAutoTraderSettings />
+                <LazyMLAdaptiveSettings />
               </div>
-              <TraderProfileSettings />
+              <LazyTraderProfileSettings />
             </TabsContent>
           </Tabs>
         </div>
