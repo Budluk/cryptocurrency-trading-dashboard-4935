@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface Position {
@@ -40,7 +40,7 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   const [closedPositions, setClosedPositions] = useState<Position[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchPositions = async () => {
+  const fetchPositions = useCallback(async () => {
     try {
       setIsLoading(true);
       
@@ -70,7 +70,7 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Buscar posições na montagem inicial
@@ -84,17 +84,17 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       clearInterval(intervalId);
     };
-  }, []);
+  }, [fetchPositions]);
+
+  const value = useMemo(() => ({
+    openPositions,
+    closedPositions,
+    isLoading,
+    refetch: fetchPositions
+  }), [openPositions, closedPositions, isLoading, fetchPositions]);
 
   return (
-    <PositionsContext.Provider
-      value={{
-        openPositions,
-        closedPositions,
-        isLoading,
-        refetch: fetchPositions
-      }}
-    >
+    <PositionsContext.Provider value={value}>
       {children}
     </PositionsContext.Provider>
   );
