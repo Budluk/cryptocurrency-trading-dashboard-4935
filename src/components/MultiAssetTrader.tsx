@@ -1471,26 +1471,37 @@ export const MultiAssetTrader = () => {
     getLeverageForBalance
   }), []);
 
-  // Sincronizar saldo apenas ao iniciar
+  // Sincronizar saldo e posições (otimizado)
   useEffect(() => {
     if (isRunning) {
-      // Buscar dados apenas uma vez ao iniciar
+      // Buscar dados ao iniciar
       fetchTop10VolatileAssets();
       syncBybitBalance();
       syncOpenPositions();
       
-      // 🔴 INTERVALOS DESABILITADOS para evitar piscar da tela
+      // Sincronizar a cada 3 minutos (otimizado)
+      const syncInterval = setInterval(() => {
+        syncBybitBalance();
+        syncOpenPositions();
+      }, 3 * 60 * 1000); // 3 minutos
+      
+      return () => clearInterval(syncInterval);
     }
   }, [isRunning, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets]);
 
   useEffect(() => {
     if (isRunning) {
-      console.log("🤖 Multi-Asset Trader iniciado - Modo Manual");
+      console.log("🤖 Multi-Asset Trader iniciado");
       
-      // Executar apenas uma vez ao iniciar
+      // Executar ao iniciar
       analyzeAndTrade();
       
-      // 🔴 INTERVALOS DESABILITADOS para evitar piscar da tela
+      // Ciclo de trading otimizado a cada 3 minutos
+      const interval = setInterval(() => {
+        analyzeAndTrade();
+      }, 3 * 60 * 1000); // 3 minutos
+      
+      return () => clearInterval(interval);
     }
   }, [isRunning, currentBalance, isTestnet]);
 
