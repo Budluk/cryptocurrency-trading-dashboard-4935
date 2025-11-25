@@ -9,8 +9,21 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, TrendingUp } from "lucide-react";
 import { z } from "zod";
 
-// Validation schema for authentication
-const authSchema = z.object({
+// Validation schema for login (less strict)
+const loginSchema = z.object({
+  email: z
+    .string()
+    .min(1, "Email é obrigatório")
+    .email("Formato de email inválido")
+    .max(255, "Email muito longo"),
+  password: z
+    .string()
+    .min(1, "Senha é obrigatória")
+    .max(72, "Senha muito longa"),
+});
+
+// Validation schema for signup (strict)
+const signupSchema = z.object({
   email: z
     .string()
     .min(1, "Email é obrigatório")
@@ -56,8 +69,9 @@ export const Auth = () => {
     e.preventDefault();
     setErrors({});
     
-    // Validate input
-    const result = authSchema.safeParse({ email, password });
+    // Validate input - use different schemas for login vs signup
+    const schema = isSignUp ? signupSchema : loginSchema;
+    const result = schema.safeParse({ email, password });
     
     if (!result.success) {
       const fieldErrors: { email?: string; password?: string } = {};
