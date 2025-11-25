@@ -4,6 +4,7 @@ import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { RealtimePriceProvider } from "@/contexts/RealtimePriceContext";
 import { Activity, BarChart3, Settings, TrendingUp, LogOut, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -78,10 +79,11 @@ const Index = () => {
 
   return (
     <RealtimePriceProvider>
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <div className="max-w-[1600px] mx-auto p-6">
-        {/* Header */}
-        <header className="mb-8">
+      <div className="h-screen bg-gradient-to-br from-background via-background to-primary/5">
+        <ScrollArea className="h-full">
+          <div className="max-w-[1600px] mx-auto p-6">
+            {/* Header */}
+            <header className="mb-8">
           <div className="flex items-center justify-between mb-2">
             <div>
               <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
@@ -180,7 +182,8 @@ const Index = () => {
             </TabsContent>
           </Tabs>
         </div>
-      </div>
+          </div>
+        </ScrollArea>
       </div>
     </RealtimePriceProvider>
   );
