@@ -1471,24 +1471,7 @@ export const MultiAssetTrader = () => {
     getLeverageForBalance
   }), []);
 
-  // Sincronizar saldo e posições (otimizado)
-  useEffect(() => {
-    if (isRunning) {
-      // Buscar dados ao iniciar
-      fetchTop10VolatileAssets();
-      syncBybitBalance();
-      syncOpenPositions();
-      
-      // Sincronizar a cada 3 minutos (otimizado)
-      const syncInterval = setInterval(() => {
-        syncBybitBalance();
-        syncOpenPositions();
-      }, 3 * 60 * 1000); // 3 minutos
-      
-      return () => clearInterval(syncInterval);
-    }
-  }, [isRunning, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets]);
-
+  // Ciclo de trading principal (sincronização é feita por useBybitSync)
   useEffect(() => {
     if (isRunning) {
       console.log("🤖 Multi-Asset Trader iniciado");
@@ -1503,7 +1486,7 @@ export const MultiAssetTrader = () => {
       
       return () => clearInterval(interval);
     }
-  }, [isRunning, currentBalance, isTestnet]);
+  }, [isRunning]); // Remover currentBalance e isTestnet das dependências
 
   const startTrading = async () => {
     if (currentBalance < 2) {
@@ -1558,6 +1541,7 @@ export const MultiAssetTrader = () => {
     }
 
     // Sincronizar antes de iniciar
+    await fetchTop10VolatileAssets();
     await syncBybitBalance();
     await syncOpenPositions();
 
