@@ -35,8 +35,8 @@ const Index = () => {
   const { toast } = useToast();
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // Ativar sincronização automática com Bybit
-  useBybitSync(true);
+  // Ativar sincronização automática com Bybit apenas se estiver na página principal
+  // useBybitSync(true); // DESABILITADO temporariamente para evitar travamentos
 
   useEffect(() => {
     // Verificar se usuário está autenticado
