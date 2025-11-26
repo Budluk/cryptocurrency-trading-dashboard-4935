@@ -2,16 +2,10 @@ import { BybitPositionsPanel } from "@/components/BybitPositionsPanel";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RealtimePriceProvider } from "@/contexts/RealtimePriceContext";
-import { Activity, BarChart3, Settings, TrendingUp, LogOut, User } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { useToast } from "@/hooks/use-toast";
-import { useBybitSync } from "@/hooks/useBybitSync";
+import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 // Lazy loaded components
 import {
@@ -31,52 +25,6 @@ import {
 } from "@/pages/Index.lazy";
 
 const Index = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  // Ativar sincronização automática com Bybit apenas se estiver na página principal
-  // useBybitSync(true); // DESABILITADO temporariamente para evitar travamentos
-
-  useEffect(() => {
-    // Verificar se usuário está autenticado
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        navigate('/auth');
-      } else {
-        setUserEmail(session.user.email || null);
-      }
-    });
-
-    // Escutar mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session) {
-        navigate('/auth');
-      } else {
-        setUserEmail(session.user.email || null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast({
-        title: "❌ Erro ao sair",
-        description: error.message,
-        variant: "destructive"
-      });
-    } else {
-      toast({
-        title: "✅ Logout realizado",
-        description: "Até logo!"
-      });
-      navigate('/auth');
-    }
-  };
-
   return (
     <RealtimePriceProvider>
       <div className="h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -84,38 +32,19 @@ const Index = () => {
           <div className="max-w-[1600px] mx-auto p-6">
             {/* Header */}
             <header className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                AI Trading Platform
-              </h1>
-              <p className="text-muted-foreground mt-1">Sistema profissional de trading com IA avançada</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="default" className="h-8 px-4">
-                <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
-                AO VIVO
-              </Badge>
-              {userEmail && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="h-8 px-3">
-                    <User className="w-3 h-3 mr-2" />
-                    {userEmail}
-                  </Badge>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleLogout}
-                    className="h-8"
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sair
-                  </Button>
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                    AI Trading Platform
+                  </h1>
+                  <p className="text-muted-foreground mt-1">Sistema profissional de trading com IA avançada</p>
                 </div>
-              )}
-            </div>
-          </div>
-        </header>
+                <Badge variant="default" className="h-8 px-4">
+                  <span className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
+                  AO VIVO
+                </Badge>
+              </div>
+            </header>
         
         {/* P&L Summary */}
         <DailyPnLSummary />

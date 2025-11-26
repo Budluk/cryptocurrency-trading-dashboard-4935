@@ -73,17 +73,8 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    // Buscar posições na montagem inicial
+    // Buscar posições apenas na montagem inicial (sem polling automático)
     fetchPositions();
-    
-    // Atualizar a cada 2 minutos (otimizado)
-    const intervalId = setInterval(() => {
-      fetchPositions();
-    }, 2 * 60 * 1000); // 2 minutos
-
-    return () => {
-      clearInterval(intervalId);
-    };
   }, [fetchPositions]);
 
   const value = useMemo(() => ({
