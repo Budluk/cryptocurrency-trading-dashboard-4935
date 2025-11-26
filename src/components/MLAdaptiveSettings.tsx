@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getUserId } from "@/lib/anonymousUser";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Brain, TrendingUp, Target, Zap, BarChart3, Clock } from "lucide-react";
@@ -16,13 +17,12 @@ export function MLAdaptiveSettings() {
   const { data: mlConfig, isLoading } = useQuery({
     queryKey: ['ml-adaptive-config'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const userId = await getUserId();
 
       const { data, error } = await supabase
         .from('ml_adaptive_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -32,14 +32,13 @@ export function MLAdaptiveSettings() {
 
   const toggleMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const userId = await getUserId();
 
       if (mlConfig) {
         const { error } = await supabase
           .from('ml_adaptive_config')
           .update({ is_enabled: enabled })
-          .eq('user_id', user.id);
+          .eq('user_id', userId);
         if (error) throw error;
       }
     },

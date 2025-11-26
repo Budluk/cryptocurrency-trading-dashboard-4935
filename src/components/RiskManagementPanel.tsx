@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getUserId } from "@/lib/anonymousUser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,13 +32,12 @@ export const RiskManagementPanel = () => {
   }, []);
 
   const fetchSettings = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const userId = await getUserId();
 
     let { data, error } = await supabase
       .from('risk_management_settings')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle();
 
     if (!data && !error) {
@@ -45,7 +45,7 @@ export const RiskManagementPanel = () => {
       const { data: newSettings } = await supabase
         .from('risk_management_settings')
         .insert({
-          user_id: user.id,
+          user_id: userId,
           max_positions: 5,
           max_daily_loss: 100,
           current_daily_loss: 0,
@@ -66,8 +66,7 @@ export const RiskManagementPanel = () => {
   const saveSettings = async () => {
     if (!settings) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const userId = await getUserId();
 
     const { error } = await supabase
       .from('risk_management_settings')
@@ -75,7 +74,7 @@ export const RiskManagementPanel = () => {
         max_positions: tempSettings.max_positions,
         max_daily_loss: tempSettings.max_daily_loss
       })
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (!error) {
       toast({
@@ -94,8 +93,7 @@ export const RiskManagementPanel = () => {
   };
 
   const resetDailyLoss = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const userId = await getUserId();
 
     const { error } = await supabase
       .from('risk_management_settings')
@@ -103,7 +101,7 @@ export const RiskManagementPanel = () => {
         current_daily_loss: 0,
         trading_paused: false
       })
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (!error) {
       toast({
@@ -117,15 +115,14 @@ export const RiskManagementPanel = () => {
   const togglePause = async () => {
     if (!settings) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const userId = await getUserId();
 
     const { error } = await supabase
       .from('risk_management_settings')
       .update({
         trading_paused: !settings.trading_paused
       })
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (!error) {
       toast({

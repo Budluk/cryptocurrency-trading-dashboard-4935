@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getUserId } from "@/lib/anonymousUser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,8 +72,7 @@ export const AutoTraderSettings = () => {
 
   const saveConfig = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+      const userId = await getUserId();
 
       if (savedConfig?.id) {
         const { error } = await supabase
@@ -84,7 +84,7 @@ export const AutoTraderSettings = () => {
       } else {
         const { error } = await supabase
           .from('auto_trader_config')
-          .insert([{ ...config, user_id: user.id }]);
+          .insert([{ ...config, user_id: userId }]);
 
         if (error) throw error;
       }
