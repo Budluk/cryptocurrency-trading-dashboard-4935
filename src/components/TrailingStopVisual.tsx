@@ -75,14 +75,17 @@ export const TrailingStopVisual = () => {
 
       <div className="space-y-4">
         {positions.map((pos) => {
+          // Null safety checks
+          if (!pos.current_price || !pos.entry_price) return null;
+          
           const pnlPercent = pos.side === 'Buy'
-            ? ((pos.current_price! - pos.entry_price) / pos.entry_price) * 100
-            : ((pos.entry_price - pos.current_price!) / pos.entry_price) * 100;
+            ? ((pos.current_price - pos.entry_price) / pos.entry_price) * 100
+            : ((pos.entry_price - pos.current_price) / pos.entry_price) * 100;
 
           const trailingStop = calculateTrailingStop(pos);
           const progress = calculateProgress(pos);
           const isProfit = pnlPercent > 0;
-          const highestPrice = pos.highest_price || pos.current_price;
+          const highestPrice = pos.highest_price || pos.current_price || 0;
 
           return (
             <div key={pos.id} className="p-4 bg-background/50 rounded-lg border border-border/50">
@@ -104,7 +107,7 @@ export const TrailingStopVisual = () => {
                     {isProfit ? '+' : ''}{pnlPercent.toFixed(2)}%
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    ${pos.unrealized_pnl.toFixed(2)}
+                    ${(pos.unrealized_pnl || 0).toFixed(2)}
                   </div>
                 </div>
               </div>
@@ -152,7 +155,7 @@ export const TrailingStopVisual = () => {
                         Stop: ${trailingStop.toFixed(2)}
                       </span>
                       <span className="text-muted-foreground">
-                        Distância: {Math.abs(((pos.current_price! - trailingStop) / trailingStop) * 100).toFixed(2)}%
+                        Distância: {Math.abs(((pos.current_price - trailingStop) / trailingStop) * 100).toFixed(2)}%
                       </span>
                     </div>
                   </div>
