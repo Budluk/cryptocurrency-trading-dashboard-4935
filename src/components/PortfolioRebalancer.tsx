@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Scale, AlertTriangle, TrendingUp, TrendingDown, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { getUserId } from "@/lib/anonymousUser";
 
 export function PortfolioRebalancer() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -17,13 +18,12 @@ export function PortfolioRebalancer() {
   const { data: config } = useQuery({
     queryKey: ['rebalance-config'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const userId = await getUserId();
 
       const { data, error } = await supabase
         .from('portfolio_rebalance_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -34,13 +34,12 @@ export function PortfolioRebalancer() {
   const { data: history } = useQuery({
     queryKey: ['rebalance-history'],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const userId = await getUserId();
 
       const { data, error } = await supabase
         .from('portfolio_rebalance_history')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -51,20 +50,19 @@ export function PortfolioRebalancer() {
 
   const toggleMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const userId = await getUserId();
 
       if (config) {
         const { error } = await supabase
           .from('portfolio_rebalance_config')
           .update({ is_enabled: enabled })
-          .eq('user_id', user.id);
+          .eq('user_id', userId);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('portfolio_rebalance_config')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             is_enabled: enabled,
             target_allocations: {
               'BTCUSDT': 40,

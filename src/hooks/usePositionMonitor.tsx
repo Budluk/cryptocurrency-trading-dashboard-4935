@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimePrice } from "./useRealtimePrice";
 import { usePositions } from "@/contexts/PositionsContext";
+import { getUserId } from "@/lib/anonymousUser";
 
 export const usePositionMonitor = (reversalPatterns: any[] = []) => {
   const { toast } = useToast();
@@ -160,15 +161,14 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
               .eq('id', id);
 
             if (!closeError) {
-              // Criar log
-              const { data: { user } } = await supabase.auth.getUser();
+              const userId = await getUserId();
               
               // 🛡️ ATUALIZAR GESTÃO DE RISCO SE PERDA
-              if (user && realized_pnl < 0) {
+              if (realized_pnl < 0) {
                 const { data: riskSettings } = await supabase
                   .from('risk_management_settings')
                   .select('*')
-                  .eq('user_id', user.id)
+                  .eq('user_id', userId)
                   .maybeSingle();
 
                 if (riskSettings) {
@@ -181,7 +181,7 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                       current_daily_loss: newDailyLoss,
                       trading_paused: shouldPause
                     })
-                    .eq('user_id', user.id);
+                    .eq('user_id', userId);
 
                   if (shouldPause) {
                     toast({
@@ -192,10 +192,9 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                   }
                 }
               }
-              if (user) {
-                await supabase.from('auto_trader_logs').insert({
-                  user_id: user.id,
-                  log_type: 'AUTO_CLOSE',
+              await supabase.from('auto_trader_logs').insert({
+                user_id: userId,
+                log_type: 'AUTO_CLOSE',
                   position_id: id,
                   symbol: position.symbol,
                   message: `${closeReason} - Entry: $${entry_price.toFixed(2)} → Exit: $${exit_price.toFixed(2)}`,
@@ -207,7 +206,6 @@ export const usePositionMonitor = (reversalPatterns: any[] = []) => {
                     highest_price: updatedHighestPrice
                   },
                 });
-              }
 
               // Notificação
               const isProfitable = realized_pnl > 0;

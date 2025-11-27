@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimePrice } from "./useRealtimePrice";
+import { getUserId } from "@/lib/anonymousUser";
 
 interface ReversalPattern {
   symbol: string;
@@ -89,23 +90,20 @@ export const useReversalMonitor = (reversalPatterns: ReversalPattern[] = []) => 
                 .eq('id', position.id);
 
               if (!closeError) {
-                // Criar log
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                  await supabase.from('auto_trader_logs').insert({
-                    user_id: user.id,
-                    log_type: 'REVERSAL_CLOSE',
-                    position_id: position.id,
-                    symbol: position.symbol,
-                    message: `Fechado por reversão ${relevantReversal.direction} | P&L: $${realized_pnl.toFixed(2)}`,
-                    metadata: { 
-                      reversal_direction: relevantReversal.direction,
-                      severity: relevantReversal.severity,
-                      pnl: realized_pnl,
-                      exit_price: livePrice,
-                    },
-                  });
-                }
+                const userId = await getUserId();
+                await supabase.from('auto_trader_logs').insert({
+                  user_id: userId,
+                  log_type: 'REVERSAL_CLOSE',
+                  position_id: position.id,
+                  symbol: position.symbol,
+                  message: `Fechado por reversão ${relevantReversal.direction} | P&L: $${realized_pnl.toFixed(2)}`,
+                  metadata: { 
+                    reversal_direction: relevantReversal.direction,
+                    severity: relevantReversal.severity,
+                    pnl: realized_pnl,
+                    exit_price: livePrice,
+                  },
+                });
 
                 // Notificar usuário
                 toast({

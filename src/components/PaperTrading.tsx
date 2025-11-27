@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUpIcon, TrendingDownIcon, DollarSignIcon, ActivityIcon, PlusIcon, XIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getUserId } from "@/lib/anonymousUser";
 
 interface PaperTrade {
   id: string;
@@ -91,11 +92,10 @@ const PaperTrading = () => {
     mutationFn: async (tradeData: any) => {
       if (!demoAccount) throw new Error('Demo account not found');
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      const userId = await getUserId();
 
       const trade = {
-        user_id: user.id,
+        user_id: userId,
         demo_account_id: demoAccount.id,
         symbol: 'BTC/USD',
         action: tradeData.action,

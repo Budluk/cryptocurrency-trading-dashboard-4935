@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useRealtimePrice } from "@/hooks/useRealtimePrice";
 import { usePositions } from "@/contexts/PositionsContext";
+import { getUserId } from "@/lib/anonymousUser";
 
 export const ActiveTradesPanel = () => {
   const { toast } = useToast();
@@ -18,14 +19,8 @@ export const ActiveTradesPanel = () => {
     try {
       console.log('🔄 Iniciando sincronização com Bybit...');
       
-      // Verificar autenticação primeiro (opcional)
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.warn('⚠️ Usuário não autenticado - continuando sem sincronização');
-        return;
-      }
-
-      console.log('✅ Usuário autenticado:', user.id);
+      const userId = await getUserId();
+      console.log('✅ Usuário:', userId);
       
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
@@ -80,7 +75,7 @@ export const ActiveTradesPanel = () => {
         .from('auto_trader_positions')
         .select('symbol, side')
         .eq('status', 'OPEN')
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (dbError) {
         console.error('❌ Erro ao buscar posições do banco:', dbError);
@@ -118,7 +113,7 @@ export const ActiveTradesPanel = () => {
         console.log(`💾 Importando: ${symbol} ${side} - Entry: $${entryPrice} - Qty: ${qty} - PnL: $${unrealizedPnl}`);
 
         const newPosition = {
-          user_id: user.id,
+          user_id: userId,
           symbol: symbol,
           side: side,
           qty: qty,
