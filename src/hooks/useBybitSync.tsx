@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getUserId } from "@/lib/anonymousUser";
 
 /**
  * Sincronização otimizada com Bybit usando intervalo maior e debounce
@@ -19,9 +20,7 @@ export const useBybitSync = (isEnabled: boolean = true) => {
       isProcessing = true;
       
       try {
-        // Verificar autenticação
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        const userId = await getUserId();
 
         // Buscar posições abertas da Bybit
         const { data: bybitResponse, error: bybitError } = await supabase.functions.invoke('bybit-trading', {
@@ -48,7 +47,7 @@ export const useBybitSync = (isEnabled: boolean = true) => {
           .from('auto_trader_positions')
           .select('*')
           .eq('status', 'OPEN')
-          .eq('user_id', user.id);
+          .eq('user_id', userId);
 
         if (dbError) {
           console.error('❌ Erro ao buscar posições do banco:', dbError);
@@ -121,7 +120,7 @@ export const useBybitSync = (isEnabled: boolean = true) => {
             const unrealizedPnl = parseFloat(position.unrealisedPnl || 0);
 
             await supabase.from('auto_trader_positions').insert({
-              user_id: user.id,
+              user_id: userId,
               symbol: symbol,
               side: side,
               qty: qty,

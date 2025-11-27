@@ -12,6 +12,7 @@ import { Users, TrendingUp, Award, Target, UserPlus, Settings } from "lucide-rea
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getUserId } from "@/lib/anonymousUser";
 
 export const CopyTradingDashboard = () => {
   const { toast } = useToast();
@@ -125,13 +126,12 @@ export const CopyTradingDashboard = () => {
 
   const updateCopyConfig = async (updates: any) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = await getUserId();
 
       const { error } = await supabase
         .from('copy_trading_config')
         .upsert({
-          user_id: user.id,
+          user_id: userId,
           ...updates,
         });
 

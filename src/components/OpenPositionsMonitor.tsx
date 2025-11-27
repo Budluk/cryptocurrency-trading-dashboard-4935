@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ProgressiveClosureIndicator } from "./ProgressiveClosureIndicator";
 import { usePositions } from "@/contexts/PositionsContext";
+import { getUserId } from "@/lib/anonymousUser";
 
 interface Position {
   id: string;
@@ -89,17 +90,15 @@ export const OpenPositionsMonitor = () => {
       if (error) throw error;
 
       // Log do fechamento
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('auto_trader_logs').insert([{
-          user_id: user.id,
-          log_type: 'TRADE' as any,
-          position_id: positionId,
-          symbol: position.symbol,
-          message: `Posição fechada: ${reason}`,
-          metadata: { pnl: realized_pnl, reason } as any,
-        }]);
-      }
+      const userId = await getUserId();
+      await supabase.from('auto_trader_logs').insert([{
+        user_id: userId,
+        log_type: 'TRADE' as any,
+        position_id: positionId,
+        symbol: position.symbol,
+        message: `Posição fechada: ${reason}`,
+        metadata: { pnl: realized_pnl, reason } as any,
+      }]);
 
       toast({
         title: "✅ Posição fechada",

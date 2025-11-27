@@ -10,6 +10,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Calendar, TrendingUp, TrendingDown, Target, Activity, PlayCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getUserId } from "@/lib/anonymousUser";
 
 interface BacktestResult {
   id: string;
@@ -73,11 +74,10 @@ export const BacktestingPanel = () => {
       clearInterval(interval);
       setProgress(100);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+      const userId = await getUserId();
 
       const simulatedResult = {
-        user_id: user.id,
+        user_id: userId,
         start_date: startDate,
         end_date: endDate,
         total_trades: Math.floor(Math.random() * 100) + 50,
