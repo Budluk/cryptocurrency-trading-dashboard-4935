@@ -61,6 +61,9 @@ serve(async (req) => {
       case 'get_instruments':
         result = await getInstruments(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
+      case 'set_leverage':
+        result = await setLeverage(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -270,6 +273,17 @@ async function setTradingStop(baseUrl: string, apiKey: string, apiSecret: string
   return await makeBybitRequest(
     baseUrl,
     '/v5/position/trading-stop',
+    apiKey,
+    apiSecret,
+    'POST',
+    params
+  );
+}
+
+async function setLeverage(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/position/set-leverage',
     apiKey,
     apiSecret,
     'POST',
