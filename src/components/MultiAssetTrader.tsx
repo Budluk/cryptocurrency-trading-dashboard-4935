@@ -40,8 +40,8 @@ export const MultiAssetTrader = () => {
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
 
   // PROTEÇÕES INTELIGENTES
-  const DAILY_STOP_LOSS_PCT = 0.10; // -10% do bankroll
-  const [maxOpenPositions, setMaxOpenPositions] = useState(50); // 🚀 Alto para operar todos os sinais
+  const DAILY_STOP_LOSS_PCT = 0.15; // Aumentado de -10% para -15% do bankroll
+  const [maxOpenPositions, setMaxOpenPositions] = useState(100); // 🚀 MUITO alto para operar todos os sinais
   const MAX_CONSECUTIVE_LOSSES = 3;
   
   // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
@@ -138,27 +138,27 @@ export const MultiAssetTrader = () => {
     'SHIBUSDT', 'PEPEUSDT', 'AVAXUSDT', 'NEARUSDT', 'APTUSDT'
   ]));
 
-  // 🔥 SISTEMA DE ALAVANCAGEM PROGRESSIVA PARA SCALPING
+  // 🔥 SISTEMA DE ALAVANCAGEM PROGRESSIVA PARA SCALPING AGRESSIVO
   const getLeverageForScalping = (volatility: number): number => {
-    // Scalping agressivo: 20x-50x baseado na volatilidade
-    if (volatility > 3.0) return 50; // Extrema volatilidade
-    if (volatility > 2.0) return 40; // Alta volatilidade
-    if (volatility > 1.5) return 30; // Média-alta volatilidade
-    return 25; // Padrão para scalping
+    // 🚀 Alavancagem MÁXIMA para lucros rápidos
+    if (volatility > 3.0) return 75; // Extrema volatilidade - alavancagem máxima
+    if (volatility > 2.0) return 60; // Alta volatilidade
+    if (volatility > 1.5) return 50; // Média-alta volatilidade
+    return 40; // Padrão para scalping - aumentado de 25x para 40x
   };
 
   // Estratégia de alavancagem baseada no bankroll E win rate (para ativos normais)
   const getLeverageForBalance = (balance: number, winRate: number) => {
-    // Base de alavancagem pelo saldo
-    let baseLeverage = 5;
-    if (balance < 5) baseLeverage = 20;
-    else if (balance < 10) baseLeverage = 15;
-    else if (balance < 20) baseLeverage = 10;
-    else if (balance < 50) baseLeverage = 8;
+    // 🚀 Base de alavancagem MUITO MAIS AGRESSIVA
+    let baseLeverage = 20; // Aumentado de 5x para 20x
+    if (balance < 5) baseLeverage = 50; // Aumentado de 20x para 50x
+    else if (balance < 10) baseLeverage = 40; // Aumentado de 15x para 40x
+    else if (balance < 20) baseLeverage = 30; // Aumentado de 10x para 30x
+    else if (balance < 50) baseLeverage = 25; // Aumentado de 8x para 25x
 
     // Ajustar pela performance
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 25); // Aumenta se está bem
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 5, 3); // Reduz se está mal
+    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 10, 75); // Aumenta mais se está bem
+    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 10, 15); // Reduz menos
 
     return baseLeverage;
   };
@@ -178,8 +178,8 @@ export const MultiAssetTrader = () => {
       ? 1.0 // Primeira posição: tamanho normal
       : Math.max(0.3, 1 - (currentOpenPositions / targetPositions) * 0.5); // Reduzir gradualmente
     
-    // 📐 BASE DO RISCO AGRESSIVO PARA SCALPING: 3-7% do bankroll por posição
-    let baseRisk = balance < 15 ? 0.07 : 0.05; // AUMENTADO para scalping
+    // 📐 BASE DO RISCO ULTRA AGRESSIVO: 10-15% do bankroll por posição
+    let baseRisk = balance < 15 ? 0.15 : 0.12; // MUITO AUMENTADO para lucros máximos
     
     // 💡 AJUSTE POR VOLATILIDADE: Reduzir risco em ativos muito voláteis
     if (volatility > 5) baseRisk *= 0.6; // -40% em alta volatilidade
@@ -1269,6 +1269,28 @@ export const MultiAssetTrader = () => {
             console.log(`   📈 Qty: ${qtyStr} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
             console.log(`   💵 Saldo: $${freshBalanceFinal.toFixed(2)} (Margem: $${requiredMarginFinal.toFixed(2)}) | Confirmações: ${confirmations.join(', ')}`);
 
+            // 🚀 CONFIGURAR ALAVANCAGEM ANTES DE COLOCAR A ORDEM
+            console.log(`🔧 Configurando alavancagem ${leverage}x para ${symbol}...`);
+            const { data: leverageData, error: leverageError } = await supabase.functions.invoke('bybit-trading', {
+              body: {
+                action: 'set_leverage',
+                isTestnet: false,
+                params: {
+                  category: 'linear',
+                  symbol: symbol,
+                  buyLeverage: leverage.toString(),
+                  sellLeverage: leverage.toString()
+                }
+              }
+            });
+
+            if (leverageError) {
+              console.error(`❌ Erro ao configurar alavancagem para ${symbol}:`, leverageError);
+              // Continuar mesmo assim pois pode já estar configurada
+            } else {
+              console.log(`✅ Alavancagem ${leverage}x configurada para ${symbol}`);
+            }
+
             // Executar ordem REAL na Bybit
             const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
               body: {
@@ -1280,7 +1302,6 @@ export const MultiAssetTrader = () => {
                   side: action === 'BUY' ? 'Buy' : 'Sell',
                   orderType: 'Market',
                   qty: qtyStr,
-                  leverage: leverage.toString(), // 🔥 ALAVANCAGEM CONFIGURADA
                   stopLoss: stopLoss, // 🛡️ STOP LOSS SEMPRE PRESENTE
                   takeProfit: takeProfit, // 🎯 TAKE PROFIT SEMPRE PRESENTE
                   timeInForce: 'GTC',
