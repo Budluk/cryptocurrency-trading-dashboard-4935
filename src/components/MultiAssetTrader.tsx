@@ -72,6 +72,13 @@ export const MultiAssetTrader = () => {
   const [lossStreak, setLossStreak] = useState(0);
   const [winningPatterns, setWinningPatterns] = useState<any[]>([]);
   const [currentLeverage, setCurrentLeverage] = useState(10);
+  
+  // 🎯 PYRAMIDING: Tracking de posições para scaling
+  const [pyramidingTracking, setPyramidingTracking] = useState<Map<string, {
+    timesAdded: number;
+    lastAddPrice: number;
+    originalQty: number;
+  }>>(new Map());
 
   const { openPositions, closedPositions } = usePositions();
   
@@ -1375,6 +1382,20 @@ export const MultiAssetTrader = () => {
                 console.log(`🎯 TRAILING STOP iniciado para ${symbol} (Distância: ${trailingStopPercent}%)`);
               }
               
+              // 🎯 PYRAMIDING: Inicializar tracking
+              if (scaleInOutEnabled) {
+                setPyramidingTracking(prev => {
+                  const newMap = new Map(prev);
+                  newMap.set(symbol, {
+                    timesAdded: 0,
+                    lastAddPrice: currentPrice,
+                    originalQty: qty
+                  });
+                  return newMap;
+                });
+                console.log(`🎯 PYRAMIDING iniciado para ${symbol} (Max ${mlConfig?.optimal_patterns?.pyramiding?.maxLevels || 2} níveis)`);
+              }
+              
               // 📋 COPY TRADING: Salvar padrão para replicação futura
               if (copyTradingEnabled) {
                 setWinningPatterns(prev => {
@@ -1501,6 +1522,113 @@ export const MultiAssetTrader = () => {
     getLeverageForScalping,
     getLeverageForBalance
   }), []);
+
+  // 🎯 PYRAMIDING: Monitorar posições para adicionar em lucro
+  useEffect(() => {
+    if (!scaleInOutEnabled || !isRunning || !mlConfig?.optimal_patterns?.pyramiding) return;
+    
+    const monitorPyramiding = async () => {
+      try {
+        const { data: openPos, error } = await supabase
+          .from('auto_trader_positions')
+          .select('*')
+          .eq('status', 'OPEN')
+          .eq('user_id', await getUserId());
+        
+        if (error || !openPos || openPos.length === 0) return;
+        
+        for (const position of openPos) {
+          const symbol = position.symbol;
+          const tracking = pyramidingTracking.get(symbol);
+          const maxLevels = mlConfig.optimal_patterns.pyramiding.maxLevels || 2;
+          const threshold = mlConfig.optimal_patterns.pyramiding.threshold || 1.5; // 1.5% lucro
+          
+          // Verificar se já atingiu limite de adições
+          if (tracking && tracking.timesAdded >= maxLevels) continue;
+          
+          // Calcular P&L atual
+          const currentPrice = position.current_price || position.entry_price;
+          const side = position.side;
+          const entryPrice = position.entry_price;
+          const pnlPercent = side === 'Buy' 
+            ? ((currentPrice - entryPrice) / entryPrice) * 100
+            : ((entryPrice - currentPrice) / entryPrice) * 100;
+          
+          // Se atingiu threshold e não adicionou recentemente
+          if (pnlPercent >= threshold) {
+            console.log(`🎯 PYRAMIDING: ${symbol} com +${pnlPercent.toFixed(2)}% de lucro - adicionando à posição`);
+            
+            // Adicionar 50% da posição original
+            const addQty = (tracking?.originalQty || position.qty) * 0.5;
+            const addSize = addQty * currentPrice;
+            
+            // Executar adição
+            const { data: addOrder, error: addError } = await supabase.functions.invoke('bybit-trading', {
+              body: {
+                action: 'place_order',
+                isTestnet: false,
+                params: {
+                  category: 'linear',
+                  symbol: symbol,
+                  side: side,
+                  orderType: 'Market',
+                  qty: addQty.toString(),
+                  timeInForce: 'GTC',
+                  positionIdx: 0,
+                  reduceOnly: false
+                }
+              }
+            });
+            
+            if (!addError && addOrder?.success) {
+              // Atualizar tracking
+              setPyramidingTracking(prev => {
+                const newMap = new Map(prev);
+                newMap.set(symbol, {
+                  timesAdded: (tracking?.timesAdded || 0) + 1,
+                  lastAddPrice: currentPrice,
+                  originalQty: tracking?.originalQty || position.qty
+                });
+                return newMap;
+              });
+              
+              // Mover stop para breakeven
+              const breakeven = position.entry_price;
+              await supabase.functions.invoke('bybit-trading', {
+                body: {
+                  action: 'set_trading_stop',
+                  isTestnet: false,
+                  params: {
+                    category: 'linear',
+                    symbol: symbol,
+                    stopLoss: breakeven.toString(),
+                    positionIdx: 0
+                  }
+                }
+              });
+              
+              toast({
+                title: `🎯 Pyramiding ${symbol}`,
+                description: `Adicionado +50% (${(tracking?.timesAdded || 0) + 1}/${maxLevels}) | SL → Breakeven`,
+              });
+              
+              console.log(`✅ PYRAMIDING: Adicionado $${addSize.toFixed(2)} a ${symbol} | Nível ${(tracking?.timesAdded || 0) + 1}/${maxLevels}`);
+            } else {
+              console.error(`❌ Erro ao adicionar pyramiding ${symbol}:`, addError);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro no monitoramento de pyramiding:', error);
+      }
+    };
+    
+    // Monitorar a cada 30 segundos
+    const interval = setInterval(monitorPyramiding, 30000);
+    monitorPyramiding(); // Executar imediatamente
+    
+    return () => clearInterval(interval);
+  }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
 
   // Ciclo de trading principal (sincronização é feita por useBybitSync)
   useEffect(() => {
@@ -1833,7 +1961,7 @@ export const MultiAssetTrader = () => {
         </div>
 
         {/* Controls */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-4">
           {!isRunning ? (
             <>
               <Button 
@@ -1865,9 +1993,87 @@ export const MultiAssetTrader = () => {
           )}
         </div>
 
+        {/* ML Adaptativo Card */}
+        <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                🧠 ML Adaptativo Agressivo
+                {mlConfig?.is_enabled && (
+                  <Badge variant="default" className="text-xs">ATIVO</Badge>
+                )}
+              </h4>
+              <p className="text-xs text-muted-foreground mt-1">
+                {mlConfig?.is_enabled 
+                  ? `Aprende com ${mlConfig.trades_analyzed} trades | ${mlConfig.confidence_score.toFixed(0)}% confiança`
+                  : `Analise seu histórico para otimizar automaticamente`}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const userId = await getUserId();
+                const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', {
+                  body: { userId }
+                });
+                
+                if (error) {
+                  toast({
+                    title: "❌ Erro no ML",
+                    description: error.message,
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                
+                if (data.success) {
+                  setMlConfig(data.config);
+                  toast({
+                    title: "🧠 ML Configurado!",
+                    description: `Alavancagem: ${data.recommendations.leverage}x | Pyramiding: ${data.recommendations.pyramiding.maxLevels}x`,
+                  });
+                } else {
+                  toast({
+                    title: "⚠️ ML não disponível",
+                    description: data.message,
+                  });
+                }
+              }}
+              disabled={isRunning}
+            >
+              {mlConfig?.is_enabled ? 'Reanalisar' : 'Ativar ML'}
+            </Button>
+          </div>
+          
+          {mlConfig?.is_enabled && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div className="p-2 bg-background/50 rounded border border-border">
+                <div className="text-muted-foreground">Alavancagem</div>
+                <div className="font-bold text-purple-400">{mlConfig.recommended_leverage}x</div>
+              </div>
+              <div className="p-2 bg-background/50 rounded border border-border">
+                <div className="text-muted-foreground">Stop Loss</div>
+                <div className="font-bold text-red-400">{mlConfig.recommended_stop_loss_pct}%</div>
+              </div>
+              <div className="p-2 bg-background/50 rounded border border-border">
+                <div className="text-muted-foreground">Take Profit</div>
+                <div className="font-bold text-green-400">{mlConfig.recommended_take_profit_pct}%</div>
+              </div>
+              <div className="p-2 bg-background/50 rounded border border-border">
+                <div className="text-muted-foreground">Pyramiding</div>
+                <div className="font-bold text-yellow-400">
+                  {mlConfig.optimal_patterns?.pyramiding?.maxLevels || 2}x em +{mlConfig.optimal_patterns?.pyramiding?.threshold || 1.5}%
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
         {mlConfig?.is_enabled && (
-          <div className="text-xs text-center text-muted-foreground bg-primary/5 p-2 rounded-lg border border-primary/10">
-            🧠 ML Adaptativo: SL {mlConfig.recommended_stop_loss_pct}% | TP {mlConfig.recommended_take_profit_pct}% | Lev {mlConfig.recommended_leverage}x | Confiança: {mlConfig.confidence_score}%
+          <div className="text-xs text-center text-muted-foreground bg-primary/5 p-2 rounded-lg border border-primary/10 mb-4">
+            🎯 Best Symbols: {mlConfig.optimal_patterns?.bestSymbols?.slice(0, 3).join(', ')} | 
+            ⏰ Best Hours: {mlConfig.optimal_patterns?.bestHours?.slice(0, 2).join('h, ')}h UTC
           </div>
         )}
 
