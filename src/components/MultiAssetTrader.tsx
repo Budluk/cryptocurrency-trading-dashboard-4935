@@ -760,9 +760,9 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - ALTA CONFIANÇA
-          // 🎯 THRESHOLDS ALTOS para entradas de qualidade superior
-          const scoreThreshold = 80; // 80+ pontos = Alta confiança
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - ALTA CONFIANÇA OTIMIZADA
+          // 🎯 THRESHOLDS BALANCEADOS para entradas de qualidade
+          const scoreThreshold = isScalpAsset ? 45 : 55; // Scalp: 45+ | Normal: 55+
           const minConfirmations = 2; // Mínimo 2 confirmações técnicas
           
           if (buyScore > sellScore && buyScore >= scoreThreshold && confirmations.length >= minConfirmations) {
