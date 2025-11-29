@@ -46,13 +46,17 @@ export const DailyPnLSummary = memo(() => {
   };
 
   const getDailyBg = (value: number) => {
-    return value > 0 ? 'bg-green-500/10 border-green-500/30' : value < 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-muted/10 border-border';
+    return value > 0 
+      ? 'bg-gradient-to-br from-success/20 to-success/5 border-success/40 shadow-lg shadow-success/20' 
+      : value < 0 
+      ? 'bg-gradient-to-br from-destructive/20 to-destructive/5 border-destructive/40 shadow-lg shadow-destructive/20' 
+      : 'bg-gradient-to-br from-card to-card/80 border-border/50';
   };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* P&L Diário Total */}
-      <Card className={`p-4 border-2 ${getDailyBg(pnlData?.dailyTotal || 0)}`}>
+      <Card className={`p-6 border-2 ${getDailyBg(pnlData?.dailyTotal || 0)} backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated`}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-primary" />
@@ -73,7 +77,7 @@ export const DailyPnLSummary = memo(() => {
       </Card>
 
       {/* P&L Realizado Hoje */}
-      <Card className="p-4 border border-border">
+      <Card className="p-6 border-2 bg-gradient-to-br from-card to-card/80 border-border/50 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-blue-500" />
@@ -92,7 +96,7 @@ export const DailyPnLSummary = memo(() => {
       </Card>
 
       {/* P&L Não Realizado */}
-      <Card className="p-4 border border-border">
+      <Card className="p-6 border-2 bg-gradient-to-br from-card to-card/80 border-border/50 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-yellow-500" />
@@ -111,7 +115,7 @@ export const DailyPnLSummary = memo(() => {
       </Card>
 
       {/* P&L Total (30 dias) */}
-      <Card className={`p-4 border-2 ${getDailyBg(pnlData?.totalRealized || 0)}`}>
+      <Card className={`p-6 border-2 ${getDailyBg(pnlData?.totalRealized || 0)} backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated`}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" />
