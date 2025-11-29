@@ -23,6 +23,7 @@ import {
   LazyMLAdaptiveSettings,
   LazyTraderProfileSettings,
 } from "@/pages/Index.lazy";
+import SmartAlerts from "@/components/SmartAlerts";
 
 const Index = () => {
   return (
@@ -91,6 +92,7 @@ const Index = () => {
             {/* Trading Tab */}
             <TabsContent value="trading" className="space-y-6">
               <BybitPositionsPanel />
+              <SmartAlerts />
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="xl:col-span-2 space-y-6">
                   <LazyMultiAssetTrader />

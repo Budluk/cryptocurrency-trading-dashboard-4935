@@ -165,28 +165,35 @@ const SmartAlerts = () => {
   const unreadCount = triggeredAlerts?.filter(alert => !alert.is_read).length || 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold">Alertas Inteligentes</h2>
-          {unreadCount > 0 && (
-            <Badge variant="destructive" className="animate-pulse">
-              {unreadCount} novos
-            </Badge>
-          )}
-        </div>
-        <Dialog open={isCreating} onOpenChange={setIsCreating}>
-          <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
-              <PlusIcon className="w-4 h-4" />
-              Criar Alerta
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Novo Alerta Inteligente</DialogTitle>
-            </DialogHeader>
+    <Card className="glass-card border-2 border-primary/20 shadow-elevated">
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20">
+              <BellIcon className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold glow-text">Alertas Inteligentes</h2>
+              <p className="text-sm text-muted-foreground">Configure notificações automáticas</p>
+            </div>
+            {unreadCount > 0 && (
+              <Badge className="bg-gradient-to-r from-destructive to-destructive/80 border-0 shadow-lg shadow-destructive/30 animate-glow">
+                {unreadCount} novos
+              </Badge>
+            )}
+          </div>
+          <Dialog open={isCreating} onOpenChange={setIsCreating}>
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 transition-all hover:scale-105">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Criar Alerta
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="glass-card border-2 border-primary/20">
+              <DialogHeader>
+                <DialogTitle className="text-xl glow-text">Novo Alerta Inteligente</DialogTitle>
+              </DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label htmlFor="alert-name">Nome do Alerta</Label>
@@ -259,7 +266,7 @@ const SmartAlerts = () => {
 
               <Button 
                 onClick={handleCreateAlert} 
-                className="w-full"
+                className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90"
                 disabled={!newAlert.name || createAlert.isPending}
               >
                 {createAlert.isPending ? 'Criando...' : 'Criar Alerta'}
@@ -271,11 +278,14 @@ const SmartAlerts = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Alertas Configurados */}
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Settings2Icon className="w-5 h-5" />
-            Alertas Configurados
-          </h3>
+        <Card className="border-2 border-border/50 bg-card/50 backdrop-blur-sm shadow-card">
+          <div className="p-6">
+            <h3 className="font-semibold mb-4 flex items-center gap-2 text-lg">
+              <div className="p-1.5 rounded-lg bg-primary/20">
+                <Settings2Icon className="w-4 h-4 text-primary" />
+              </div>
+              Alertas Configurados
+            </h3>
           
           {configsLoading ? (
             <div className="space-y-3">
@@ -290,13 +300,19 @@ const SmartAlerts = () => {
               <p className="text-sm">Crie seu primeiro alerta inteligente</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-80 overflow-y-auto">
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
               {alertConfigs?.map((alert) => (
-                <div key={alert.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+                <div key={alert.id} className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all hover:scale-[1.02] ${
+                  alert.is_active 
+                    ? 'border-primary/30 bg-gradient-to-br from-primary/5 to-transparent shadow-sm' 
+                    : 'border-border/30 bg-muted/20 opacity-60'
+                }`}>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-medium">{alert.name}</span>
-                      <Badge variant="outline" className="text-xs">
+                      <Badge variant="outline" className={`text-xs ${
+                        alert.is_active ? 'border-primary/50 text-primary' : ''
+                      }`}>
                         {getAlertTypeLabel(alert.alert_type)}
                       </Badge>
                     </div>
@@ -304,9 +320,9 @@ const SmartAlerts = () => {
                       {alert.symbol} • Threshold: {alert.conditions?.threshold || 'N/A'}
                     </div>
                     <div className="flex items-center gap-2 mt-2">
-                      {alert.notifications.sound && <Volume2Icon className="w-3 h-3 text-muted-foreground" />}
+                      {alert.notifications.sound && <Volume2Icon className="w-3 h-3 text-primary" />}
                       {!alert.notifications.sound && <VolumeXIcon className="w-3 h-3 text-muted-foreground" />}
-                      {alert.notifications.push && <BellIcon className="w-3 h-3 text-muted-foreground" />}
+                      {alert.notifications.push && <BellIcon className="w-3 h-3 text-primary" />}
                     </div>
                   </div>
                   <Switch
@@ -317,14 +333,18 @@ const SmartAlerts = () => {
               ))}
             </div>
           )}
+          </div>
         </Card>
 
         {/* Alertas Disparados */}
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <AlertTriangleIcon className="w-5 h-5" />
-            Alertas Recentes
-          </h3>
+        <Card className="border-2 border-border/50 bg-card/50 backdrop-blur-sm shadow-card">
+          <div className="p-6">
+            <h3 className="font-semibold mb-4 flex items-center gap-2 text-lg">
+              <div className="p-1.5 rounded-lg bg-accent/20">
+                <AlertTriangleIcon className="w-4 h-4 text-accent" />
+              </div>
+              Alertas Recentes
+            </h3>
           
           {triggeredAlerts?.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
@@ -333,40 +353,42 @@ const SmartAlerts = () => {
               <p className="text-sm">Os alertas aparecerão aqui quando ativados</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-80 overflow-y-auto">
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
               {triggeredAlerts?.map((alert) => (
                 <div 
                   key={alert.id} 
-                  className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover:scale-[1.02] ${
                     alert.is_read 
-                      ? 'bg-muted/20 border-muted' 
-                      : 'bg-primary/10 border-primary/30 shadow-md'
+                      ? 'bg-muted/10 border-border/30 opacity-70' 
+                      : 'bg-gradient-to-br from-accent/10 to-transparent border-accent/40 shadow-lg shadow-accent/10 animate-glow'
                   }`}
                   onClick={() => !alert.is_read && markAsRead.mutate(alert.id)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="font-medium text-sm">{alert.message}</div>
+                      <div className="font-medium text-sm flex items-center gap-2">
+                        {!alert.is_read && <span className="w-2 h-2 bg-accent rounded-full animate-pulse" />}
+                        {alert.message}
+                      </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {new Date(alert.triggered_at).toLocaleString()}
                       </div>
                       {alert.trigger_data && (
-                        <div className="text-xs mt-2 p-2 bg-muted/50 rounded">
+                        <div className="text-xs mt-2 p-2 bg-muted/30 rounded font-mono">
                           {JSON.stringify(alert.trigger_data, null, 2)}
                         </div>
                       )}
                     </div>
-                    {!alert.is_read && (
-                      <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0 mt-1"></div>
-                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
+          </div>
         </Card>
       </div>
-    </div>
+      </div>
+    </Card>
   );
 };
 
