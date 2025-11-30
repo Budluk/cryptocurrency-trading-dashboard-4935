@@ -572,7 +572,7 @@ export const MultiAssetTrader = () => {
 
       const tickers = tickerData?.data?.list || [];
       
-      // 🔥 FILTRAR ATIVOS COM BOA LIQUIDEZ E MOVIMENTO
+      // 🔥 FILTRAR ATIVOS COM BOA LIQUIDEZ E MOVIMENTO - MODO ULTRA-AGRESSIVO
       const assetsWithVolatility = tradableAssets.map((instrument: any) => {
         const ticker = tickers.find((t: any) => t.symbol === instrument.symbol);
         const priceChange = parseFloat(ticker?.price24hPcnt || '0') * 100;
@@ -586,11 +586,11 @@ export const MultiAssetTrader = () => {
           volume24h
         };
       }).filter(a => {
-        // 🎯 TOP 10 VOLÁTEIS: Todos são tratados como scalping
+        // 🎯 TOP 10 VOLÁTEIS: Critérios ULTRA-AGRESSIVOS
         const isInTop10 = top10VolatileAssets.has(a.instrument.symbol);
-        // Apenas ativos do top 10 com critérios ultra-agressivos
-        if (isInTop10) return a.volatility > 0.15 && a.volume24h > 50000;
-        return false; // Ignorar todos os outros
+        // 🔥 REDUZIDO: Vol > 0.1% e $30K+ volume
+        if (isInTop10) return a.volatility > 0.1 && a.volume24h > 30000;
+        return false; // Apenas top 10
       });
       
       // 📊 ORDENAR POR VOLATILIDADE (descendente) e processar TODOS os ativos voláteis
@@ -601,7 +601,7 @@ export const MultiAssetTrader = () => {
       if (topVolatileAssets.length > 0) {
         console.log(`📊 Range de Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
       }
-      console.log(`⚡ MODO ULTRA AGRESSIVO: Score ≥20 (scalp) ou ≥30 (normal) | Vol >0.15% | $50K+ | SEM confirmações obrigatórias`);
+      console.log(`⚡ MODO ULTRA AGRESSIVO: Score ≥30 (scalp) ou ≥40 (normal) | Vol >0.1% | $30K+ | Apenas 1 confirmação`);
       
       // 🛑 FLAG para parar processamento em caso de saldo insuficiente
       let shouldStopTrading = false;
@@ -628,20 +628,20 @@ export const MultiAssetTrader = () => {
           // ATR como % do preço - usado para stops dinâmicos
           const atrPercent = (priceRange / currentPrice) * 100;
           
-          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (ULTRA-AGRESSIVAS PARA TOP 10)
-          const hasGoodVolume = volume24h > 100000; // Volume mínimo para top 10
-          const hasExcellentVolume = volume24h > 3000000;
-          const hasGoodVolatility = volatility > 0.3;
-          const hasStrongVolatility = volatility > 2.0;
+          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (ULTRA-AGRESSIVAS)
+          const hasGoodVolume = volume24h > 50000; // 🔥 REDUZIDO: Volume mínimo
+          const hasExcellentVolume = volume24h > 1000000; // $1M+ = excelente
+          const hasGoodVolatility = volatility > 0.2; // 🔥 REDUZIDO: 0.2%+
+          const hasStrongVolatility = volatility > 1.5; // 1.5%+
           
           // 3. ANÁLISE DE TENDÊNCIA E MOMENTUM (BALANCEADO)
           const pricePosition = (currentPrice - lowPrice) / priceRange; // 0-1, onde está no range
           
-          // Detectar tendências claras - setups de qualidade
-          const isBullishTrend = priceChange > 2.5; // Subindo (+2.5%)
-          const isBearishTrend = priceChange < -2.5; // Caindo (-2.5%)
-          const isModerateBullish = priceChange > 1.2 && priceChange <= 2.5;
-          const isModerateBearish = priceChange < -1.2 && priceChange >= -2.5;
+          // Detectar tendências claras - CRITÉRIOS MAIS AGRESSIVOS
+          const isBullishTrend = priceChange > 1.5; // 🔥 REDUZIDO: Subindo (+1.5%)
+          const isBearishTrend = priceChange < -1.5; // 🔥 REDUZIDO: Caindo (-1.5%)
+          const isModerateBullish = priceChange > 0.8 && priceChange <= 1.5; // 🔥 REDUZIDO
+          const isModerateBearish = priceChange < -0.8 && priceChange >= -1.5; // 🔥 REDUZIDO
           
           // String descritiva da tendência
           const trendStrength = isBullishTrend ? 'Alta Forte' : 
@@ -654,123 +654,141 @@ export const MultiAssetTrader = () => {
           const nearSupport = pricePosition < 0.20; // Preço próximo do fundo (20%-)
           const inMiddleZone = pricePosition >= 0.35 && pricePosition <= 0.65;
           
-          // Detectar reversões (oversold/overbought) - CRITÉRIOS MAIS FORTES
-          const isOversold = priceChange < -5; // -5% = oversold extremo
-          const isOverbought = priceChange > 5; // +5% = overbought extremo
-          const isMildOversold = priceChange < -3.0 && priceChange >= -5;
-          const isMildOverbought = priceChange > 3.0 && priceChange <= 5;
+          // Detectar reversões (oversold/overbought) - CRITÉRIOS MAIS AGRESSIVOS
+          const isOversold = priceChange < -3.5; // 🔥 REDUZIDO: -3.5% = oversold
+          const isOverbought = priceChange > 3.5; // 🔥 REDUZIDO: +3.5% = overbought
+          const isMildOversold = priceChange < -2.0 && priceChange >= -3.5; // 🔥 REDUZIDO
+          const isMildOverbought = priceChange > 2.0 && priceChange <= 3.5; // 🔥 REDUZIDO
           
-          // 4. ANÁLISE DE VOLUME (comparação dinâmica) - BALANCEADO
-          const avgVolume = 3000000; // $3M baseline
+          // 4. ANÁLISE DE VOLUME (comparação dinâmica) - MAIS AGRESSIVO
+          const avgVolume = 1000000; // 🔥 REDUZIDO: $1M baseline
           const volumeRatio = volume24h / avgVolume;
-          const hasVolumeSpike = volumeRatio > 2.0; // 2.0x+ volume médio - confirmação forte
-          const hasStrongVolume = volumeRatio > 1.2; // 1.2x volume médio
+          const hasVolumeSpike = volumeRatio > 1.5; // 🔥 REDUZIDO: 1.5x+ volume
+          const hasStrongVolume = volumeRatio > 0.8; // 🔥 REDUZIDO: 0.8x volume
           
           // 5. SISTEMA DE SCORING MULTI-CONFIRMAÇÃO (0-100) - CRITÉRIOS RIGOROSOS
           let signalScore = 0;
           let action: 'BUY' | 'SELL' | null = null;
           let confirmations: string[] = [];
           
-          // === SINAIS DE COMPRA (BUY) - CRITÉRIOS BALANCEADOS ===
+          // === SINAIS DE COMPRA (BUY) - CRITÉRIOS ULTRA-AGRESSIVOS ===
           let buyScore = 0;
           
           // Confirmação 1: Tendência de alta com volume
           if (isBullishTrend && hasVolumeSpike) {
-            buyScore += 35;
+            buyScore += 40; // 🔥 AUMENTADO
             confirmations.push('🔥 Trend bullish + volume spike');
           } else if (isBullishTrend && hasStrongVolume) {
-            buyScore += 28;
+            buyScore += 33; // 🔥 AUMENTADO
             confirmations.push('Trend bullish confirmado');
           } else if (isModerateBullish && hasVolumeSpike) {
-            buyScore += 22;
+            buyScore += 28; // 🔥 AUMENTADO
             confirmations.push('Trend bullish moderado + volume');
           } else if (isModerateBullish && hasGoodVolume) {
-            buyScore += 15;
+            buyScore += 20; // 🔥 AUMENTADO
             confirmations.push('Momentum bullish');
+          } else if (isModerateBullish) {
+            buyScore += 15; // 🔥 NOVO: Aceita momentum sem volume forte
+            confirmations.push('Momentum bullish leve');
           }
           
           // Confirmação 2: Reversão ou zona de suporte
           if (isOversold && nearSupport && hasVolumeSpike) {
-            buyScore += 40;
+            buyScore += 45; // 🔥 AUMENTADO
             confirmations.push('🎯 Reversão bullish forte');
           } else if (isMildOversold && nearSupport) {
-            buyScore += 25;
+            buyScore += 30; // 🔥 AUMENTADO
             confirmations.push('Zona de suporte detectada');
           } else if (nearSupport && hasStrongVolume) {
-            buyScore += 18;
+            buyScore += 23; // 🔥 AUMENTADO
             confirmations.push('Suporte com volume');
+          } else if (nearSupport) {
+            buyScore += 15; // 🔥 NOVO: Aceita suporte sem volume forte
+            confirmations.push('Zona de suporte');
           }
           
           // Confirmação 3: Momentum positivo
-          if (pricePosition > 0.55 && priceChange > 1.5 && volatility > 1.5) {
-            buyScore += 20;
+          if (pricePosition > 0.55 && priceChange > 1.0 && volatility > 1.0) {
+            buyScore += 25; // 🔥 AUMENTADO
             confirmations.push('💪 Momentum bullish forte');
-          } else if (pricePosition > 0.50 && priceChange > 0.8) {
-            buyScore += 12;
+          } else if (pricePosition > 0.50 && priceChange > 0.5) {
+            buyScore += 17; // 🔥 AUMENTADO
             confirmations.push('Momentum positivo');
+          } else if (priceChange > 0.3) {
+            buyScore += 10; // 🔥 NOVO: Aceita momentum leve
+            confirmations.push('Momentum leve');
           }
           
           // Confirmação 4: ATR adequado
-          if (atrPercent > 1.5 && atrPercent < 8) {
-            buyScore += 15;
+          if (atrPercent > 1.0 && atrPercent < 10) {
+            buyScore += 20; // 🔥 AUMENTADO
             confirmations.push('✅ ATR ideal');
-          } else if (atrPercent > 1.0 && atrPercent < 10) {
-            buyScore += 8;
+          } else if (atrPercent > 0.5 && atrPercent < 15) {
+            buyScore += 12; // 🔥 AUMENTADO
             confirmations.push('ATR aceitável');
           }
           
-          // === SINAIS DE VENDA (SELL) - CRITÉRIOS BALANCEADOS ===
+          // === SINAIS DE VENDA (SELL) - CRITÉRIOS ULTRA-AGRESSIVOS ===
           let sellScore = 0;
           
           // Confirmação 1: Tendência de baixa com volume
           if (isBearishTrend && hasVolumeSpike) {
-            sellScore += 35;
+            sellScore += 40; // 🔥 AUMENTADO
             confirmations.push('🔥 Trend bearish + volume spike');
           } else if (isBearishTrend && hasStrongVolume) {
-            sellScore += 28;
+            sellScore += 33; // 🔥 AUMENTADO
             confirmations.push('Trend bearish confirmado');
           } else if (isModerateBearish && hasVolumeSpike) {
-            sellScore += 22;
+            sellScore += 28; // 🔥 AUMENTADO
             confirmations.push('Trend bearish moderado + volume');
           } else if (isModerateBearish && hasGoodVolume) {
-            sellScore += 15;
+            sellScore += 20; // 🔥 AUMENTADO
             confirmations.push('Momentum bearish');
+          } else if (isModerateBearish) {
+            sellScore += 15; // 🔥 NOVO: Aceita momentum sem volume forte
+            confirmations.push('Momentum bearish leve');
           }
           
           // Confirmação 2: Reversão ou zona de resistência
           if (isOverbought && nearResistance && hasVolumeSpike) {
-            sellScore += 40;
+            sellScore += 45; // 🔥 AUMENTADO
             confirmations.push('🎯 Reversão bearish forte');
           } else if (isMildOverbought && nearResistance) {
-            sellScore += 25;
+            sellScore += 30; // 🔥 AUMENTADO
             confirmations.push('Zona de resistência detectada');
           } else if (nearResistance && hasStrongVolume) {
-            sellScore += 18;
+            sellScore += 23; // 🔥 AUMENTADO
             confirmations.push('Resistência com volume');
+          } else if (nearResistance) {
+            sellScore += 15; // 🔥 NOVO: Aceita resistência sem volume forte
+            confirmations.push('Zona de resistência');
           }
           
           // Confirmação 3: Momentum negativo
-          if (pricePosition < 0.45 && priceChange < -1.5 && volatility > 1.5) {
-            sellScore += 20;
+          if (pricePosition < 0.45 && priceChange < -1.0 && volatility > 1.0) {
+            sellScore += 25; // 🔥 AUMENTADO
             confirmations.push('💪 Momentum bearish forte');
-          } else if (pricePosition < 0.50 && priceChange < -0.8) {
-            sellScore += 12;
+          } else if (pricePosition < 0.50 && priceChange < -0.5) {
+            sellScore += 17; // 🔥 AUMENTADO
             confirmations.push('Momentum negativo');
+          } else if (priceChange < -0.3) {
+            sellScore += 10; // 🔥 NOVO: Aceita momentum leve
+            confirmations.push('Momentum negativo leve');
           }
           
           // Confirmação 4: ATR adequado
-          if (atrPercent > 1.5 && atrPercent < 8) {
-            sellScore += 15;
+          if (atrPercent > 1.0 && atrPercent < 10) {
+            sellScore += 20; // 🔥 AUMENTADO
             confirmations.push('✅ ATR ideal');
-          } else if (atrPercent > 1.0 && atrPercent < 10) {
-            sellScore += 8;
+          } else if (atrPercent > 0.5 && atrPercent < 15) {
+            sellScore += 12; // 🔥 AUMENTADO
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - ALTA CONFIANÇA OTIMIZADA
-          // 🎯 THRESHOLDS BALANCEADOS para entradas de qualidade
-          const scoreThreshold = isScalpAsset ? 45 : 55; // Scalp: 45+ | Normal: 55+
-          const minConfirmations = 2; // Mínimo 2 confirmações técnicas
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO AGRESSIVO OTIMIZADO
+          // 🎯 THRESHOLDS ULTRA-AGRESSIVOS para maximizar entradas
+          const scoreThreshold = isScalpAsset ? 30 : 40; // 🔥 REDUZIDO: Scalp: 30+ | Normal: 40+
+          const minConfirmations = 1; // 🔥 REDUZIDO: Apenas 1 confirmação necessária
           
           if (buyScore > sellScore && buyScore >= scoreThreshold && confirmations.length >= minConfirmations) {
             action = 'BUY';
@@ -780,22 +798,22 @@ export const MultiAssetTrader = () => {
             signalScore = Math.min(sellScore, 100);
           }
           
-          // 7. CRITÉRIOS DE ALTA QUALIDADE para máxima rentabilidade
-          const volumeCheck = volume24h > 1000000; // $1M+ volume = liquidez garantida
-          const volatilityCheck = volatility > 0.5; // 0.5%+ movimento
-          const atrMinCheck = atrPercent > 0.5; // 0.5% ATR mínimo
-          const hasVolumeConfirmation = hasVolumeSpike || hasStrongVolume; // Volume forte obrigatório
+          // 7. CRITÉRIOS ULTRA-AGRESSIVOS para maximizar operações
+          const volumeCheck = volume24h > 500000; // 🔥 REDUZIDO: $500K+ volume
+          const volatilityCheck = volatility > 0.3; // 🔥 REDUZIDO: 0.3%+ movimento
+          const atrMinCheck = atrPercent > 0.3; // 🔥 REDUZIDO: 0.3% ATR mínimo
+          const hasVolumeConfirmation = hasVolumeSpike || hasStrongVolume || hasGoodVolume; // 🔥 ADICIONADO: Volume bom também aceito
           
           const shouldTrade = (
             signalScore >= scoreThreshold &&
             confirmations.length >= minConfirmations &&
             volumeCheck &&
             volatilityCheck &&
-            hasVolumeConfirmation && // Volume forte obrigatório
+            hasVolumeConfirmation && // Volume mais flexível
             action !== null &&
             currentBalance > 2 &&
             atrMinCheck &&
-            atrPercent < 12 // ATR máximo controlado
+            atrPercent < 15 // 🔥 AUMENTADO: ATR máximo mais flexível
           );
 
           // 📋 LOG DETALHADO DE CADA ATIVO ANALISADO
