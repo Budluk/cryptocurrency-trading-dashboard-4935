@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle2, Wallet, TrendingUp } from "lucide-react";
+import { AlertCircle, CheckCircle2, Wallet, TrendingUp, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -25,11 +25,43 @@ export const BybitModeToggle = () => {
     return stored ? parseFloat(stored) : null;
   });
   const [totalTrades, setTotalTrades] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadTradeHistory();
+    
+    // Carregar saldo automaticamente se já estiver conectado
+    if (isConnected) {
+      fetchBalance();
+    }
   }, []);
+
+  const fetchBalance = async () => {
+    setIsRefreshing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_balance',
+          isTestnet: false,
+          params: { accountType: 'UNIFIED' }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        const walletBalance = data.data?.list?.[0]?.totalEquity || 0;
+        const balanceNum = parseFloat(walletBalance);
+        setBalance(balanceNum);
+        localStorage.setItem('bybit_balance', balanceNum.toString());
+      }
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const loadTradeHistory = async () => {
     try {
@@ -56,7 +88,7 @@ export const BybitModeToggle = () => {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'get_balance',
-          isTestnet: false, // ⚡ SEMPRE CONTA REAL
+          isTestnet: false,
           params: { accountType: 'UNIFIED' }
         }
       });
@@ -75,16 +107,11 @@ export const BybitModeToggle = () => {
       if (data.success) {
         console.log('✅ Conexão bem-sucedida!', data.data);
         setIsConnected(true);
-        
-        // Salvar estado no localStorage
         localStorage.setItem(STORAGE_KEY, 'true');
         
-        // Extract balance from response
         const walletBalance = data.data?.list?.[0]?.totalEquity || 0;
         const balanceNum = parseFloat(walletBalance);
         setBalance(balanceNum);
-        
-        // Salvar saldo no localStorage
         localStorage.setItem('bybit_balance', balanceNum.toString());
         
         toast({
@@ -98,6 +125,7 @@ export const BybitModeToggle = () => {
     } catch (error: any) {
       console.error('❌ Falha completa na conexão:', error);
       setIsConnected(false);
+      localStorage.removeItem(STORAGE_KEY);
       
       const errorMessage = error?.message || 'Erro desconhecido ao conectar';
       
@@ -148,6 +176,16 @@ export const BybitModeToggle = () => {
                 <span className="text-sm font-semibold">${balance.toFixed(2)}</span>
               </div>
             </div>
+            
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={fetchBalance}
+              disabled={isRefreshing}
+              className="h-8 w-8 p-0"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
             
             <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md">
               <TrendingUp className="h-4 w-4 text-primary" />
