@@ -6,68 +6,31 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, CheckCircle2, Wallet, TrendingUp, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useBybitBalance } from "@/hooks/useBybitBalance";
 import { supabase } from "@/integrations/supabase/client";
 
-// 🔒 PERSISTÊNCIA DO MODO REAL
-const STORAGE_KEY = 'bybit_real_mode_active';
-
 export const BybitModeToggle = () => {
-  const [isTestnet, setIsTestnet] = useState(false); // ⚡ SEMPRE REAL
-  const [isConnected, setIsConnected] = useState(() => {
-    // Restaurar estado de conexão do localStorage
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === 'true';
-  });
-  const [isChecking, setIsChecking] = useState(false);
-  const [balance, setBalance] = useState<number | null>(() => {
-    // Restaurar saldo do localStorage
-    const stored = localStorage.getItem('bybit_balance');
-    return stored ? parseFloat(stored) : null;
-  });
   const [totalTrades, setTotalTrades] = useState<number>(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
+  
+  const { 
+    balance, 
+    isLoading, 
+    isConnected, 
+    lastUpdated,
+    fetchBalance, 
+    testConnection 
+  } = useBybitBalance();
 
   useEffect(() => {
     loadTradeHistory();
-    
-    // Carregar saldo automaticamente se já estiver conectado
-    if (isConnected) {
-      fetchBalance();
-    }
   }, []);
-
-  const fetchBalance = async () => {
-    setIsRefreshing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_balance',
-          isTestnet: false,
-          params: { accountType: 'UNIFIED' }
-        }
-      });
-
-      if (error) throw error;
-
-      if (data?.success) {
-        const walletBalance = data.data?.list?.[0]?.totalEquity || 0;
-        const balanceNum = parseFloat(walletBalance);
-        setBalance(balanceNum);
-        localStorage.setItem('bybit_balance', balanceNum.toString());
-      }
-    } catch (error) {
-      console.error('Failed to fetch balance:', error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   const loadTradeHistory = async () => {
     try {
       const { data, error } = await supabase
         .from('signal_history')
-        .select('*')
+        .select('id', { count: 'exact' })
         .eq('status', 'CLOSED');
       
       if (!error && data) {
@@ -78,73 +41,46 @@ export const BybitModeToggle = () => {
     }
   };
 
-  const testConnection = async () => {
-    setIsChecking(true);
-    console.log('🔄 Testando conexão Bybit REAL...');
+  const handleTestConnection = async () => {
+    const success = await testConnection();
     
-    try {
-      console.log('📡 Invocando edge function bybit-trading...');
-      
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_balance',
-          isTestnet: false,
-          params: { accountType: 'UNIFIED' }
-        }
+    if (success) {
+      toast({
+        title: "✅ Conectado com sucesso!",
+        description: `Modo: REAL | Saldo: $${balance?.toFixed(2) || '0.00'}`,
       });
-
-      console.log('📥 Resposta recebida:', { data, error });
-
-      if (error) {
-        console.error('❌ Erro do Supabase:', error);
-        throw new Error(`Erro ao chamar função: ${error.message}`);
-      }
-
-      if (!data) {
-        throw new Error('Nenhum dado retornado da API');
-      }
-
-      if (data.success) {
-        console.log('✅ Conexão bem-sucedida!', data.data);
-        setIsConnected(true);
-        localStorage.setItem(STORAGE_KEY, 'true');
-        
-        const walletBalance = data.data?.list?.[0]?.totalEquity || 0;
-        const balanceNum = parseFloat(walletBalance);
-        setBalance(balanceNum);
-        localStorage.setItem('bybit_balance', balanceNum.toString());
-        
-        toast({
-          title: "✅ Conectado com sucesso!",
-          description: `Modo: REAL | Saldo: $${balanceNum.toFixed(2)}`,
-        });
-      } else {
-        console.error('❌ Erro da API Bybit:', data.error);
-        throw new Error(data.error || 'Erro desconhecido da API Bybit');
-      }
-    } catch (error: any) {
-      console.error('❌ Falha completa na conexão:', error);
-      setIsConnected(false);
-      localStorage.removeItem(STORAGE_KEY);
-      
-      const errorMessage = error?.message || 'Erro desconhecido ao conectar';
-      
+    } else {
       toast({
         title: "❌ Falha na conexão",
-        description: errorMessage,
+        description: "Verifique as credenciais da API Bybit",
         variant: "destructive",
       });
-    } finally {
-      setIsChecking(false);
     }
   };
 
-  const handleModeChange = (checked: boolean) => {
+  const handleRefresh = async () => {
+    await fetchBalance();
+    toast({
+      title: "🔄 Saldo atualizado",
+      description: `Saldo atual: $${balance?.toFixed(2) || '0.00'}`,
+    });
+  };
+
+  const handleModeChange = () => {
     toast({
       title: "⚠️ Modo Fixado em REAL",
       description: "Sistema configurado apenas para conta real",
       variant: "destructive",
     });
+  };
+
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return '';
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastUpdated.getTime()) / 1000);
+    if (diff < 60) return `há ${diff}s`;
+    if (diff < 3600) return `há ${Math.floor(diff / 60)}min`;
+    return lastUpdated.toLocaleTimeString();
   };
 
   return (
@@ -163,6 +99,9 @@ export const BybitModeToggle = () => {
             </Label>
             <p className="text-xs text-muted-foreground">
               {isConnected ? 'Conectado' : 'Desconectado'}
+              {lastUpdated && isConnected && (
+                <span className="ml-1 opacity-70">• {formatLastUpdated()}</span>
+              )}
             </p>
           </div>
         </div>
@@ -180,11 +119,11 @@ export const BybitModeToggle = () => {
             <Button
               size="sm"
               variant="ghost"
-              onClick={fetchBalance}
-              disabled={isRefreshing}
+              onClick={handleRefresh}
+              disabled={isLoading}
               className="h-8 w-8 p-0"
             >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
             
             <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md">
@@ -219,10 +158,10 @@ export const BybitModeToggle = () => {
 
           <Button
             size="sm"
-            onClick={testConnection}
-            disabled={isChecking}
+            onClick={handleTestConnection}
+            disabled={isLoading}
           >
-            {isChecking ? 'Testando...' : 'Testar Conexão'}
+            {isLoading ? 'Testando...' : 'Testar Conexão'}
           </Button>
         </div>
       </div>
