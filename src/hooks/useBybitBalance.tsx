@@ -10,7 +10,7 @@ interface BybitBalanceState {
 
 const STORAGE_KEY = 'bybit_real_mode_active';
 const BALANCE_KEY = 'bybit_balance';
-const UPDATE_INTERVAL = 30000; // 30 segundos - intervalo conservador
+const UPDATE_INTERVAL = 5000; // 5 segundos - atualização em tempo real
 
 export const useBybitBalance = () => {
   const [state, setState] = useState<BybitBalanceState>(() => ({
