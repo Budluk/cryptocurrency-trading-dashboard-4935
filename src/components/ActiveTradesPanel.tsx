@@ -1,184 +1,17 @@
-import { useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, X, Clock, Target, ShieldAlert, Radio } from "lucide-react";
+import { TrendingUp, TrendingDown, X, Clock, Target, ShieldAlert, Radio, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { useRealtimePrice } from "@/hooks/useRealtimePrice";
 import { usePositions } from "@/contexts/PositionsContext";
-import { getUserId } from "@/lib/anonymousUser";
 
 export const ActiveTradesPanel = () => {
   const { toast } = useToast();
   const { getPrice, isConnected } = useRealtimePrice();
-
-  // 🔄 Sincronizar posições da Bybit ao carregar
-  const syncBybitPositions = async () => {
-    try {
-      console.log('🔄 Iniciando sincronização com Bybit...');
-      
-      const userId = await getUserId();
-      console.log('✅ Usuário:', userId);
-      
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_positions',
-          isTestnet: false,
-          params: { 
-            category: 'linear',
-            settleCoin: 'USDT' 
-          }
-        }
-      });
-
-      console.log('📡 Resposta da Bybit:', { success: data?.success, error });
-
-      if (error) {
-        console.error('❌ Erro ao buscar posições da Bybit:', error);
-        toast({
-          title: "❌ Erro ao buscar posições",
-          description: error.message || "Erro desconhecido",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (!data?.success) {
-        console.error('❌ Bybit retornou erro:', data?.error || data);
-        toast({
-          title: "❌ Erro da Bybit",
-          description: data?.error || "Erro desconhecido",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const positions = data.data?.list || [];
-      const openPositions = positions.filter((p: any) => parseFloat(p.size || 0) > 0);
-      
-      console.log(`📊 Total de posições: ${positions.length}, Abertas: ${openPositions.length}`);
-      console.log('📋 Posições abertas:', openPositions.map((p: any) => `${p.symbol} ${p.side} ${p.size}`));
-
-      if (openPositions.length === 0) {
-        console.log('ℹ️ Nenhuma posição aberta na Bybit');
-        toast({
-          title: "ℹ️ Nenhuma posição",
-          description: "Não há posições abertas na Bybit",
-        });
-        return;
-      }
-
-      // Buscar posições já existentes no banco
-      const { data: dbPositions, error: dbError } = await supabase
-        .from('auto_trader_positions')
-        .select('symbol, side')
-        .eq('status', 'OPEN')
-        .eq('user_id', userId);
-
-      if (dbError) {
-        console.error('❌ Erro ao buscar posições do banco:', dbError);
-      }
-
-      console.log(`💾 Posições no banco: ${dbPositions?.length || 0}`);
-
-      const existingPositions = new Set(
-        (dbPositions || []).map(p => `${p.symbol}-${p.side}`)
-      );
-
-      let imported = 0;
-      let skipped = 0;
-
-      // Importar posições que não estão no banco
-      for (const position of openPositions) {
-        const symbol = position.symbol;
-        const side = position.side;
-        const posKey = `${symbol}-${side}`;
-
-        if (existingPositions.has(posKey)) {
-          console.log(`⏭️ Posição já existe: ${posKey}`);
-          skipped++;
-          continue;
-        }
-
-        const entryPrice = parseFloat(position.avgPrice || 0);
-        const qty = parseFloat(position.size || 0);
-        const leverage = parseInt(position.leverage || 1);
-        const stopLoss = position.stopLoss ? parseFloat(position.stopLoss) : null;
-        const takeProfit = position.takeProfit ? parseFloat(position.takeProfit) : null;
-        const currentPrice = parseFloat(position.markPrice || entryPrice);
-        const unrealizedPnl = parseFloat(position.unrealisedPnl || 0);
-
-        console.log(`💾 Importando: ${symbol} ${side} - Entry: $${entryPrice} - Qty: ${qty} - PnL: $${unrealizedPnl}`);
-
-        const newPosition = {
-          user_id: userId,
-          symbol: symbol,
-          side: side,
-          qty: qty,
-          entry_price: entryPrice,
-          current_price: currentPrice,
-          highest_price: currentPrice,
-          stop_loss: stopLoss,
-          take_profit: takeProfit,
-          leverage: leverage,
-          status: 'OPEN',
-          confidence: 85,
-          trailing_stop_percentage: 1.5,
-          unrealized_pnl: unrealizedPnl,
-          opened_at: position.createdTime ? new Date(parseInt(position.createdTime)).toISOString() : new Date().toISOString()
-        };
-
-        console.log('📝 Dados da posição a inserir:', newPosition);
-
-        const { data: insertData, error: insertError } = await supabase
-          .from('auto_trader_positions')
-          .insert(newPosition)
-          .select();
-        
-        if (insertError) {
-          console.error(`❌ Erro ao importar ${symbol}:`, insertError);
-          toast({
-            title: "❌ Erro ao importar posição",
-            description: `${symbol}: ${insertError.message}`,
-            variant: "destructive",
-          });
-        } else {
-          console.log(`✅ Posição importada com sucesso:`, insertData);
-          imported++;
-        }
-      }
-
-      console.log(`📊 Resumo: ${imported} importadas, ${skipped} já existiam`);
-
-      if (imported > 0) {
-        toast({
-          title: "✅ Posições Sincronizadas",
-          description: `${imported} posições importadas da Bybit`,
-        });
-        refetch();
-      } else if (skipped > 0) {
-        toast({
-          title: "✓ Já sincronizado",
-          description: "Todas as posições já estão no sistema",
-        });
-      }
-    } catch (error: any) {
-      console.error('❌ Erro ao sincronizar:', error);
-      toast({
-        title: "❌ Erro na sincronização",
-        description: error?.message || "Erro desconhecido",
-        variant: "destructive",
-      });
-    }
-  };
-
-  useEffect(() => {
-    syncBybitPositions();
-  }, []);
-
-  const { openPositions: positions, refetch } = usePositions();
+  const { openPositions: positions, refetch, isLoading } = usePositions();
 
   const closePosition = async (positionId: string, symbol: string) => {
     try {
@@ -256,10 +89,12 @@ export const ActiveTradesPanel = () => {
           <Button 
             size="sm" 
             variant="outline" 
-            onClick={syncBybitPositions}
+            onClick={() => refetch()}
+            disabled={isLoading}
             className="gap-2"
           >
-            🔄 Sincronizar
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? 'Atualizando...' : 'Atualizar'}
           </Button>
           {positions && positions.length > 0 && (
             <Badge variant="default" className="text-lg px-4 py-2">
