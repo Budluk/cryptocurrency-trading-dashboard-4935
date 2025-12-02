@@ -11,7 +11,7 @@ import { usePositions } from "@/contexts/PositionsContext";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
-import { AdvancedTradingSettings } from "@/components/AdvancedTradingSettings";
+// AdvancedTradingSettings removido - settings integrados no AutoTraderSettings
 import { getUserId } from "@/lib/anonymousUser";
 
 interface Trade {
@@ -2129,31 +2129,7 @@ export const MultiAssetTrader = () => {
         )}
       </Card>
 
-      {/* ⚡ CONFIGURAÇÕES AVANÇADAS */}
-      <AdvancedTradingSettings
-        trailingStopEnabled={trailingStopEnabled}
-        setTrailingStopEnabled={setTrailingStopEnabled}
-        trailingStopPercent={trailingStopPercent}
-        setTrailingStopPercent={setTrailingStopPercent}
-        timeFilterEnabled={timeFilterEnabled}
-        setTimeFilterEnabled={setTimeFilterEnabled}
-        startHour={startHour}
-        setStartHour={setStartHour}
-        endHour={endHour}
-        setEndHour={setEndHour}
-        scaleInOutEnabled={scaleInOutEnabled}
-        setScaleInOutEnabled={setScaleInOutEnabled}
-        martingaleEnabled={martingaleEnabled}
-        setMartingaleEnabled={setMartingaleEnabled}
-        copyTradingEnabled={copyTradingEnabled}
-        setCopyTradingEnabled={setCopyTradingEnabled}
-        hedgeEnabled={hedgeEnabled}
-        setHedgeEnabled={setHedgeEnabled}
-        sentimentEnabled={sentimentEnabled}
-        setSentimentEnabled={setSentimentEnabled}
-        dynamicLeverageEnabled={dynamicLeverageEnabled}
-        setDynamicLeverageEnabled={setDynamicLeverageEnabled}
-      />
+      {/* Configurações avançadas movidas para AutoTraderSettings */}
 
       {/* Recent Trades */}
       {activeTrades.length > 0 && (
