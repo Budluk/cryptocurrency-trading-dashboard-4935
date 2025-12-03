@@ -4,7 +4,6 @@ import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RealtimePriceProvider } from "@/contexts/RealtimePriceContext";
 import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 // Lazy loaded components
@@ -27,7 +26,7 @@ import SmartAlerts from "@/components/SmartAlerts";
 
 const Index = () => {
   return (
-    <RealtimePriceProvider>
+    <>
       <div className="h-screen bg-gradient-to-br from-background via-background/95 to-primary/10 relative overflow-hidden">
         {/* Animated background elements */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -134,7 +133,7 @@ const Index = () => {
           </div>
         </ScrollArea>
       </div>
-    </RealtimePriceProvider>
+    </>
   );
 };
 
