@@ -145,24 +145,24 @@ export const BybitPositionsPanel = () => {
   };
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <Card className="p-3 sm:p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div>
-          <h3 className="text-xl font-bold">🔴 Posições na Bybit (Tempo Real)</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-base sm:text-lg md:text-xl font-bold">🔴 Posições na Bybit (Tempo Real)</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             {positions?.length || 0} posições abertas na exchange
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button 
             size="sm" 
             variant="outline" 
             onClick={() => refetch()}
             disabled={isLoading}
-            className="gap-2"
+            className="gap-1 sm:gap-2 text-xs sm:text-sm h-8 sm:h-9"
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Atualizar
+            <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <span className="hidden xs:inline">Atualizar</span>
           </Button>
           {positions && positions.length > 0 && (
             <>
@@ -171,16 +171,17 @@ export const BybitPositionsPanel = () => {
                 variant="destructive"
                 onClick={() => setConfirmClose({ all: true })}
                 disabled={closingPosition === 'ALL'}
-                className="gap-2"
+                className="gap-1 sm:gap-2 text-xs sm:text-sm h-8 sm:h-9"
               >
-                <XCircle className="h-4 w-4" />
-                Fechar Todas
+                <XCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Fechar Todas</span>
+                <span className="sm:hidden">Fechar</span>
               </Button>
               <Badge 
                 variant={totalPnL >= 0 ? "default" : "destructive"} 
-                className="text-lg px-4 py-2"
+                className="text-sm sm:text-lg px-2 sm:px-4 py-1 sm:py-2"
               >
-                P&L Total: ${(totalPnL || 0).toFixed(2)}
+                P&L: ${(totalPnL || 0).toFixed(2)}
               </Badge>
             </>
           )}
@@ -238,34 +239,34 @@ export const BybitPositionsPanel = () => {
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-4 gap-3 mt-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3 text-xs sm:text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground">Entrada</p>
-                    <p className="font-semibold">${(parseFloat(position.avgPrice) || 0).toFixed(4)}</p>
+                    <p className="font-semibold text-xs sm:text-sm">${(parseFloat(position.avgPrice) || 0).toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Preço Atual</p>
-                    <p className="font-semibold">${(parseFloat(position.markPrice) || 0).toFixed(4)}</p>
+                    <p className="text-xs text-muted-foreground">Atual</p>
+                    <p className="font-semibold text-xs sm:text-sm">${(parseFloat(position.markPrice) || 0).toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Stop Loss</p>
-                    <p className="font-semibold">
-                      {position.stopLoss ? `$${(parseFloat(position.stopLoss) || 0).toFixed(4)}` : 'N/A'}
+                    <p className="text-xs text-muted-foreground">SL</p>
+                    <p className="font-semibold text-xs sm:text-sm">
+                      {position.stopLoss ? `$${(parseFloat(position.stopLoss) || 0).toFixed(2)}` : '-'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Take Profit</p>
-                    <p className="font-semibold">
-                      {position.takeProfit ? `$${(parseFloat(position.takeProfit) || 0).toFixed(4)}` : 'N/A'}
+                    <p className="text-xs text-muted-foreground">TP</p>
+                    <p className="font-semibold text-xs sm:text-sm">
+                      {position.takeProfit ? `$${(parseFloat(position.takeProfit) || 0).toFixed(2)}` : '-'}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-3 pt-3 border-t border-border">
                   <div className="flex items-center gap-4">
                     <div>
-                      <p className="text-xs text-muted-foreground">P&L não realizado</p>
-                      <p className={`text-xl font-bold ${
+                      <p className="text-xs text-muted-foreground">P&L</p>
+                      <p className={`text-base sm:text-xl font-bold ${
                         pnl > 0 ? 'text-green-500' : 
                         pnl < 0 ? 'text-red-500' : 'text-muted-foreground'
                       }`}>
@@ -273,8 +274,8 @@ export const BybitPositionsPanel = () => {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Variação</p>
-                      <p className={`text-lg font-bold ${
+                      <p className="text-xs text-muted-foreground">%</p>
+                      <p className={`text-sm sm:text-lg font-bold ${
                         pnlPercentage > 0 ? 'text-green-500' : 
                         pnlPercentage < 0 ? 'text-red-500' : 'text-muted-foreground'
                       }`}>
@@ -288,10 +289,10 @@ export const BybitPositionsPanel = () => {
                     size="sm"
                     onClick={() => handleClosePosition(position)}
                     disabled={closingPosition === position.symbol}
-                    className="gap-2"
+                    className="gap-1 sm:gap-2 text-xs sm:text-sm h-8 sm:h-9 w-full sm:w-auto"
                   >
-                    <XCircle className="h-4 w-4" />
-                    {closingPosition === position.symbol ? 'Fechando...' : 'Fechar Agora'}
+                    <XCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                    {closingPosition === position.symbol ? 'Fechando...' : 'Fechar'}
                   </Button>
                 </div>
               </div>
