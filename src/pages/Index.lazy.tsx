@@ -3,7 +3,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 
 // Lazy load dos componentes pesados
-const CryptoChart = lazy(() => import("@/components/CryptoChart"));
 const AdvancedAISignals = lazy(() => import("@/components/AdvancedAISignals"));
 const PerformanceDashboard = lazy(() => import("@/components/PerformanceDashboard"));
 const MultiAssetTrader = lazy(() => import("@/components/MultiAssetTrader").then(m => ({ default: m.MultiAssetTrader })));
@@ -23,13 +22,6 @@ const ComponentSkeleton = () => (
     <Skeleton className="h-8 w-48 mb-4" />
     <Skeleton className="h-64 w-full" />
   </Card>
-);
-
-// Wrapper com Suspense
-export const LazyCryptoChart = () => (
-  <Suspense fallback={<ComponentSkeleton />}>
-    <CryptoChart />
-  </Suspense>
 );
 
 export const LazyAdvancedAISignals = () => (

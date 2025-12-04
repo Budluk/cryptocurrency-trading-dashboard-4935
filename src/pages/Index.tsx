@@ -8,7 +8,6 @@ import { Activity, BarChart3, Settings, TrendingUp } from "lucide-react";
 
 // Lazy loaded components
 import {
-  LazyCryptoChart,
   LazyAdvancedAISignals,
   LazyPerformanceDashboard,
   LazyMultiAssetTrader,
@@ -99,7 +98,6 @@ const Index = () => {
                 </div>
                 <div className="space-y-6">
                   <LazyRiskManagementPanel />
-                  <LazyCryptoChart />
                   <LazyAdvancedAISignals />
                 </div>
               </div>
