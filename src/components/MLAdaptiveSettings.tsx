@@ -7,8 +7,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getUserId } from "@/lib/anonymousUser";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Brain, TrendingUp, Target, Zap, BarChart3, Clock } from "lucide-react";
+import { Brain, TrendingUp, Target, Zap, BarChart3, Clock, Shield, Lightbulb, Activity, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 
 export function MLAdaptiveSettings() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -18,7 +19,6 @@ export function MLAdaptiveSettings() {
     queryKey: ['ml-adaptive-config'],
     queryFn: async () => {
       const userId = await getUserId();
-
       const { data, error } = await supabase
         .from('ml_adaptive_config')
         .select('*')
@@ -33,7 +33,6 @@ export function MLAdaptiveSettings() {
   const toggleMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
       const userId = await getUserId();
-
       if (mlConfig) {
         const { error } = await supabase
           .from('ml_adaptive_config')
@@ -44,14 +43,17 @@ export function MLAdaptiveSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ml-adaptive-config'] });
-      toast.success(mlConfig?.is_enabled ? 'ML Adaptativo desativado' : 'ML Adaptativo ativado');
+      toast.success(mlConfig?.is_enabled ? 'ML desativado' : 'ML ativado');
     },
   });
 
   const runAnalysis = async () => {
     setIsAnalyzing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('ml-adaptive-learning');
+      const userId = await getUserId();
+      const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', {
+        body: { userId, minTrades: 10 }
+      });
       
       if (error) throw error;
       
@@ -59,38 +61,43 @@ export function MLAdaptiveSettings() {
         toast.success(`Análise concluída! ${data.analysis.totalTrades} trades analisados`);
         queryClient.invalidateQueries({ queryKey: ['ml-adaptive-config'] });
       } else {
-        toast.warning(data.message || 'Dados insuficientes para análise');
+        toast.warning(data.message || 'Dados insuficientes');
       }
     } catch (error) {
       console.error('Analysis error:', error);
-      toast.error('Erro ao analisar trades históricos');
+      toast.error('Erro ao analisar trades');
     } finally {
       setIsAnalyzing(false);
     }
   };
 
   const getConfidenceBadge = (score: number) => {
-    if (score >= 80) return <Badge className="bg-success">Alta Confiança</Badge>;
-    if (score >= 50) return <Badge className="bg-warning">Média Confiança</Badge>;
-    return <Badge variant="secondary">Baixa Confiança</Badge>;
+    if (score >= 70) return <Badge className="bg-success text-success-foreground">Alta</Badge>;
+    if (score >= 50) return <Badge className="bg-warning text-warning-foreground">Média</Badge>;
+    return <Badge variant="secondary">Baixa</Badge>;
   };
 
+  const patterns = mlConfig?.optimal_patterns as any;
+  const dynamicStops = patterns?.dynamicStops;
+  const dynamicTP = patterns?.dynamicTP;
+  const learningMetrics = patterns?.learningMetrics;
+  const insights = patterns?.insights || [];
+
   return (
-    <Card className="border-primary/20">
-      <CardHeader>
+    <Card className="border-primary/20 bg-gradient-to-br from-card to-card/80">
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-primary" />
-              ML Adaptativo
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Brain className="h-5 w-5 text-primary animate-pulse" />
+              IA Adaptativa
             </CardTitle>
-            <CardDescription>
-              Sistema que aprende com seus trades e otimiza automaticamente
+            <CardDescription className="text-xs">
+              Aprende com suas operações para otimizar stops
             </CardDescription>
           </div>
           {mlConfig && (
-            <div className="flex items-center gap-3">
-              <Label htmlFor="ml-enable">Ativar</Label>
+            <div className="flex items-center gap-2">
               <Switch
                 id="ml-enable"
                 checked={mlConfig.is_enabled}
@@ -100,94 +107,199 @@ export function MLAdaptiveSettings() {
           )}
         </div>
       </CardHeader>
+      
       <CardContent className="space-y-4">
         <Button
           onClick={runAnalysis}
           disabled={isAnalyzing}
-          className="w-full"
+          className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
           size="lg"
         >
-          <Brain className="mr-2 h-4 w-4" />
-          {isAnalyzing ? 'Analisando...' : 'Analisar Trades Históricos'}
+          <Brain className={`mr-2 h-4 w-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
+          {isAnalyzing ? 'Analisando...' : 'Analisar Operações'}
         </Button>
 
         {mlConfig && mlConfig.trades_analyzed > 0 && (
-          <div className="space-y-4 pt-4 border-t">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Confiança do Modelo</span>
-              {getConfidenceBadge(mlConfig.confidence_score)}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2 p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Target className="h-4 w-4" />
-                  Stop Loss Ideal
-                </div>
-                <div className="text-2xl font-bold text-destructive">
-                  {mlConfig.recommended_stop_loss_pct}%
-                </div>
+          <div className="space-y-4 pt-3 border-t border-border/50">
+            {/* Confiança e Status */}
+            <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                <span className="text-sm">Confiança</span>
               </div>
-
-              <div className="space-y-2 p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <TrendingUp className="h-4 w-4" />
-                  Take Profit Ideal
-                </div>
-                <div className="text-2xl font-bold text-success">
-                  {mlConfig.recommended_take_profit_pct}%
-                </div>
-              </div>
-
-              <div className="space-y-2 p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Zap className="h-4 w-4" />
-                  Alavancagem Ideal
-                </div>
-                <div className="text-2xl font-bold text-primary">
-                  {mlConfig.recommended_leverage}x
-                </div>
-              </div>
-
-              <div className="space-y-2 p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <BarChart3 className="h-4 w-4" />
-                  Trades Analisados
-                </div>
-                <div className="text-2xl font-bold">
-                  {mlConfig.trades_analyzed}
-                </div>
+              <div className="flex items-center gap-2">
+                {getConfidenceBadge(mlConfig.confidence_score)}
+                <span className="text-xs text-muted-foreground">
+                  {mlConfig.trades_analyzed} trades
+                </span>
               </div>
             </div>
 
-            {mlConfig.optimal_patterns && typeof mlConfig.optimal_patterns === 'object' && (
-              <div className="space-y-2 p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  Melhor Horário para Operar
+            {/* Stops Dinâmicos */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Shield className="h-4 w-4 text-destructive" />
+                Stops Adaptativos
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <div className="text-xs text-muted-foreground">Stop Base</div>
+                  <div className="text-xl font-bold text-destructive">
+                    {mlConfig.recommended_stop_loss_pct?.toFixed(2)}%
+                  </div>
                 </div>
-                <div className="text-lg font-semibold">
-                  {(mlConfig.optimal_patterns as any).bestTimeToTrade || 'N/A'}
+                
+                <div className="p-2.5 rounded-lg bg-success/10 border border-success/20">
+                  <div className="text-xs text-muted-foreground">Take Profit</div>
+                  <div className="text-xl font-bold text-success">
+                    {mlConfig.recommended_take_profit_pct?.toFixed(2)}%
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  R/R Ratio: {(mlConfig.optimal_patterns as any).riskRewardRatio?.toFixed(2) || 'N/A'}
+              </div>
+
+              {/* Stops por Volatilidade */}
+              {dynamicStops && (
+                <div className="p-2.5 rounded-lg bg-muted/30 space-y-2">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Zap className="h-3 w-3" /> Por Volatilidade
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Baixa</div>
+                      <div className="text-sm font-semibold text-success">
+                        {dynamicStops.lowVolatility?.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Média</div>
+                      <div className="text-sm font-semibold text-warning">
+                        {dynamicStops.mediumVolatility?.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Alta</div>
+                      <div className="text-sm font-semibold text-destructive">
+                        {dynamicStops.highVolatility?.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Métricas de Aprendizado */}
+            {learningMetrics && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  Aprendizado
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded bg-muted/30">
+                    <div className="text-muted-foreground">Stops Apertados</div>
+                    <div className="font-semibold flex items-center gap-1">
+                      {learningMetrics.stopsTooTight > 5 && (
+                        <AlertTriangle className="h-3 w-3 text-warning" />
+                      )}
+                      {learningMetrics.stopsTooTight}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded bg-muted/30">
+                    <div className="text-muted-foreground">Taxa Stop Out</div>
+                    <div className="font-semibold">{learningMetrics.stoppedOutRate}%</div>
+                  </div>
+                  <div className="p-2 rounded bg-muted/30">
+                    <div className="text-muted-foreground">Drawdown Médio</div>
+                    <div className="font-semibold">{learningMetrics.avgDrawdownBeforeWin}%</div>
+                  </div>
+                  <div className="p-2 rounded bg-muted/30">
+                    <div className="text-muted-foreground">Profit Factor</div>
+                    <div className="font-semibold">{learningMetrics.profitFactor}</div>
+                  </div>
                 </div>
               </div>
             )}
 
+            {/* Configurações Extras */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2.5 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Zap className="h-3 w-3" />
+                  Alavancagem
+                </div>
+                <div className="text-lg font-bold text-primary">
+                  {mlConfig.recommended_leverage}x
+                </div>
+              </div>
+              
+              <div className="p-2.5 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <TrendingUp className="h-3 w-3" />
+                  R:R Ratio
+                </div>
+                <div className="text-lg font-bold">
+                  {patterns?.riskRewardRatio?.toFixed(1) || 'N/A'}
+                </div>
+              </div>
+            </div>
+
+            {/* Melhores Horários */}
+            {patterns?.bestHours?.length > 0 && (
+              <div className="p-2.5 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                  <Clock className="h-3 w-3" />
+                  Melhores Horários (UTC)
+                </div>
+                <div className="flex gap-1">
+                  {patterns.bestHours.map((hour: number) => (
+                    <Badge key={hour} variant="outline" className="text-xs">
+                      {hour}h
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Insights da IA */}
+            {insights.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Lightbulb className="h-4 w-4 text-warning" />
+                  Insights
+                </div>
+                <div className="space-y-1">
+                  {insights.slice(0, 3).map((insight: string, idx: number) => (
+                    <div key={idx} className="text-xs text-muted-foreground p-2 rounded bg-muted/20">
+                      • {insight}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recomendações */}
+            {patterns?.recommendations && (
+              <div className="p-2.5 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="text-xs text-muted-foreground mb-1">Recomendação</div>
+                <div className="text-xs">{patterns.recommendations}</div>
+              </div>
+            )}
+
             {mlConfig.last_analysis_at && (
-              <div className="text-xs text-muted-foreground text-center">
-                Última análise: {new Date(mlConfig.last_analysis_at).toLocaleString('pt-BR')}
+              <div className="text-[10px] text-muted-foreground text-center">
+                Atualizado: {new Date(mlConfig.last_analysis_at).toLocaleString('pt-BR')}
               </div>
             )}
           </div>
         )}
 
         {(!mlConfig || mlConfig.trades_analyzed === 0) && !isAnalyzing && (
-          <div className="text-center py-8 text-muted-foreground">
-            <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>Execute a análise para começar a usar o ML adaptativo</p>
-            <p className="text-xs mt-2">Mínimo de 10 trades fechados necessário</p>
+          <div className="text-center py-6 text-muted-foreground">
+            <Brain className="h-10 w-10 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">Execute trades para a IA aprender</p>
+            <p className="text-xs mt-1">Mínimo 10 trades fechados</p>
           </div>
         )}
       </CardContent>
