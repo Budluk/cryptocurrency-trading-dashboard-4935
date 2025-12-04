@@ -2,10 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, RefreshCw, XCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, RefreshCw, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,11 +17,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const MiniChart = lazy(() => import("./MiniChart"));
+
 export const BybitPositionsPanel = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [closingPosition, setClosingPosition] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState<any>(null);
+  const [expandedCharts, setExpandedCharts] = useState<Record<string, boolean>>({});
+
+  const toggleChart = (symbol: string) => {
+    setExpandedCharts(prev => ({ ...prev, [symbol]: !prev[symbol] }));
+  };
   
   const { data: positions, refetch, isLoading } = useQuery({
     queryKey: ['bybit-positions'],
@@ -234,10 +241,38 @@ export const BybitPositionsPanel = () => {
                     </div>
                   </div>
                   
-                  <Badge variant={position.side === 'Buy' ? 'default' : 'destructive'}>
-                    {position.side}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleChart(position.symbol)}
+                      className="h-8 px-2"
+                    >
+                      {expandedCharts[position.symbol] ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                      <span className="ml-1 text-xs">Gráfico</span>
+                    </Button>
+                    <Badge variant={position.side === 'Buy' ? 'default' : 'destructive'}>
+                      {position.side}
+                    </Badge>
+                  </div>
                 </div>
+
+                {/* Mini Chart */}
+                {expandedCharts[position.symbol] && (
+                  <div className="mt-3">
+                    <Suspense fallback={
+                      <div className="h-[200px] bg-muted/50 rounded-lg flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      </div>
+                    }>
+                      <MiniChart symbol={position.symbol} height={200} />
+                    </Suspense>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3 text-xs sm:text-sm">
                   <div>
