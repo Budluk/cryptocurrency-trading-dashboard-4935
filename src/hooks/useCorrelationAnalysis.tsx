@@ -23,8 +23,8 @@ export const useCorrelationAnalysis = () => {
     const base1 = getBaseAsset(asset1);
     const base2 = getBaseAsset(asset2);
 
-    // Mesmo ativo
-    if (base1 === base2) return true;
+    // Mesmo ativo - não conta como correlação (será tratado separadamente)
+    if (base1 === base2) return false;
 
     // Verifica pares conhecidos
     for (const [key, correlatedAssets] of Object.entries(HIGH_CORRELATION_PAIRS)) {
@@ -41,31 +41,47 @@ export const useCorrelationAnalysis = () => {
     reason?: string;
     correlatedPositions?: string[];
   } => {
-    const correlatedPositions: string[] = [];
-
-    for (const position of openPositions) {
-      if (isHighlyCorrelated(symbol, position.symbol)) {
-        // Se mesma direção (Long/Long ou Short/Short), há risco de correlação
-        if (position.side === side) {
-          correlatedPositions.push(position.symbol);
-        }
-      }
-    }
-
-    if (correlatedPositions.length >= 2) {
+    const baseSymbol = getBaseAsset(symbol);
+    
+    // Verificar se já existe posição no mesmo ativo e mesma direção
+    const sameAssetPositions = openPositions.filter(p => 
+      getBaseAsset(p.symbol) === baseSymbol && p.side === side
+    );
+    
+    if (sameAssetPositions.length >= 3) {
       return {
         allowed: false,
-        reason: `Alta correlação detectada com ${correlatedPositions.length} posições abertas: ${correlatedPositions.join(', ')}`,
-        correlatedPositions,
+        reason: `Limite de 3 posições ${side === 'Buy' ? 'LONG' : 'SHORT'} no mesmo ativo (${baseSymbol}) atingido`,
+        correlatedPositions: [symbol],
       };
     }
 
-    // Limitar posições na mesma direção
-    const sameSideCount = openPositions.filter(p => p.side === side).length;
-    if (sameSideCount >= 5) {
+    // Verificar correlação com outros ativos (usando Set para símbolos únicos)
+    const correlatedSymbols = new Set<string>();
+
+    for (const position of openPositions) {
+      if (isHighlyCorrelated(symbol, position.symbol) && position.side === side) {
+        correlatedSymbols.add(getBaseAsset(position.symbol));
+      }
+    }
+
+    if (correlatedSymbols.size >= 2) {
       return {
         allowed: false,
-        reason: `Limite de 5 posições ${side === 'Buy' ? 'LONG' : 'SHORT'} simultâneas atingido (diversificação)`,
+        reason: `Alta correlação com ${correlatedSymbols.size} ativos: ${Array.from(correlatedSymbols).join(', ')}`,
+        correlatedPositions: Array.from(correlatedSymbols),
+      };
+    }
+
+    // Limitar posições na mesma direção (usando Set para contar ativos únicos)
+    const uniqueSymbolsBySide = new Set(
+      openPositions.filter(p => p.side === side).map(p => getBaseAsset(p.symbol))
+    );
+    
+    if (uniqueSymbolsBySide.size >= 5) {
+      return {
+        allowed: false,
+        reason: `Limite de 5 ativos ${side === 'Buy' ? 'LONG' : 'SHORT'} simultâneos atingido`,
       };
     }
 
@@ -76,12 +92,17 @@ export const useCorrelationAnalysis = () => {
     level: 'low' | 'medium' | 'high';
     message: string;
   } => {
+    // Usar apenas ativos únicos para análise
+    const uniquePositions = Array.from(
+      new Map(openPositions.map(p => [getBaseAsset(p.symbol) + p.side, p])).values()
+    );
+    
     let correlatedPairs = 0;
     
-    for (let i = 0; i < openPositions.length; i++) {
-      for (let j = i + 1; j < openPositions.length; j++) {
-        if (isHighlyCorrelated(openPositions[i].symbol, openPositions[j].symbol)) {
-          if (openPositions[i].side === openPositions[j].side) {
+    for (let i = 0; i < uniquePositions.length; i++) {
+      for (let j = i + 1; j < uniquePositions.length; j++) {
+        if (isHighlyCorrelated(uniquePositions[i].symbol, uniquePositions[j].symbol)) {
+          if (uniquePositions[i].side === uniquePositions[j].side) {
             correlatedPairs++;
           }
         }
