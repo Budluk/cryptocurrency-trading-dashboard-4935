@@ -64,6 +64,15 @@ serve(async (req) => {
       case 'set_leverage':
         result = await setLeverage(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
         break;
+      case 'get_closed_pnl':
+        result = await getClosedPnL(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
+      case 'get_order_history':
+        result = await getOrderHistory(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
+      case 'get_execution_list':
+        result = await getExecutionList(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -288,5 +297,70 @@ async function setLeverage(baseUrl: string, apiKey: string, apiSecret: string, p
     apiSecret,
     'POST',
     params
+  );
+}
+
+// Get closed PnL history - últimos 2 anos de trades fechados
+async function getClosedPnL(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/position/closed-pnl',
+    apiKey,
+    apiSecret,
+    'GET',
+    {
+      category: params.category || 'linear',
+      symbol: params.symbol,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      limit: params.limit || 100,
+      cursor: params.cursor
+    }
+  );
+}
+
+// Get order history - histórico de ordens
+async function getOrderHistory(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/order/history',
+    apiKey,
+    apiSecret,
+    'GET',
+    {
+      category: params.category || 'linear',
+      symbol: params.symbol,
+      baseCoin: params.baseCoin,
+      settleCoin: params.settleCoin,
+      orderId: params.orderId,
+      orderLinkId: params.orderLinkId,
+      orderFilter: params.orderFilter,
+      orderStatus: params.orderStatus,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      limit: params.limit || 50,
+      cursor: params.cursor
+    }
+  );
+}
+
+// Get execution/trade list - todas as execuções
+async function getExecutionList(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+  return await makeBybitRequest(
+    baseUrl,
+    '/v5/execution/list',
+    apiKey,
+    apiSecret,
+    'GET',
+    {
+      category: params.category || 'linear',
+      symbol: params.symbol,
+      baseCoin: params.baseCoin,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      execType: params.execType,
+      limit: params.limit || 100,
+      cursor: params.cursor
+    }
   );
 }
