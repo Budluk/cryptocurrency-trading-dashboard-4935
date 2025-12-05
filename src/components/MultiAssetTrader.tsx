@@ -978,23 +978,26 @@ export const MultiAssetTrader = () => {
             const currentVolatility = Math.abs(priceChange);
             setAvgVolatility(currentVolatility);
             
+            // 🔧 OBTER ALAVANCAGEM MÁXIMA DO INSTRUMENTO
+            const maxLeverageInstrument = parseFloat(instrument.leverageFilter?.maxLeverage || '25');
+            
             // 🔥 ALAVANCAGEM PARA SCALPING: Baseada na volatilidade
             let dynamicLeverage: number;
             
             if (isScalpAsset) {
-              // Scalping: 25x-50x baseado na volatilidade
-              dynamicLeverage = getLeverageForScalping(currentVolatility);
-              console.log(`⚡ SCALP ${dynamicLeverage.toFixed(0)}x | Vol: ${currentVolatility.toFixed(2)}%`);
+              // Scalping: 25x-50x baseado na volatilidade (limitado pelo instrumento)
+              dynamicLeverage = Math.min(getLeverageForScalping(currentVolatility), maxLeverageInstrument);
+              console.log(`⚡ SCALP ${dynamicLeverage.toFixed(0)}x (max: ${maxLeverageInstrument}x) | Vol: ${currentVolatility.toFixed(2)}%`);
             } else if (mlConfig?.is_enabled && mlConfig?.recommended_leverage) {
-              // ML Ativo
-              dynamicLeverage = mlConfig.recommended_leverage;
+              // ML Ativo (limitado pelo instrumento)
+              dynamicLeverage = Math.min(mlConfig.recommended_leverage, maxLeverageInstrument);
             } else {
-              // Alavancagem normal baseada em saldo
-              dynamicLeverage = getLeverageForBalance(currentBalance, historicalWinRate);
+              // Alavancagem normal baseada em saldo (limitado pelo instrumento)
+              dynamicLeverage = Math.min(getLeverageForBalance(currentBalance, historicalWinRate), maxLeverageInstrument);
               
               if (dynamicLeverageEnabled) {
                 if (historicalWinRate >= 70) {
-                  dynamicLeverage = Math.min(dynamicLeverage * 1.2, 20);
+                  dynamicLeverage = Math.min(dynamicLeverage * 1.2, maxLeverageInstrument);
                 } else if (historicalWinRate < 45 || lossStreak >= 2) {
                   dynamicLeverage = Math.max(dynamicLeverage * 0.7, 5);
                 }
@@ -1002,7 +1005,7 @@ export const MultiAssetTrader = () => {
             }
             
             setCurrentLeverage(dynamicLeverage);
-            const leverage = dynamicLeverage;
+            const leverage = Math.floor(dynamicLeverage); // Garantir inteiro
             
             // 🚀 CAPITAL ALLOCATION OTIMIZADO: Usar saldo disponível eficientemente
             // META: $15+ por dia com uso eficiente do capital
