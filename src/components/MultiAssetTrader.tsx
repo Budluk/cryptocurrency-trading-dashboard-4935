@@ -39,10 +39,10 @@ export const MultiAssetTrader = () => {
   const { toast } = useToast();
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
 
-  // PROTEÇÕES INTELIGENTES
-  const DAILY_STOP_LOSS_PCT = 0.15; // Aumentado de -10% para -15% do bankroll
-  const [maxOpenPositions, setMaxOpenPositions] = useState(100); // 🚀 MUITO alto para operar todos os sinais
-  const MAX_CONSECUTIVE_LOSSES = 3;
+  // 🔥 PROTEÇÕES MÍNIMAS - MODO AGRESSIVO TOTAL
+  const DAILY_STOP_LOSS_PCT = 0.30; // 🔥 30% de drawdown diário permitido
+  const [maxOpenPositions, setMaxOpenPositions] = useState(200); // 🚀 MÁXIMO de posições
+  const MAX_CONSECUTIVE_LOSSES = 10; // 🔥 Permitir mais perdas consecutivas
   
   // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
   const [historicalWinRate, setHistoricalWinRate] = useState(50); // Win rate inicial estimado
@@ -145,27 +145,28 @@ export const MultiAssetTrader = () => {
     'SHIBUSDT', 'PEPEUSDT', 'AVAXUSDT', 'NEARUSDT', 'APTUSDT'
   ]));
 
-  // 🔥 SISTEMA DE ALAVANCAGEM PROGRESSIVA PARA SCALPING AGRESSIVO
+  // 🔥 SISTEMA DE ALAVANCAGEM ULTRA-AGRESSIVA PARA SCALPING
   const getLeverageForScalping = (volatility: number): number => {
-    // 🚀 Alavancagem otimizada - evitando 75x que causa erros em alguns ativos
-    if (volatility > 3.0) return 50; // Extrema volatilidade - seguro e lucrativo
-    if (volatility > 2.0) return 40; // Alta volatilidade
-    if (volatility > 1.5) return 30; // Média-alta volatilidade
-    return 25; // Padrão para scalping
+    // 🚀 MÁXIMA ALAVANCAGEM para lucros rápidos
+    if (volatility > 3.0) return 75; // Extrema volatilidade - max power
+    if (volatility > 2.0) return 60; // Alta volatilidade
+    if (volatility > 1.5) return 50; // Média-alta volatilidade
+    if (volatility > 1.0) return 45; // Volatilidade normal
+    return 40; // Padrão agressivo para scalping
   };
 
-  // Estratégia de alavancagem baseada no bankroll E win rate (para ativos normais)
+  // Estratégia de alavancagem ULTRA-AGRESSIVA baseada no bankroll
   const getLeverageForBalance = (balance: number, winRate: number) => {
-    // 🚀 Base de alavancagem otimizada para rentabilidade e segurança
-    let baseLeverage = 15; // Base conservadora mas lucrativa
-    if (balance < 5) baseLeverage = 30; // Mais agressivo em contas pequenas
-    else if (balance < 10) baseLeverage = 25;
-    else if (balance < 20) baseLeverage = 20;
-    else if (balance < 50) baseLeverage = 18;
+    // 🚀 ALAVANCAGEM MÁXIMA para multiplicar capital rapidamente
+    let baseLeverage = 40; // Base MUITO agressiva
+    if (balance < 5) baseLeverage = 75; // MÁXIMO para contas pequenas
+    else if (balance < 10) baseLeverage = 60;
+    else if (balance < 20) baseLeverage = 50;
+    else if (balance < 50) baseLeverage = 45;
 
-    // Ajustar pela performance (mantém dentro de limites seguros)
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 10, 50); // Max 50x
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 5, 10);
+    // Bônus por performance
+    if (winRate >= 55) baseLeverage = Math.min(baseLeverage + 15, 100); // Max 100x
+    else if (winRate < 35) baseLeverage = Math.max(baseLeverage - 10, 25);
 
     return baseLeverage;
   };
@@ -185,18 +186,18 @@ export const MultiAssetTrader = () => {
       ? 1.0 // Primeira posição: tamanho normal
       : Math.max(0.3, 1 - (currentOpenPositions / targetPositions) * 0.5); // Reduzir gradualmente
     
-    // 📐 BASE DO RISCO ULTRA AGRESSIVO: 10-15% do bankroll por posição
-    let baseRisk = balance < 15 ? 0.15 : 0.12; // MUITO AUMENTADO para lucros máximos
+    // 📐 RISCO MÁXIMO AGRESSIVO: 20-25% do bankroll por posição
+    let baseRisk = balance < 15 ? 0.25 : 0.20; // 🔥 MÁXIMO para lucros explosivos
     
-    // 💡 AJUSTE POR VOLATILIDADE: Reduzir risco em ativos muito voláteis
-    if (volatility > 5) baseRisk *= 0.6; // -40% em alta volatilidade
-    else if (volatility > 3) baseRisk *= 0.8; // -20% em volatilidade moderada
-    else if (volatility < 1) baseRisk *= 1.2; // +20% em baixa volatilidade
+    // 💡 Volatilidade alta = OPORTUNIDADE (não reduzir muito)
+    if (volatility > 5) baseRisk *= 0.85; // -15% em alta volatilidade (menos conservador)
+    else if (volatility > 3) baseRisk *= 0.95; // -5% em volatilidade moderada
+    else if (volatility < 1) baseRisk *= 1.3; // +30% em baixa volatilidade
     
-    // 📈 AJUSTE POR WIN RATE: Aumentar risco se está performando bem
-    if (winRate >= 65) baseRisk *= 1.3; // +30% se win rate alto
-    else if (winRate >= 55) baseRisk *= 1.1; // +10% se win rate bom
-    else if (winRate < 40) baseRisk *= 0.7; // -30% se win rate baixo
+    // 📈 BÔNUS AGRESSIVO POR WIN RATE
+    if (winRate >= 55) baseRisk *= 1.5; // +50% se win rate bom
+    else if (winRate >= 45) baseRisk *= 1.2; // +20% se win rate ok
+    else if (winRate < 35) baseRisk *= 0.8; // -20% se win rate ruim
     
     // 🎲 AJUSTE POR NÚMERO DE POSIÇÕES
     baseRisk *= positionSizeMultiplier;
@@ -785,35 +786,37 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO AGRESSIVO OTIMIZADO
-          // 🎯 THRESHOLDS ULTRA-AGRESSIVOS para maximizar entradas
-          const scoreThreshold = isScalpAsset ? 30 : 40; // 🔥 REDUZIDO: Scalp: 30+ | Normal: 40+
-          const minConfirmations = 1; // 🔥 REDUZIDO: Apenas 1 confirmação necessária
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO MEGA-AGRESSIVO
+          // 🔥 THRESHOLDS MÍNIMOS para MÁXIMAS entradas
+          const scoreThreshold = isScalpAsset ? 15 : 20; // 🔥 SUPER BAIXO: Scalp: 15+ | Normal: 20+
+          const minConfirmations = 1; // Apenas 1 confirmação
           
-          if (buyScore > sellScore && buyScore >= scoreThreshold && confirmations.length >= minConfirmations) {
+          if (buyScore > sellScore && buyScore >= scoreThreshold) {
             action = 'BUY';
-            signalScore = Math.min(buyScore, 100);
-          } else if (sellScore > buyScore && sellScore >= scoreThreshold && confirmations.length >= minConfirmations) {
+            signalScore = Math.min(buyScore + 20, 100); // Boost de score
+          } else if (sellScore > buyScore && sellScore >= scoreThreshold) {
             action = 'SELL';
-            signalScore = Math.min(sellScore, 100);
+            signalScore = Math.min(sellScore + 20, 100); // Boost de score
+          } else if (buyScore >= 10 || sellScore >= 10) {
+            // 🔥 ACEITAR SINAIS FRACOS também
+            action = buyScore > sellScore ? 'BUY' : 'SELL';
+            signalScore = Math.max(buyScore, sellScore) + 15;
           }
           
-          // 7. CRITÉRIOS ULTRA-AGRESSIVOS para maximizar operações
-          const volumeCheck = volume24h > 500000; // 🔥 REDUZIDO: $500K+ volume
-          const volatilityCheck = volatility > 0.3; // 🔥 REDUZIDO: 0.3%+ movimento
-          const atrMinCheck = atrPercent > 0.3; // 🔥 REDUZIDO: 0.3% ATR mínimo
-          const hasVolumeConfirmation = hasVolumeSpike || hasStrongVolume || hasGoodVolume; // 🔥 ADICIONADO: Volume bom também aceito
+          // 7. CRITÉRIOS MEGA-AGRESSIVOS - QUASE TUDO PASSA
+          const volumeCheck = volume24h > 100000; // 🔥 SUPER BAIXO: $100K+ volume
+          const volatilityCheck = volatility > 0.1; // 🔥 MÍNIMO: 0.1%+ movimento
+          const atrMinCheck = atrPercent > 0.1; // 🔥 MÍNIMO: 0.1% ATR
+          const hasVolumeConfirmation = true; // 🔥 IGNORAR volume confirmation
           
           const shouldTrade = (
             signalScore >= scoreThreshold &&
-            confirmations.length >= minConfirmations &&
             volumeCheck &&
             volatilityCheck &&
-            hasVolumeConfirmation && // Volume mais flexível
             action !== null &&
-            currentBalance > 2 &&
+            currentBalance > 1.5 && // 🔥 REDUZIDO: $1.50 mínimo
             atrMinCheck &&
-            atrPercent < 25 // 🔥 AUMENTADO: ATR máximo 25% para permitir mais operações
+            atrPercent < 50 // 🔥 ACEITAR ATR até 50%
           );
 
           // 📋 LOG DETALHADO DE CADA ATIVO ANALISADO
@@ -1011,15 +1014,14 @@ export const MultiAssetTrader = () => {
             // META: $15+ por dia com uso eficiente do capital
             const dailyTargetProfit = 15;
             
-            // ⚠️ BUFFER REDUZIDO: Permitir mais capital operacional
-            const MIN_SAFETY_BALANCE = 1.5; // 🔥 REDUZIDO: Manter apenas $1.50 de segurança
-            const FEE_BUFFER = 0.0015; // 0.15% para taxas de trading (Bybit maker/taker)
+            // 🔥 BUFFER MÍNIMO: Usar QUASE todo o capital
+            const MIN_SAFETY_BALANCE = 0.5; // 🔥 MÍNIMO: Apenas $0.50 de segurança
+            const FEE_BUFFER = 0.001; // 0.1% para taxas
             const safeBalance = Math.max(0, currentBalance - MIN_SAFETY_BALANCE);
             
-            // 🛡️ USAR 30-40% DO SALDO DISPONÍVEL (ajustado para contas pequenas)
-            // Quando saldo < $5, usar no máximo 30% para evitar margem insuficiente
-            const baseAllocation = currentBalance < 5 ? 0.30 : (isScalpAsset ? 0.40 : 0.35);
-            const capitalAllocation = baseAllocation; // 30-40% dependendo do saldo
+            // 🔥 USAR 60-80% DO SALDO DISPONÍVEL - MÁXIMA AGRESSIVIDADE
+            const baseAllocation = currentBalance < 5 ? 0.70 : (isScalpAsset ? 0.80 : 0.65);
+            const capitalAllocation = baseAllocation; // 65-80% MEGA AGRESSIVO
             
             // Calcular tamanho baseado no saldo seguro E na alavancagem
             // Para leverage 50x: margin = positionValue / leverage
@@ -1183,23 +1185,23 @@ export const MultiAssetTrader = () => {
             let takeProfitPct: number;
             
             if (isScalpAsset) {
-              // SCALPING: Stops apertados + Take Profit agressivo (0.8% SL, 2.5% TP = 1:3.1 R:R)
-              stopLossPct = 0.008; // 0.8%
-              takeProfitPct = 0.025; // 2.5% para maximizar lucros em setups de alta confiança
-              console.log(`⚡ SCALP STOPS: SL ${(stopLossPct*100).toFixed(1)}% | TP ${(takeProfitPct*100).toFixed(1)}%`);
+              // 🔥 SCALPING AGRESSIVO: Stops apertados + TP explosivo (0.5% SL, 4% TP = 1:8 R:R)
+              stopLossPct = 0.005; // 0.5% - SUPER apertado
+              takeProfitPct = 0.04; // 4% - MÁXIMO lucro por trade
+              console.log(`⚡ SCALP ULTRA: SL ${(stopLossPct*100).toFixed(1)}% | TP ${(takeProfitPct*100).toFixed(1)}%`);
             } else {
-              // NORMAL: Stops mais largos baseados em ATR
-              const atrMultiplier = 2.0;
-              const minStopPercent = 2.5;
-              const atrStopPercent = Math.max(atrPercent * atrMultiplier, minStopPercent);
+              // 🔥 NORMAL AGRESSIVO: Stops pequenos, TP grande
+              const minStopPercent = 1.5; // Reduzido de 2.5%
+              const atrStopPercent = Math.max(atrPercent * 1.2, minStopPercent); // Multiplicador menor
               
               stopLossPct = mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct 
-                ? Math.max(mlConfig.recommended_stop_loss_pct / 100, atrStopPercent / 100)
-                : atrStopPercent / 100;
+                ? Math.min(mlConfig.recommended_stop_loss_pct / 100, 0.02) // Max 2% SL
+                : Math.min(atrStopPercent / 100, 0.02);
               
+              // 🔥 R:R AGRESSIVO: 1:4 mínimo
               takeProfitPct = mlConfig?.is_enabled && mlConfig?.recommended_take_profit_pct 
-                ? mlConfig.recommended_take_profit_pct / 100 
-                : stopLossPct * 2.5;
+                ? Math.max(mlConfig.recommended_take_profit_pct / 100, stopLossPct * 4) 
+                : stopLossPct * 4; // 1:4 R:R
             }
             
             // 🛡️ STOP LOSS OBRIGATÓRIO - NUNCA undefined
