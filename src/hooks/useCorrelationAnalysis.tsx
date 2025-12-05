@@ -48,10 +48,10 @@ export const useCorrelationAnalysis = () => {
       getBaseAsset(p.symbol) === baseSymbol && p.side === side
     );
     
-    if (sameAssetPositions.length >= 3) {
+    if (sameAssetPositions.length >= 5) {
       return {
         allowed: false,
-        reason: `Limite de 3 posições ${side === 'Buy' ? 'LONG' : 'SHORT'} no mesmo ativo (${baseSymbol}) atingido`,
+        reason: `Limite de 5 posições ${side === 'Buy' ? 'LONG' : 'SHORT'} no mesmo ativo (${baseSymbol}) atingido`,
         correlatedPositions: [symbol],
       };
     }
@@ -78,10 +78,10 @@ export const useCorrelationAnalysis = () => {
       openPositions.filter(p => p.side === side).map(p => getBaseAsset(p.symbol))
     );
     
-    if (uniqueSymbolsBySide.size >= 5) {
+    if (uniqueSymbolsBySide.size >= 10) {
       return {
         allowed: false,
-        reason: `Limite de 5 ativos ${side === 'Buy' ? 'LONG' : 'SHORT'} simultâneos atingido`,
+        reason: `Limite de 10 ativos ${side === 'Buy' ? 'LONG' : 'SHORT'} simultâneos atingido`,
       };
     }
 
