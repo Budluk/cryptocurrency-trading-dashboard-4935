@@ -6,12 +6,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface TradeAnalysis {
-  stopDistanceActual: number;
-  tpDistanceActual: number;
-  volatility: number;
-  duration: number;
-  wasOptimal: boolean;
+interface BybitTrade {
+  symbol: string;
+  orderId: string;
+  side: string;
+  qty: string;
+  orderPrice: string;
+  execPrice: string;
+  closedSize: string;
+  cumEntryValue: string;
+  avgEntryPrice: string;
+  avgExitPrice: string;
+  closedPnl: string;
+  fillCount: string;
+  leverage: string;
+  createdTime: string;
+  updatedTime: string;
 }
 
 serve(async (req) => {
@@ -27,32 +37,125 @@ serve(async (req) => {
 
     const { userId, minTrades = 10 } = await req.json();
 
-    console.log(`🧠 Iniciando análise ML adaptativa para user ${userId}`);
+    console.log(`🧠 Iniciando análise ML com dados BYBIT REAL para user ${userId}`);
 
-    // 1. BUSCAR HISTÓRICO COMPLETO DE TRADES
-    const { data: trades, error: tradesError } = await supabase
+    // ========================
+    // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 2 anos)
+    // ========================
+    let bybitTrades: BybitTrade[] = [];
+    let cursor = '';
+    let hasMore = true;
+    const twoYearsAgo = Date.now() - (2 * 365 * 24 * 60 * 60 * 1000);
+    
+    console.log('📊 Buscando histórico completo da Bybit...');
+
+    // Paginar através de todo o histórico
+    while (hasMore) {
+      const { data: bybitResponse, error: bybitError } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_closed_pnl',
+          params: {
+            category: 'linear',
+            limit: 100,
+            cursor: cursor || undefined,
+            startTime: twoYearsAgo.toString(),
+          }
+        }
+      });
+
+      if (bybitError) {
+        console.log('⚠️ Erro Bybit, usando dados internos:', bybitError.message);
+        break;
+      }
+
+      if (bybitResponse?.result?.list) {
+        bybitTrades = [...bybitTrades, ...bybitResponse.result.list];
+        cursor = bybitResponse.result.nextPageCursor || '';
+        hasMore = !!cursor && bybitTrades.length < 2000; // Limite de segurança
+        console.log(`📥 Carregados ${bybitTrades.length} trades da Bybit...`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`✅ Total de trades Bybit: ${bybitTrades.length}`);
+
+    // ========================
+    // 2. BUSCAR TAMBÉM DADOS INTERNOS DO SUPABASE
+    // ========================
+    const { data: internalTrades, error: tradesError } = await supabase
       .from('auto_trader_positions')
       .select('*')
       .eq('user_id', userId)
       .eq('status', 'CLOSED')
       .order('closed_at', { ascending: false })
-      .limit(200);
+      .limit(500);
 
     if (tradesError) {
-      throw new Error(`Erro ao buscar trades: ${tradesError.message}`);
+      console.log('⚠️ Erro trades internos:', tradesError.message);
     }
 
-    if (!trades || trades.length < minTrades) {
+    // ========================
+    // 3. COMBINAR E NORMALIZAR DADOS
+    // ========================
+    const allTrades: any[] = [];
+
+    // Normalizar trades da Bybit
+    for (const bt of bybitTrades) {
+      const entryPrice = parseFloat(bt.avgEntryPrice) || 0;
+      const exitPrice = parseFloat(bt.avgExitPrice) || 0;
+      const pnl = parseFloat(bt.closedPnl) || 0;
+      const leverage = parseFloat(bt.leverage) || 10;
+      
+      if (entryPrice === 0) continue;
+
+      // Calcular volatilidade implícita do trade
+      const priceMove = Math.abs((exitPrice - entryPrice) / entryPrice) * 100;
+      
+      allTrades.push({
+        source: 'bybit',
+        symbol: bt.symbol,
+        side: bt.side,
+        entry_price: entryPrice,
+        exit_price: exitPrice,
+        realized_pnl: pnl,
+        leverage: leverage,
+        qty: parseFloat(bt.qty) || 0,
+        opened_at: new Date(parseInt(bt.createdTime)).toISOString(),
+        closed_at: new Date(parseInt(bt.updatedTime)).toISOString(),
+        volatility: priceMove, // Usar movimento como proxy de volatilidade
+        close_reason: pnl > 0 ? 'TP_HIT' : 'STOP_LOSS',
+      });
+    }
+
+    // Adicionar trades internos (sem duplicar)
+    const bybitOrderIds = new Set(bybitTrades.map(t => t.orderId));
+    for (const it of (internalTrades || [])) {
+      if (!bybitOrderIds.has(it.exchange_order_id)) {
+        allTrades.push({
+          source: 'internal',
+          ...it,
+        });
+      }
+    }
+
+    console.log(`📊 Total combinado: ${allTrades.length} trades (Bybit: ${bybitTrades.length}, Interno: ${internalTrades?.length || 0})`);
+
+    if (allTrades.length < minTrades) {
       return new Response(JSON.stringify({
         success: false,
-        message: `Necessário ${minTrades} trades fechados. Atual: ${trades?.length || 0}`,
-        tradesCount: trades?.length || 0
+        message: `Necessário ${minTrades} trades. Encontrados: ${allTrades.length}`,
+        tradesCount: allTrades.length,
+        bybitTrades: bybitTrades.length,
+        internalTrades: internalTrades?.length || 0,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 2. ANÁLISE PROFUNDA DE STOPS
+    // ========================
+    // 4. ANÁLISE PROFUNDA DE STOPS
+    // ========================
     const stopAnalysis = {
       stoppedOutTrades: [] as any[],
       tpHitTrades: [] as any[],
@@ -63,37 +166,29 @@ serve(async (req) => {
       stopTooLoose: 0,
     };
 
-    for (const trade of trades) {
+    for (const trade of allTrades) {
       const entryPrice = trade.entry_price || 0;
       const exitPrice = trade.exit_price || trade.current_price || entryPrice;
-      const stopLoss = trade.stop_loss || 0;
-      const takeProfit = trade.take_profit || 0;
       const pnl = trade.realized_pnl || 0;
       const volatility = trade.volatility || 0;
       
       if (entryPrice === 0) continue;
 
-      // Calcular distância real do movimento
       const priceMove = Math.abs((exitPrice - entryPrice) / entryPrice) * 100;
-      const stopDistance = stopLoss ? Math.abs((entryPrice - stopLoss) / entryPrice) * 100 : 0;
-      const tpDistance = takeProfit ? Math.abs((takeProfit - entryPrice) / entryPrice) * 100 : 0;
 
-      // Analisar se foi stop ou TP
-      if (trade.close_reason?.includes('STOP') || pnl < 0) {
+      if (pnl < 0) {
         stopAnalysis.stoppedOutTrades.push({ 
           trade, 
           priceMove, 
-          stopDistance,
           volatility,
-          wouldHaveRecovered: false // Analisado abaixo
         });
         
-        // Stop muito apertado se preço voltou depois
-        if (stopDistance < volatility * 0.8) {
+        // Stop muito apertado se movimento foi pequeno
+        if (priceMove < 1.0) {
           stopAnalysis.stopTooTight++;
         }
       } else if (pnl > 0) {
-        stopAnalysis.tpHitTrades.push({ trade, priceMove, tpDistance });
+        stopAnalysis.tpHitTrades.push({ trade, priceMove });
         stopAnalysis.optimalTPs.push(priceMove);
       }
 
@@ -102,91 +197,96 @@ serve(async (req) => {
       }
     }
 
-    stopAnalysis.avgVolatility = stopAnalysis.avgVolatility / trades.length || 2;
+    stopAnalysis.avgVolatility = stopAnalysis.avgVolatility / allTrades.length || 2;
 
-    // 3. CALCULAR STOPS OTIMIZADOS
-    const winningTrades = trades.filter(t => (t.realized_pnl || 0) > 0);
-    const losingTrades = trades.filter(t => (t.realized_pnl || 0) <= 0);
-    const winRate = (winningTrades.length / trades.length) * 100;
+    // ========================
+    // 5. CALCULAR MÉTRICAS PRINCIPAIS
+    // ========================
+    const winningTrades = allTrades.filter(t => (t.realized_pnl || 0) > 0);
+    const losingTrades = allTrades.filter(t => (t.realized_pnl || 0) <= 0);
+    const winRate = (winningTrades.length / allTrades.length) * 100;
 
-    // Análise de drawdown máximo antes de recuperação (trades vencedores)
-    const maxDrawdowns = winningTrades
-      .filter(t => t.highest_price && t.entry_price)
-      .map(t => {
-        const side = t.side;
-        if (side === 'Buy') {
-          // Para longs, drawdown = quanto caiu do entry
-          const lowestFromEntry = t.entry_price - (t.entry_price * 0.02); // Estimativa conservadora
-          return Math.abs((t.entry_price - lowestFromEntry) / t.entry_price) * 100;
-        }
-        return 1.5; // Default
-      });
+    // Análise de movimentos antes de lucro
+    const winMoves = winningTrades.map(t => {
+      const entry = t.entry_price || 0;
+      const exit = t.exit_price || entry;
+      return Math.abs((exit - entry) / entry) * 100;
+    });
+    const avgWinMove = winMoves.length > 0 ? winMoves.reduce((a, b) => a + b, 0) / winMoves.length : 2;
 
-    const avgDrawdownBeforeWin = maxDrawdowns.length > 0 
-      ? maxDrawdowns.reduce((a, b) => a + b, 0) / maxDrawdowns.length 
-      : 1.2;
+    // Análise de movimentos antes de loss
+    const lossMoves = losingTrades.map(t => {
+      const entry = t.entry_price || 0;
+      const exit = t.exit_price || entry;
+      return Math.abs((exit - entry) / entry) * 100;
+    });
+    const avgLossMove = lossMoves.length > 0 ? lossMoves.reduce((a, b) => a + b, 0) / lossMoves.length : 1;
 
-    // 4. ANÁLISE POR VOLATILIDADE
-    const volatilityBuckets = new Map<string, { trades: number, wins: number, optimalStop: number }>();
+    // ========================
+    // 6. ANÁLISE POR VOLATILIDADE
+    // ========================
+    const volatilityBuckets = new Map<string, { trades: number, wins: number, losses: number, totalPnl: number, avgMove: number }>();
     
-    for (const trade of trades) {
+    for (const trade of allTrades) {
       const vol = trade.volatility || stopAnalysis.avgVolatility;
-      const bucket = vol < 2 ? 'low' : vol < 4 ? 'medium' : 'high';
+      const bucket = vol < 1 ? 'very_low' : vol < 2 ? 'low' : vol < 3 ? 'medium' : vol < 5 ? 'high' : 'very_high';
       
       if (!volatilityBuckets.has(bucket)) {
-        volatilityBuckets.set(bucket, { trades: 0, wins: 0, optimalStop: 0 });
+        volatilityBuckets.set(bucket, { trades: 0, wins: 0, losses: 0, totalPnl: 0, avgMove: 0 });
       }
       
       const stats = volatilityBuckets.get(bucket)!;
       stats.trades++;
+      stats.avgMove += vol;
+      stats.totalPnl += (trade.realized_pnl || 0);
       if ((trade.realized_pnl || 0) > 0) {
         stats.wins++;
-        // Para trades vencedores, analisar quanto "respiro" teve
-        const stopUsed = trade.stop_loss 
-          ? Math.abs((trade.entry_price - trade.stop_loss) / trade.entry_price) * 100
-          : 1.5;
-        stats.optimalStop += stopUsed;
+      } else {
+        stats.losses++;
       }
     }
 
     // Calcular stop ideal por volatilidade
     const stopByVolatility: Record<string, number> = {};
     for (const [bucket, stats] of volatilityBuckets.entries()) {
-      if (stats.wins > 0) {
-        stopByVolatility[bucket] = stats.optimalStop / stats.wins;
-      } else {
-        stopByVolatility[bucket] = bucket === 'low' ? 1.0 : bucket === 'medium' ? 1.5 : 2.0;
-      }
+      const avgMov = stats.avgMove / stats.trades;
+      const winRateBucket = stats.wins / stats.trades;
+      
+      // Stop deve ser ~60-80% do movimento médio, ajustado pelo win rate
+      stopByVolatility[bucket] = Math.max(avgMov * (winRateBucket > 0.5 ? 0.6 : 0.8), 0.5);
     }
 
-    // 5. ANÁLISE POR SÍMBOLO E HORÁRIO
-    const symbolStats = new Map<string, { wins: number, total: number, pnl: number, avgVol: number }>();
-    const hourlyStats = new Map<number, { wins: number, total: number }>();
+    // ========================
+    // 7. ANÁLISE POR SÍMBOLO, HORÁRIO E ALAVANCAGEM
+    // ========================
+    const symbolStats = new Map<string, { wins: number, total: number, pnl: number, avgLeverage: number }>();
+    const hourlyStats = new Map<number, { wins: number, total: number, pnl: number }>();
     const leverageStats = new Map<number, { wins: number, losses: number, pnl: number }>();
     
-    for (const trade of trades) {
+    for (const trade of allTrades) {
       // Por símbolo
       const symbol = trade.symbol;
       if (!symbolStats.has(symbol)) {
-        symbolStats.set(symbol, { wins: 0, total: 0, pnl: 0, avgVol: 0 });
+        symbolStats.set(symbol, { wins: 0, total: 0, pnl: 0, avgLeverage: 0 });
       }
       const sStats = symbolStats.get(symbol)!;
       sStats.total++;
-      sStats.avgVol += trade.volatility || 0;
+      sStats.avgLeverage += trade.leverage || 10;
       if ((trade.realized_pnl || 0) > 0) sStats.wins++;
       sStats.pnl += (trade.realized_pnl || 0);
 
       // Por horário
-      const hour = new Date(trade.opened_at).getUTCHours();
+      const hour = new Date(trade.opened_at || trade.closed_at).getUTCHours();
       if (!hourlyStats.has(hour)) {
-        hourlyStats.set(hour, { wins: 0, total: 0 });
+        hourlyStats.set(hour, { wins: 0, total: 0, pnl: 0 });
       }
       const hStats = hourlyStats.get(hour)!;
       hStats.total++;
+      hStats.pnl += (trade.realized_pnl || 0);
       if ((trade.realized_pnl || 0) > 0) hStats.wins++;
 
-      // Por alavancagem
-      const leverage = Math.floor((trade.leverage || 10) / 5) * 5;
+      // Por alavancagem (agrupado em buckets de 10)
+      const leverage = Math.floor((trade.leverage || 10) / 10) * 10;
       if (!leverageStats.has(leverage)) {
         leverageStats.set(leverage, { wins: 0, losses: 0, pnl: 0 });
       }
@@ -196,123 +296,187 @@ serve(async (req) => {
       lStats.pnl += (trade.realized_pnl || 0);
     }
 
-    // Calcular volatilidade média por símbolo
-    for (const [symbol, stats] of symbolStats.entries()) {
-      stats.avgVol = stats.avgVol / stats.total;
+    // Calcular média de alavancagem por símbolo
+    for (const [_, stats] of symbolStats.entries()) {
+      stats.avgLeverage = stats.avgLeverage / stats.total;
     }
 
-    // 6. ENCONTRAR MELHORES PARÂMETROS
+    // ========================
+    // 8. ENCONTRAR MELHORES PARÂMETROS
+    // ========================
     const topSymbols = Array.from(symbolStats.entries())
-      .filter(([_, stats]) => stats.total >= 3 && stats.pnl > 0)
-      .sort((a, b) => (b[1].wins / b[1].total) - (a[1].wins / a[1].total))
+      .filter(([_, stats]) => stats.total >= 3)
+      .sort((a, b) => {
+        const wrA = b[1].wins / b[1].total;
+        const wrB = a[1].wins / a[1].total;
+        if (Math.abs(wrA - wrB) < 0.1) {
+          return b[1].pnl - a[1].pnl; // Se win rate similar, ordenar por PnL
+        }
+        return wrA - wrB;
+      })
+      .slice(0, 10)
+      .map(([symbol, stats]) => ({
+        symbol,
+        winRate: ((stats.wins / stats.total) * 100).toFixed(1),
+        pnl: stats.pnl.toFixed(2),
+        trades: stats.total,
+        avgLeverage: stats.avgLeverage.toFixed(0),
+      }));
+
+    const worstSymbols = Array.from(symbolStats.entries())
+      .filter(([_, stats]) => stats.total >= 3 && stats.pnl < 0)
+      .sort((a, b) => a[1].pnl - b[1].pnl)
       .slice(0, 5)
       .map(([symbol]) => symbol);
 
     const bestHours = Array.from(hourlyStats.entries())
-      .filter(([_, stats]) => stats.total >= 2)
+      .filter(([_, stats]) => stats.total >= 3)
       .sort((a, b) => (b[1].wins / b[1].total) - (a[1].wins / a[1].total))
+      .slice(0, 6)
+      .map(([hour, stats]) => ({
+        hour,
+        winRate: ((stats.wins / stats.total) * 100).toFixed(1),
+        pnl: stats.pnl.toFixed(2),
+      }));
+
+    const worstHours = Array.from(hourlyStats.entries())
+      .filter(([_, stats]) => stats.total >= 3 && (stats.wins / stats.total) < 0.4)
+      .sort((a, b) => (a[1].wins / a[1].total) - (b[1].wins / b[1].total))
       .slice(0, 3)
       .map(([hour]) => hour);
 
+    // Melhor alavancagem baseada em PnL positivo e win rate
     let bestLeverage = 40;
-    let bestLeverageWinRate = 0;
+    let bestLeverageStats = { winRate: 0, pnl: 0 };
     for (const [lev, stats] of leverageStats.entries()) {
-      if (stats.wins + stats.losses >= 5) {
-        const rate = stats.wins / (stats.wins + stats.losses);
-        if (rate > bestLeverageWinRate && stats.pnl > 0) {
-          bestLeverageWinRate = rate;
+      const totalTrades = stats.wins + stats.losses;
+      if (totalTrades >= 5) {
+        const rate = stats.wins / totalTrades;
+        if (rate > bestLeverageStats.winRate && stats.pnl > 0) {
+          bestLeverageStats = { winRate: rate, pnl: stats.pnl };
           bestLeverage = lev;
         }
       }
     }
 
-    // 7. CÁLCULOS FINAIS OTIMIZADOS
+    // ========================
+    // 9. CÁLCULOS FINAIS OTIMIZADOS
+    // ========================
     const avgWin = winningTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / winningTrades.length || 0;
     const avgLoss = Math.abs(losingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losingTrades.length) || 1;
     const profitFactor = (avgWin * winningTrades.length) / (avgLoss * losingTrades.length) || 0;
     const riskRewardRatio = avgLoss > 0 ? avgWin / avgLoss : 2;
+    const totalPnl = allTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
 
-    // Stop otimizado baseado em dados reais
-    const baseStop = Math.max(avgDrawdownBeforeWin * 1.2, stopAnalysis.avgVolatility * 0.6);
-    const optimizedStop = Math.min(Math.max(baseStop, 0.8), 2.5);
+    // Stop otimizado baseado nos dados reais
+    const baseStop = Math.max(avgLossMove * 0.8, stopAnalysis.avgVolatility * 0.5);
+    const optimizedStop = Math.min(Math.max(baseStop, 0.5), 2.5);
 
     // TP otimizado baseado em R:R e dados reais
-    const avgWinMove = stopAnalysis.optimalTPs.length > 0
-      ? stopAnalysis.optimalTPs.reduce((a, b) => a + b, 0) / stopAnalysis.optimalTPs.length
-      : optimizedStop * 2.5;
-    const optimizedTP = Math.min(Math.max(avgWinMove, optimizedStop * 2), 5);
+    const optimizedTP = Math.min(Math.max(avgWinMove, optimizedStop * 2.5), 6);
 
-    // 8. CONSULTAR IA PARA INSIGHTS ADICIONAIS
-    const aiPrompt = `Analise este histórico de trading e forneça recomendações para OTIMIZAR STOPS:
+    // ========================
+    // 10. CONSULTAR IA PARA INSIGHTS
+    // ========================
+    const aiPrompt = `Analise este histórico REAL de ${allTrades.length} trades da Bybit e forneça recomendações:
 
-DADOS DO TRADER:
-- Trades: ${trades.length} | Win Rate: ${winRate.toFixed(1)}%
-- Profit Factor: ${profitFactor.toFixed(2)} | R:R Ratio: ${riskRewardRatio.toFixed(2)}
-- Volatilidade Média: ${stopAnalysis.avgVolatility.toFixed(2)}%
+PERFORMANCE GERAL:
+- Total Trades: ${allTrades.length} (${bybitTrades.length} Bybit + ${internalTrades?.length || 0} interno)
+- Win Rate: ${winRate.toFixed(1)}% | Profit Factor: ${profitFactor.toFixed(2)}
+- Total PnL: $${totalPnl.toFixed(2)}
+- R:R Ratio: ${riskRewardRatio.toFixed(2)}
+- Avg Win Move: ${avgWinMove.toFixed(2)}% | Avg Loss Move: ${avgLossMove.toFixed(2)}%
 
 ANÁLISE DE STOPS:
-- Stops muito apertados: ${stopAnalysis.stopTooTight} trades
-- Trades fechados por stop: ${stopAnalysis.stoppedOutTrades.length}
-- Trades com TP: ${stopAnalysis.tpHitTrades.length}
-- Drawdown médio antes de win: ${avgDrawdownBeforeWin.toFixed(2)}%
+- Stops muito apertados: ${stopAnalysis.stopTooTight} trades (${((stopAnalysis.stopTooTight/allTrades.length)*100).toFixed(1)}%)
+- Taxa de stop-out: ${((stopAnalysis.stoppedOutTrades.length / allTrades.length) * 100).toFixed(1)}%
 
-STOPS POR VOLATILIDADE:
-${Object.entries(stopByVolatility).map(([k, v]) => `${k}: ${v.toFixed(2)}%`).join('\n')}
-
-TOP 5 SÍMBOLOS (Win Rate):
-${topSymbols.slice(0, 5).map(s => {
-  const stats = symbolStats.get(s)!;
-  return `${s}: ${((stats.wins/stats.total)*100).toFixed(0)}% WR, Vol: ${stats.avgVol.toFixed(1)}%`;
+VOLATILIDADE:
+${Array.from(volatilityBuckets.entries()).map(([k, v]) => {
+  return `${k}: ${v.trades} trades, WR ${((v.wins/v.trades)*100).toFixed(0)}%, Stop ideal: ${stopByVolatility[k]?.toFixed(2)}%`;
 }).join('\n')}
 
-MELHORES HORÁRIOS: ${bestHours.join('h, ')}h UTC
+TOP SÍMBOLOS:
+${topSymbols.slice(0, 5).map(s => `${s.symbol}: WR ${s.winRate}%, PnL $${s.pnl}, ${s.trades} trades`).join('\n')}
 
-Responda em JSON com stops ADAPTATIVOS:
+SÍMBOLOS A EVITAR: ${worstSymbols.join(', ')}
+
+MELHORES HORÁRIOS (UTC):
+${bestHours.slice(0, 4).map(h => `${h.hour}h: WR ${h.winRate}%, PnL $${h.pnl}`).join('\n')}
+
+HORÁRIOS A EVITAR: ${worstHours.join('h, ')}h
+
+ALAVANCAGEM:
+${Array.from(leverageStats.entries()).map(([lev, stats]) => {
+  const wr = ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(0);
+  return `${lev}x: WR ${wr}%, PnL $${stats.pnl.toFixed(2)}`;
+}).join('\n')}
+
+Responda em JSON:
 {
   "dynamicStopLoss": {
-    "base": <stop base %>,
-    "lowVolatility": <stop para vol < 2%>,
-    "mediumVolatility": <stop para vol 2-4%>,
-    "highVolatility": <stop para vol > 4%>,
+    "base": <stop base otimizado %>,
+    "veryLowVol": <stop para volatilidade < 1%>,
+    "lowVol": <stop para 1-2%>,
+    "mediumVol": <stop para 2-3%>,
+    "highVol": <stop para 3-5%>,
+    "veryHighVol": <stop para > 5%>,
     "afterWinStreak": <stop após 3+ wins>,
     "afterLossStreak": <stop após 2+ losses>
   },
   "dynamicTakeProfit": {
     "base": <TP base %>,
-    "conservative": <TP conservador>,
+    "scalping": <TP para scalping rápido>,
+    "swing": <TP para swing trades>,
     "aggressive": <TP agressivo para alta confiança>
   },
-  "trailingStop": {
-    "activationPct": <% lucro para ativar>,
-    "trailPct": <% do trailing>
+  "leverageRecommendations": {
+    "optimal": <alavancagem ótima>,
+    "conservative": <alavancagem conservadora>,
+    "aggressive": <alavancagem máxima recomendada>
   },
-  "insights": ["insight1", "insight2", "insight3"],
-  "recommendations": "Texto resumido das principais melhorias"
+  "symbolsToFocus": ["symbol1", "symbol2"],
+  "symbolsToAvoid": ["symbol1", "symbol2"],
+  "bestTradingHours": [hora1, hora2],
+  "hoursToAvoid": [hora1, hora2],
+  "insights": ["insight crítico 1", "insight 2", "insight 3"],
+  "criticalWarnings": ["aviso importante 1"],
+  "actionPlan": "Plano de ação resumido para melhorar performance"
 }`;
 
     let aiRecommendations: any = {
       dynamicStopLoss: {
         base: optimizedStop,
-        lowVolatility: stopByVolatility['low'] || 1.0,
-        mediumVolatility: stopByVolatility['medium'] || 1.5,
-        highVolatility: stopByVolatility['high'] || 2.0,
+        veryLowVol: stopByVolatility['very_low'] || 0.5,
+        lowVol: stopByVolatility['low'] || 0.8,
+        mediumVol: stopByVolatility['medium'] || 1.2,
+        highVol: stopByVolatility['high'] || 1.8,
+        veryHighVol: stopByVolatility['very_high'] || 2.5,
         afterWinStreak: optimizedStop * 0.8,
-        afterLossStreak: optimizedStop * 1.3
+        afterLossStreak: optimizedStop * 1.4
       },
       dynamicTakeProfit: {
         base: optimizedTP,
-        conservative: optimizedTP * 0.7,
-        aggressive: optimizedTP * 1.5
+        scalping: optimizedTP * 0.5,
+        swing: optimizedTP * 1.5,
+        aggressive: optimizedTP * 2
       },
-      trailingStop: {
-        activationPct: 1.5,
-        trailPct: 0.8
+      leverageRecommendations: {
+        optimal: bestLeverage,
+        conservative: Math.max(bestLeverage - 20, 10),
+        aggressive: Math.min(bestLeverage + 20, 100)
       },
+      symbolsToFocus: topSymbols.slice(0, 5).map(s => s.symbol),
+      symbolsToAvoid: worstSymbols,
+      bestTradingHours: bestHours.slice(0, 4).map(h => h.hour),
+      hoursToAvoid: worstHours,
       insights: [],
-      recommendations: 'Usando parâmetros calculados dos seus trades'
+      criticalWarnings: [],
+      actionPlan: 'Parâmetros calculados do histórico real'
     };
 
     try {
+      console.log('🤖 Consultando IA para insights...');
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -322,7 +486,7 @@ Responda em JSON com stops ADAPTATIVOS:
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash',
           messages: [
-            { role: 'system', content: 'Você é um especialista em risk management e otimização de stops para trading. Responda apenas em JSON válido.' },
+            { role: 'system', content: 'Você é um quant expert em otimização de trading algorítmico. Analise dados reais e forneça recomendações precisas em JSON.' },
             { role: 'user', content: aiPrompt }
           ],
         }),
@@ -335,61 +499,76 @@ Responda em JSON com stops ADAPTATIVOS:
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           aiRecommendations = { ...aiRecommendations, ...parsed };
+          console.log('✅ Insights da IA recebidos');
         }
       }
     } catch (e) {
-      console.log('⚠️ AI analysis skipped, using calculated values');
+      console.log('⚠️ AI analysis skipped, usando valores calculados');
     }
 
-    // 9. CONSTRUIR CONFIGURAÇÃO FINAL ADAPTATIVA
+    // ========================
+    // 11. CONSTRUIR CONFIGURAÇÃO FINAL
+    // ========================
     const mlConfig = {
       user_id: userId,
       is_enabled: true,
-      recommended_leverage: bestLeverage,
+      recommended_leverage: aiRecommendations.leverageRecommendations?.optimal || bestLeverage,
       recommended_stop_loss_pct: aiRecommendations.dynamicStopLoss?.base || optimizedStop,
       recommended_take_profit_pct: aiRecommendations.dynamicTakeProfit?.base || optimizedTP,
       win_rate_by_leverage: Object.fromEntries(leverageStats),
       optimal_patterns: {
+        // Fonte dos dados
+        dataSource: {
+          bybitTrades: bybitTrades.length,
+          internalTrades: internalTrades?.length || 0,
+          totalAnalyzed: allTrades.length,
+        },
         // Stops adaptativos
-        dynamicStops: aiRecommendations.dynamicStopLoss || {
-          base: optimizedStop,
-          lowVolatility: stopByVolatility['low'] || 1.0,
-          mediumVolatility: stopByVolatility['medium'] || 1.5,
-          highVolatility: stopByVolatility['high'] || 2.0,
-        },
-        dynamicTP: aiRecommendations.dynamicTakeProfit || {
-          base: optimizedTP,
-          conservative: optimizedTP * 0.7,
-          aggressive: optimizedTP * 1.5,
-        },
-        trailingStop: aiRecommendations.trailingStop || {
-          activationPct: 1.5,
-          trailPct: 0.8,
-        },
-        // Contexto
-        bestSymbols: topSymbols,
+        dynamicStops: aiRecommendations.dynamicStopLoss,
+        dynamicTP: aiRecommendations.dynamicTakeProfit,
+        // Alavancagem
+        leverageRecommendations: aiRecommendations.leverageRecommendations,
+        // Símbolos
+        topSymbols: topSymbols,
+        symbolsToFocus: aiRecommendations.symbolsToFocus,
+        symbolsToAvoid: aiRecommendations.symbolsToAvoid || worstSymbols,
+        // Horários
         bestHours: bestHours,
-        riskRewardRatio: riskRewardRatio,
-        avgVolatility: stopAnalysis.avgVolatility,
+        hoursToAvoid: aiRecommendations.hoursToAvoid || worstHours,
+        // Volatilidade
         stopsByVolatility: stopByVolatility,
+        avgVolatility: stopAnalysis.avgVolatility,
+        // Performance
+        riskRewardRatio: riskRewardRatio,
+        profitFactor: profitFactor,
+        totalPnl: totalPnl,
         // Insights
         insights: aiRecommendations.insights || [],
-        recommendations: aiRecommendations.recommendations || '',
+        criticalWarnings: aiRecommendations.criticalWarnings || [],
+        actionPlan: aiRecommendations.actionPlan || '',
         // Métricas de aprendizado
         learningMetrics: {
           stopsTooTight: stopAnalysis.stopTooTight,
-          stoppedOutRate: (stopAnalysis.stoppedOutTrades.length / trades.length * 100).toFixed(1),
-          avgDrawdownBeforeWin: avgDrawdownBeforeWin.toFixed(2),
+          stoppedOutRate: ((stopAnalysis.stoppedOutTrades.length / allTrades.length) * 100).toFixed(1),
+          avgWinMove: avgWinMove.toFixed(2),
+          avgLossMove: avgLossMove.toFixed(2),
           profitFactor: profitFactor.toFixed(2),
         }
       },
-      confidence_score: Math.min(winRate + (profitFactor > 1.5 ? 10 : 0), 100),
-      trades_analyzed: trades.length,
+      confidence_score: Math.min(
+        winRate + 
+        (profitFactor > 1.5 ? 15 : profitFactor > 1 ? 5 : 0) + 
+        (allTrades.length > 100 ? 10 : allTrades.length > 50 ? 5 : 0),
+        100
+      ),
+      trades_analyzed: allTrades.length,
       last_analysis_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    // 10. SALVAR NO BANCO
+    // ========================
+    // 12. SALVAR NO BANCO
+    // ========================
     const { error: upsertError } = await supabase
       .from('ml_adaptive_config')
       .upsert(mlConfig, { onConflict: 'user_id' });
@@ -398,30 +577,47 @@ Responda em JSON com stops ADAPTATIVOS:
       throw new Error(`Erro ao salvar: ${upsertError.message}`);
     }
 
-    console.log(`✅ ML Adaptativo: Stop ${mlConfig.recommended_stop_loss_pct.toFixed(2)}% | TP ${mlConfig.recommended_take_profit_pct.toFixed(2)}% | ${trades.length} trades analisados`);
+    console.log(`✅ ML BYBIT: ${allTrades.length} trades | Stop ${mlConfig.recommended_stop_loss_pct.toFixed(2)}% | TP ${mlConfig.recommended_take_profit_pct.toFixed(2)}% | Lev ${mlConfig.recommended_leverage}x`);
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'ML adaptativo configurado com sucesso!',
-      analysis: {
-        totalTrades: trades.length,
+      message: `ML treinado com ${allTrades.length} trades reais da Bybit!`,
+      dataSource: {
+        bybitTrades: bybitTrades.length,
+        internalTrades: internalTrades?.length || 0,
+        totalAnalyzed: allTrades.length,
+      },
+      performance: {
+        totalPnl: totalPnl.toFixed(2),
         winRate: winRate.toFixed(1),
         profitFactor: profitFactor.toFixed(2),
         riskRewardRatio: riskRewardRatio.toFixed(2),
       },
       optimizedStops: {
-        base: mlConfig.recommended_stop_loss_pct,
+        base: mlConfig.recommended_stop_loss_pct.toFixed(2),
         byVolatility: stopByVolatility,
         tooTightCount: stopAnalysis.stopTooTight,
-        avgDrawdown: avgDrawdownBeforeWin.toFixed(2),
       },
       optimizedTP: {
-        base: mlConfig.recommended_take_profit_pct,
-        conservative: (mlConfig.recommended_take_profit_pct * 0.7).toFixed(2),
-        aggressive: (mlConfig.recommended_take_profit_pct * 1.5).toFixed(2),
+        base: mlConfig.recommended_take_profit_pct.toFixed(2),
+        scalping: (mlConfig.recommended_take_profit_pct * 0.5).toFixed(2),
+        swing: (mlConfig.recommended_take_profit_pct * 1.5).toFixed(2),
+      },
+      leverage: {
+        optimal: mlConfig.recommended_leverage,
+        byLevel: Object.fromEntries(leverageStats),
+      },
+      symbols: {
+        top: topSymbols.slice(0, 5),
+        avoid: worstSymbols,
+      },
+      hours: {
+        best: bestHours.slice(0, 4),
+        avoid: worstHours,
       },
       insights: aiRecommendations.insights || [],
-      recommendations: aiRecommendations.recommendations || 'Parâmetros otimizados baseados no seu histórico',
+      criticalWarnings: aiRecommendations.criticalWarnings || [],
+      actionPlan: aiRecommendations.actionPlan || 'Parâmetros otimizados do seu histórico real',
       config: mlConfig,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
