@@ -9,7 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
 import { useSmartExitManager } from "@/hooks/useSmartExitManager";
 import { useContinuousMLTraining } from "@/hooks/useContinuousMLTraining";
-
+import { useTradingCalculations } from "@/hooks/useTradingCalculations";
+import { useBybitSync } from "@/hooks/useBybitSync";
+import { useSignalAnalysis } from "@/hooks/useSignalAnalysis";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
@@ -26,65 +28,58 @@ interface Trade {
 
 export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
-  const [isTestnet, setIsTestnet] = useState(false); // ⚡ PADRÃO: CONTA REAL
-  const [bankroll, setBankroll] = useState(9);
-  const [currentBalance, setCurrentBalance] = useState(9);
+  const [isTestnet, setIsTestnet] = useState(false);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [totalPnL, setTotalPnL] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
   const [dailyPnL, setDailyPnL] = useState(0);
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
-  const [openPositionsCount, setOpenPositionsCount] = useState(0);
-  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [mlConfig, setMlConfig] = useState<any>(null);
   const { toast } = useToast();
+  
+  // Hooks customizados
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
   const { processOpenPositions, clearPositionState, getAdaptiveTrailingConfig } = useSmartExitManager();
   const { addTradeToBuffer, triggerFullTraining, getMLRecommendations } = useContinuousMLTraining();
+  const { 
+    getLeverageForScalping, getLeverageForBalance, calculatePositionSize,
+    calculateDynamicTrailingStop, calculateValidQuantity, calculateStopTakeProfit
+  } = useTradingCalculations();
+  const {
+    currentBalance, setCurrentBalance, openPositionsCount, setOpenPositionsCount,
+    lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
+  } = useBybitSync();
+  const { analyzeSignal } = useSignalAnalysis();
   
-  // 🧠 ML Integration - Referência para última verificação
   const lastMLCheck = useRef<number>(0);
-  const ML_CHECK_INTERVAL = 30000; // Verificar ML a cada 30 segundos
-  const lastClosedPositionsRef = useRef<string[]>([]); // Track closed positions for ML training
+  const lastClosedPositionsRef = useRef<string[]>([]);
 
-  // 🔥 PROTEÇÕES MÍNIMAS - MODO AGRESSIVO TOTAL
-  const DAILY_STOP_LOSS_PCT = 0.30; // 🔥 30% de drawdown diário permitido
-  const [maxOpenPositions, setMaxOpenPositions] = useState(200); // 🚀 MÁXIMO de posições
-  const MAX_CONSECUTIVE_LOSSES = 10; // 🔥 Permitir mais perdas consecutivas
+  // Configurações
+  const DAILY_STOP_LOSS_PCT = 0.30;
+  const [maxOpenPositions, setMaxOpenPositions] = useState(200);
+  const MAX_CONSECUTIVE_LOSSES = 10;
+  const [historicalWinRate, setHistoricalWinRate] = useState(50);
   
-  // 🧠 SISTEMA DE GERENCIAMENTO DE CAPITAL DINÂMICO
-  const [historicalWinRate, setHistoricalWinRate] = useState(50); // Win rate inicial estimado
-  const [avgVolatility, setAvgVolatility] = useState(2); // Volatilidade média dos ativos
-  
-  // ⚡ CONFIGURAÇÕES AVANÇADAS
+  // Opções avançadas
   const [trailingStopEnabled, setTrailingStopEnabled] = useState(true);
-  const [trailingStopPercent, setTrailingStopPercent] = useState(1.2);
-  const [smartExitEnabled, setSmartExitEnabled] = useState(true); // 🧠 SAÍDAS INTELIGENTES
-  const [partialExitEnabled, setPartialExitEnabled] = useState(true); // 📊 SAÍDAS PARCIAIS
+  const [smartExitEnabled, setSmartExitEnabled] = useState(true);
+  const [partialExitEnabled, setPartialExitEnabled] = useState(true);
   const [timeFilterEnabled, setTimeFilterEnabled] = useState(false);
   const [startHour, setStartHour] = useState(14);
   const [endHour, setEndHour] = useState(20);
   const [scaleInOutEnabled, setScaleInOutEnabled] = useState(true);
   const [martingaleEnabled, setMartingaleEnabled] = useState(false);
-  const [copyTradingEnabled, setCopyTradingEnabled] = useState(false);
   const [hedgeEnabled, setHedgeEnabled] = useState(false);
-  const [sentimentEnabled, setSentimentEnabled] = useState(false);
+  const [mlDecisionsEnabled, setMlDecisionsEnabled] = useState(true);
   const [dynamicLeverageEnabled, setDynamicLeverageEnabled] = useState(false);
-  const [mlDecisionsEnabled, setMlDecisionsEnabled] = useState(true); // 🧠 ML NAS DECISÕES
   
-  // 📊 TRACKING DE POSIÇÕES PARA TRAILING STOP
+  // Tracking
   const [positionTracking, setPositionTracking] = useState<Map<string, {
     highestPrice: number;
     lowestPrice: number;
     currentStopLoss: number;
   }>>(new Map());
-  
-  // 📊 TRACKING PARA MARTINGALE E COPY TRADING
   const [lossStreak, setLossStreak] = useState(0);
-  const [winningPatterns, setWinningPatterns] = useState<any[]>([]);
-  const [currentLeverage, setCurrentLeverage] = useState(10);
-  
-  // 🎯 PYRAMIDING: Tracking de posições para scaling
   const [pyramidingTracking, setPyramidingTracking] = useState<Map<string, {
     timesAdded: number;
     lastAddPrice: number;
@@ -93,20 +88,16 @@ export const MultiAssetTrader = () => {
 
   const { openPositions, closedPositions } = usePositions();
   
-  // 🧠 TREINAMENTO CONTÍNUO: Detectar novas posições fechadas e treinar ML
+  // Treinamento contínuo
   useEffect(() => {
     if (closedPositions.length > 0) {
-      // Detectar trades fechados que ainda não foram processados
       const currentIds = closedPositions.map(p => p.id);
       const newClosed = closedPositions.filter(p => 
-        !lastClosedPositionsRef.current.includes(p.id) && 
-        p.realized_pnl !== null
+        !lastClosedPositionsRef.current.includes(p.id) && p.realized_pnl !== null
       );
 
       if (newClosed.length > 0) {
-        console.log(`📚 ${newClosed.length} novos trades fechados detectados para treinamento ML`);
-        
-        // Adicionar ao buffer de treinamento
+        console.log(`📚 ${newClosed.length} novos trades para treinamento ML`);
         for (const trade of newClosed) {
           addTradeToBuffer({
             symbol: trade.symbol,
@@ -124,32 +115,26 @@ export const MultiAssetTrader = () => {
         }
       }
 
-      // Atualizar referência de IDs processados
       lastClosedPositionsRef.current = currentIds;
-
-      // Calcular win rate histórico
       const recent20 = closedPositions.slice(0, 20);
       const wins = recent20.filter(t => (t.realized_pnl || 0) > 0).length;
-      const rate = (wins / recent20.length) * 100;
-      setHistoricalWinRate(rate);
+      setHistoricalWinRate((wins / recent20.length) * 100);
     }
   }, [closedPositions, addTradeToBuffer]);
 
-  // 💾 RESTAURAR ESTADO AUTOMATICAMENTE AO CARREGAR
+  // Restaurar estado
   useEffect(() => {
     const restoreTraderState = async () => {
       const userId = await getUserId();
-
-      // Buscar configuração do ML adaptativo
       const { data: mlData } = await supabase
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
         .single();
 
-      if (mlData && mlData.is_enabled) {
+      if (mlData?.is_enabled) {
         setMlConfig(mlData);
-        console.log('🧠 ML Adaptativo ATIVADO:', mlData);
+        console.log('🧠 ML Adaptativo ATIVADO');
       }
 
       const { data: config } = await supabase
@@ -160,274 +145,34 @@ export const MultiAssetTrader = () => {
 
       if (config?.trader_is_running) {
         const lastActivity = new Date(config.last_activity_at || Date.now()).getTime();
-        const now = Date.now();
-        const fiveMinutes = 5 * 60 * 1000;
-
-        if (now - lastActivity < fiveMinutes) {
-          console.log('🔄 Restaurando trader automaticamente...');
+        if (Date.now() - lastActivity < 5 * 60 * 1000) {
           setIsRunning(true);
-          toast({
-            title: "🔄 Trader Restaurado",
-            description: "Suas operações continuam automaticamente",
-          });
+          toast({ title: "🔄 Trader Restaurado", description: "Operações continuam automaticamente" });
         } else {
-          await supabase
-            .from('auto_trader_config')
-            .update({ trader_is_running: false })
-            .eq('user_id', userId);
+          await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
         }
       }
     };
-
     restoreTraderState();
   }, []);
 
-  // 🎯 TOP 10 ATIVOS MAIS VOLÁTEIS (atualizado dinamicamente)
-  const [top10VolatileAssets, setTop10VolatileAssets] = useState<Set<string>>(new Set([
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'DOGEUSDT',
-    'SHIBUSDT', 'PEPEUSDT', 'AVAXUSDT', 'NEARUSDT', 'APTUSDT'
-  ]));
-
-  // 🎯 SISTEMA DE ALAVANCAGEM EQUILIBRADA PARA SCALPING
-  const getLeverageForScalping = (volatility: number): number => {
-    // 🎯 ALAVANCAGEM ADAPTATIVA: Menor alavancagem em alta volatilidade
-    if (volatility > 5.0) return 15; // Alta volatilidade = baixa alavancagem
-    if (volatility > 3.0) return 20;
-    if (volatility > 2.0) return 25;
-    if (volatility > 1.0) return 30;
-    return 35; // Baixa volatilidade = pode usar mais
-  };
-
-  // Estratégia de alavancagem EQUILIBRADA baseada no bankroll
-  const getLeverageForBalance = (balance: number, winRate: number) => {
-    // 🎯 ALAVANCAGEM MODERADA para melhor win rate
-    let baseLeverage = 20; // Base moderada
-    if (balance < 5) baseLeverage = 30; // Contas pequenas = moderado
-    else if (balance < 10) baseLeverage = 25;
-    else if (balance < 20) baseLeverage = 20;
-    else if (balance < 50) baseLeverage = 18;
-    else baseLeverage = 15; // Contas maiores = conservador
-
-    // Ajuste por performance
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 5, 40); // Bom desempenho
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 8, 10); // Desempenho ruim
-
-    return baseLeverage;
-  };
-
-  // 💼 GERENCIAMENTO DE MARGEM DINÂMICO
-  const calculatePositionSize = (balance: number, leverage: number, volatility: number, winRate: number, currentOpenPositions: number) => {
-    // 🎯 MARGEM DISPONÍVEL: Calcular quanto de margem ainda temos
-    const MAX_MARGIN_USAGE = 0.80; // Usar no máximo 80% da margem disponível
-    const RESERVE_MARGIN = 0.20; // Reservar 20% para novas oportunidades
-    
-    // 📊 DISTRIBUIÇÃO DE MARGEM: Dividir margem disponível entre posições
-    const targetPositions = Math.min(maxOpenPositions, 20); // Objetivo de posições simultâneas
-    const marginPerPosition = (balance * MAX_MARGIN_USAGE) / targetPositions;
-    
-    // 🔄 AJUSTE DINÂMICO: Quanto mais posições abertas, menor o tamanho de novas
-    const positionSizeMultiplier = currentOpenPositions === 0 
-      ? 1.0 // Primeira posição: tamanho normal
-      : Math.max(0.3, 1 - (currentOpenPositions / targetPositions) * 0.5); // Reduzir gradualmente
-    
-    // 📐 RISCO MÁXIMO AGRESSIVO: 20-25% do bankroll por posição
-    let baseRisk = balance < 15 ? 0.25 : 0.20; // 🔥 MÁXIMO para lucros explosivos
-    
-    // 💡 Volatilidade alta = OPORTUNIDADE (não reduzir muito)
-    if (volatility > 5) baseRisk *= 0.85; // -15% em alta volatilidade (menos conservador)
-    else if (volatility > 3) baseRisk *= 0.95; // -5% em volatilidade moderada
-    else if (volatility < 1) baseRisk *= 1.3; // +30% em baixa volatilidade
-    
-    // 📈 BÔNUS AGRESSIVO POR WIN RATE
-    if (winRate >= 55) baseRisk *= 1.5; // +50% se win rate bom
-    else if (winRate >= 45) baseRisk *= 1.2; // +20% se win rate ok
-    else if (winRate < 35) baseRisk *= 0.8; // -20% se win rate ruim
-    
-    // 🎲 AJUSTE POR NÚMERO DE POSIÇÕES
-    baseRisk *= positionSizeMultiplier;
-    
-    // 🛡️ LIMITES DE SEGURANÇA
-    // - Mínimo: $2 por posição (viável na Bybit)
-    // - Máximo: Não exceder margem disponível por posição
-    const minPositionSize = 2;
-    const maxPositionSize = marginPerPosition / leverage;
-    
-    let usdSize = balance * baseRisk;
-    usdSize = Math.max(minPositionSize, Math.min(maxPositionSize, usdSize));
-    
-    return { 
-      usdSize, 
-      quantity: (usdSize * leverage),
-      marginUsed: usdSize / leverage,
-      marginPerPosition,
-      positionSizeMultiplier
-    };
-  };
-
-  // 🧠 FUNÇÃO: CALCULAR TRAILING STOP DINÂMICO BASEADO NA VOLATILIDADE
-  const calculateDynamicTrailingStop = (volatility: number): number => {
-    // Volatilidade baixa (< 2%): trailing stop apertado 1.0%
-    // Volatilidade média (2-5%): trailing stop normal 1.5%
-    // Volatilidade alta (5-10%): trailing stop largo 2.5%
-    // Volatilidade extrema (> 10%): trailing stop muito largo 3.5%
-    
-    if (volatility < 2) {
-      return 1.0; // Ativo estável, trailing apertado
-    } else if (volatility < 5) {
-      return 1.5; // Volatilidade normal
-    } else if (volatility < 10) {
-      return 2.5; // Alta volatilidade, dar mais espaço
-    } else {
-      return 3.5; // Volatilidade extrema, máximo espaço
-    }
-  };
-
-  // 🔥 BUSCAR TOP 10 ATIVOS MAIS VOLÁTEIS DA BYBIT + CALCULAR VOLATILIDADE
-  const fetchTop10VolatileAssets = useCallback(async () => {
-    try {
-      console.log('🔍 Buscando top 10 ativos mais voláteis da Bybit...');
-      
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_tickers',
-          isTestnet: false,
-          params: { 
-            category: 'linear'
-          }
-        }
-      });
-
-      if (!error && data?.success) {
-        const tickers = data.data?.list || [];
-        
-        // Calcular score de volatilidade para cada ativo
-        const volatilityScores = tickers
-          .filter((t: any) => t.symbol.endsWith('USDT')) // Apenas pares USDT
-          .map((ticker: any) => {
-            const priceChange24h = Math.abs(parseFloat(ticker.price24hPcnt || '0')) * 100;
-            const volume24h = parseFloat(ticker.turnover24h || '0');
-            const volumeUSD = parseFloat(ticker.volume24h || '0');
-            
-            // Score: 70% baseado em variação de preço + 30% baseado em volume
-            // Normalizar volume (valores acima de $100M = score máximo)
-            const volumeScore = Math.min(volume24h / 100000000, 1) * 30;
-            const priceChangeScore = Math.min(priceChange24h / 10, 1) * 70; // 10% = score máximo
-            
-            const volatilityScore = priceChangeScore + volumeScore;
-            
-            return {
-              symbol: ticker.symbol,
-              volatilityScore,
-              priceChange24h,
-              volume24h: volumeUSD,
-              lastPrice: ticker.lastPrice
-            };
-          })
-          .filter((item: any) => item.volume24h > 10000000) // Volume mínimo de $10M
-          .sort((a: any, b: any) => b.volatilityScore - a.volatilityScore)
-          .slice(0, 10); // Top 10
-
-        const top10Symbols = new Set<string>(volatilityScores.map((item: any) => item.symbol as string));
-        setTop10VolatileAssets(top10Symbols);
-        
-        // 📊 Armazenar volatilidade de cada ativo para uso posterior
-        const volatilityMap = new Map(
-          volatilityScores.map((s: any) => [s.symbol, s.priceChange24h])
-        );
-        (window as any).assetVolatility = volatilityMap;
-        
-        console.log('✅ Top 10 ativos voláteis atualizados:', 
-          volatilityScores.map((s: any) => 
-            `${s.symbol} (${s.priceChange24h.toFixed(2)}%, $${(s.volume24h/1e6).toFixed(0)}M)`
-          ).join(', ')
-        );
-        
-        return top10Symbols;
-      }
-    } catch (error) {
-      console.error('Erro ao buscar ativos voláteis:', error);
-    }
-  }, []);
-
-  // 🔄 SINCRONIZAÇÃO AUTOMÁTICA - Buscar saldo DISPONÍVEL real da Bybit
-  const syncBybitBalance = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_balance',
-          isTestnet: false,
-          params: { accountType: 'UNIFIED' }
-        }
-      });
-
-      if (!error && data?.success) {
-        // 💰 USAR SALDO DISPONÍVEL (após margem de posições abertas)
-        const availableBalance = parseFloat(data.data.list[0]?.totalAvailableBalance || '0');
-        const totalWallet = parseFloat(data.data.list[0]?.totalWalletBalance || '0');
-        
-        setCurrentBalance(availableBalance); // Usar saldo DISPONÍVEL
-        setLastSyncTime(new Date());
-        
-        console.log(`💰 Saldo sincronizado: $${availableBalance.toFixed(2)} disponível (Wallet: $${totalWallet.toFixed(2)})`);
-      }
-    } catch (error) {
-      console.error('Erro ao sincronizar saldo:', error);
-    }
-  }, []);
-
-  // 📊 SINCRONIZAR POSIÇÕES ABERTAS DA BYBIT
-  const syncOpenPositions = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_positions',
-          isTestnet: false,
-          params: { 
-            category: 'linear',
-            settleCoin: 'USDT' 
-          }
-        }
-      });
-
-      if (!error && data?.success) {
-        const positions = data.data.list || [];
-        const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
-        setOpenPositionsCount(openPositions.length);
-        console.log(`📈 Posições Bybit: ${openPositions.length}`);
-      }
-    } catch (error) {
-      console.error('Erro ao sincronizar posições:', error);
-    }
-  }, []);
-
-  // 🎯 TRAILING STOP LOSS INTELIGENTE - Usando ML e saídas parciais
+  // Smart exits
   const updateSmartExits = async () => {
     if (!smartExitEnabled && !trailingStopEnabled) return;
     
     try {
-      // Buscar posições abertas
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_positions',
-          isTestnet: false,
-          params: { 
-            category: 'linear',
-            settleCoin: 'USDT' 
-          }
-        }
+        body: { action: 'get_positions', isTestnet: false, params: { category: 'linear', settleCoin: 'USDT' } }
       });
 
       if (error || !data?.success) return;
 
       const positions = data.data?.list || [];
-      const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
-
-      // Obter mapa de volatilidade
+      const openPositionsData = positions.filter((p: any) => parseFloat(p.size) > 0);
       const volatilityMap = (window as any).assetVolatility || new Map();
 
-      // 🧠 PROCESSAMENTO INTELIGENTE COM ML
       if (smartExitEnabled && mlConfig?.is_enabled) {
-        const positionsData = openPositions.map((p: any) => ({
+        const positionsData = openPositionsData.map((p: any) => ({
           symbol: p.symbol,
           side: p.side,
           size: parseFloat(p.size),
@@ -436,108 +181,21 @@ export const MultiAssetTrader = () => {
           unrealizedPnl: parseFloat(p.unrealisedPnl),
           leverage: parseFloat(p.leverage),
         }));
-
-        // Usar o hook de saídas inteligentes
-        const results = await processOpenPositions(positionsData, mlConfig, volatilityMap);
-        
-        if (results.length > 0) {
-          console.log(`🧠 Smart Exit: ${results.length} ações executadas`);
-        }
-      }
-
-      // 📊 TRAILING STOP TRADICIONAL (fallback se ML não ativo)
-      if (trailingStopEnabled && (!smartExitEnabled || !mlConfig?.is_enabled)) {
-        for (const position of openPositions) {
-          const symbol = position.symbol;
-          const tracking = positionTracking.get(symbol);
-          if (!tracking) continue;
-
-          const currentPrice = parseFloat(position.markPrice);
-          const side = position.side;
-          let shouldUpdateStop = false;
-          let newStopLoss = tracking.currentStopLoss;
-
-          // Calcular trailing stop adaptativo baseado em volatilidade
-          const volatility = volatilityMap.get(symbol) || 2;
-          const adaptiveTrailPct = getAdaptiveTrailingConfig(volatility, mlConfig).trailingPct;
-
-          if (side === 'Buy') {
-            if (currentPrice > tracking.highestPrice) {
-              const newHighest = currentPrice;
-              newStopLoss = newHighest * (1 - adaptiveTrailPct / 100);
-              
-              if (newStopLoss > tracking.currentStopLoss) {
-                shouldUpdateStop = true;
-                console.log(`🎯 TRAILING ${symbol}: SL $${newStopLoss.toFixed(4)} (Vol: ${volatility.toFixed(1)}%, Trail: ${adaptiveTrailPct.toFixed(1)}%)`);
-                
-                setPositionTracking(prev => {
-                  const newMap = new Map(prev);
-                  newMap.set(symbol, {
-                    ...tracking,
-                    highestPrice: newHighest,
-                    currentStopLoss: newStopLoss
-                  });
-                  return newMap;
-                });
-              }
-            }
-          } else {
-            if (currentPrice < tracking.lowestPrice) {
-              const newLowest = currentPrice;
-              newStopLoss = newLowest * (1 + adaptiveTrailPct / 100);
-              
-              if (newStopLoss < tracking.currentStopLoss) {
-                shouldUpdateStop = true;
-                console.log(`🎯 TRAILING ${symbol}: SL $${newStopLoss.toFixed(4)} (Vol: ${volatility.toFixed(1)}%, Trail: ${adaptiveTrailPct.toFixed(1)}%)`);
-                
-                setPositionTracking(prev => {
-                  const newMap = new Map(prev);
-                  newMap.set(symbol, {
-                    ...tracking,
-                    lowestPrice: newLowest,
-                    currentStopLoss: newStopLoss
-                  });
-                  return newMap;
-                });
-              }
-            }
-          }
-
-          if (shouldUpdateStop) {
-            const priceDecimals = position.avgPrice.includes('.') 
-              ? position.avgPrice.split('.')[1].length 
-              : 2;
-            
-            await supabase.functions.invoke('bybit-trading', {
-              body: {
-                action: 'set_trading_stop',
-                isTestnet: false,
-                params: {
-                  category: 'linear',
-                  symbol: symbol,
-                  stopLoss: newStopLoss.toFixed(priceDecimals),
-                  positionIdx: 0
-                }
-              }
-            });
-          }
-        }
+        await processOpenPositions(positionsData, mlConfig, volatilityMap);
       }
 
       // Limpar tracking de posições fechadas
-      const openSymbols = new Set(openPositions.map((p: any) => p.symbol));
+      const openSymbols = new Set(openPositionsData.map((p: any) => p.symbol));
       setPositionTracking(prev => {
         const newMap = new Map(prev);
         for (const [symbol] of newMap) {
           if (!openSymbols.has(symbol)) {
             newMap.delete(symbol);
             clearPositionState(symbol);
-            console.log(`🧹 Removido tracking de ${symbol}`);
           }
         }
         return newMap;
       });
-
     } catch (error) {
       console.error('Erro ao atualizar smart exits:', error);
     }
@@ -545,1366 +203,371 @@ export const MultiAssetTrader = () => {
 
   const analyzeAndTrade = async () => {
     try {
-      // 🔄 SINCRONIZAR PRIMEIRO - Obter dados atualizados da Bybit
       await syncBybitBalance();
       await syncOpenPositions();
-      
-      // 🔥 Atualizar lista de top 10 voláteis a cada ciclo
       await fetchTop10VolatileAssets();
 
-      // Contar posições abertas diretamente da Bybit (sem banco)
-      console.log(`📊 Posições abertas na Bybit: ${openPositionsCount}/${maxOpenPositions}`);
-
-      // 🛡️ VERIFICAR PROTEÇÕES
+      // Verificar proteções
       if (dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT) {
-        console.log('🛑 STOP LOSS DIÁRIO ATINGIDO!');
-        toast({
-          title: "🛑 Stop Loss Diário Atingido",
-          description: `Perdeu ${(DAILY_STOP_LOSS_PCT * 100).toFixed(0)}% hoje. Sistema pausado até amanhã.`,
-          variant: "destructive",
-        });
+        toast({ title: "🛑 Stop Loss Diário Atingido", variant: "destructive" });
         setIsRunning(false);
         return;
       }
 
       if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
-        console.log('⚠️ Muitas perdas consecutivas. Pausando...');
-        toast({
-          title: "⚠️ Sequência de Perdas",
-          description: `${MAX_CONSECUTIVE_LOSSES} perdas seguidas. Sistema pausado por segurança.`,
-          variant: "destructive",
-        });
+        toast({ title: "⚠️ Sequência de Perdas", variant: "destructive" });
         setIsRunning(false);
         return;
       }
 
-      // 🚨 VERIFICAR LIMITE DE POSIÇÕES ABERTAS (com priorização inteligente)
-      const shouldCheckPrioritization = openPositionsCount >= maxOpenPositions;
-      
-      if (shouldCheckPrioritization) {
-        console.log(`⚠️ LIMITE DE POSIÇÕES: ${openPositionsCount}/${maxOpenPositions} - Sistema de priorização ativo`);
-      }
-      
-      // ⏰ MODO 24/7 ATIVO - Sistema opera continuamente sem restrições de horário
+      // Filtro de horário
       if (timeFilterEnabled) {
         const currentHour = new Date().getUTCHours();
         const isWithinTradingHours = startHour <= endHour
           ? currentHour >= startHour && currentHour < endHour
           : currentHour >= startHour || currentHour < endHour;
-        
-        if (!isWithinTradingHours) {
-          console.log(`⏰ FORA DO HORÁRIO: ${currentHour}h UTC (Ativo: ${startHour}h-${endHour}h UTC)`);
-          return;
-        }
-        console.log(`✅ DENTRO DO HORÁRIO: ${currentHour}h UTC`);
-      } else {
-        console.log(`🌍 MODO 24/7 ATIVO - Operando continuamente sem restrições de horário`);
+        if (!isWithinTradingHours) return;
       }
 
-      // 1. Buscar TODOS os ativos da Bybit
+      // Buscar instrumentos
       const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_instruments',
-          isTestnet: false, // ⚡ SEMPRE CONTA REAL
-          params: { category: 'linear', limit: 1000, status: 'Trading' } // TODOS OS ATIVOS
-        }
+        body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', limit: 1000, status: 'Trading' } }
       });
 
-      if (instrumentsError || !instrumentsData?.success) {
-        console.error('Erro ao buscar instrumentos:', instrumentsError);
-        return;
-      }
+      if (instrumentsError || !instrumentsData?.success) return;
 
       const instruments = instrumentsData.data.list || [];
-      
-      // ⚡ TODOS OS ATIVOS BYBIT - Sem restrições
-      const tradableAssets = instruments.filter((inst: any) => {
-        return inst.status === 'Trading' && inst.quoteCoin === 'USDT';
-      });
+      const tradableAssets = instruments.filter((inst: any) => inst.status === 'Trading' && inst.quoteCoin === 'USDT');
 
-      console.log(`🎯 Analisando ${tradableAssets.length} ativos (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
-
-      // 2. Buscar ticker de cada ativo para análise de volume e volatilidade
       const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_ticker',
-          isTestnet: false, // ⚡ SEMPRE CONTA REAL
-          params: { category: 'linear' }
-        }
+        body: { action: 'get_ticker', isTestnet: false, params: { category: 'linear' } }
       });
 
       const tickers = tickerData?.data?.list || [];
       
-      // 🔥 FILTRAR ATIVOS COM BOA LIQUIDEZ E MOVIMENTO - MODO EQUILIBRADO
+      // Filtrar e ordenar por volatilidade
       const assetsWithVolatility = tradableAssets.map((instrument: any) => {
         const ticker = tickers.find((t: any) => t.symbol === instrument.symbol);
         const priceChange = parseFloat(ticker?.price24hPcnt || '0') * 100;
         const volume24h = parseFloat(ticker?.turnover24h || '0');
-        
-        return {
-          instrument,
-          ticker,
-          volatility: Math.abs(priceChange),
-          priceChange,
-          volume24h
-        };
+        return { instrument, ticker, volatility: Math.abs(priceChange), priceChange, volume24h };
       }).filter(a => {
-        // 🔥 CRITÉRIOS RELAXADOS: Vol > 0.2% e $100K+ volume para qualquer ativo
-        // TOP 10: Critérios ainda mais relaxados
         const isInTop10 = top10VolatileAssets.has(a.instrument.symbol);
-        
-        if (isInTop10) {
-          // TOP 10: Muito permissivo
-          return a.volatility > 0.1 && a.volume24h > 50000;
-        }
-        
-        // OUTROS ATIVOS: Critérios normais mas acessíveis
-        return a.volatility > 0.3 && a.volume24h > 200000;
+        return isInTop10 ? (a.volatility > 0.1 && a.volume24h > 50000) : (a.volatility > 0.3 && a.volume24h > 200000);
       });
       
-      // 📊 ORDENAR POR VOLATILIDADE (descendente) e processar TODOS os ativos voláteis
-      const topVolatileAssets = assetsWithVolatility
-        .sort((a, b) => b.volatility - a.volatility)
-        .slice(0, 50); // 🔥 AUMENTADO: Analisar até 50 ativos
-      
-      console.log(`🔥 ${topVolatileAssets.length} ativos passaram nos filtros | Total disponível: ${assetsWithVolatility.length}`);
-      console.log(`💰 Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions}`);
-      if (topVolatileAssets.length > 0) {
-        console.log(`📊 Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.volatility.toFixed(1)}%)`).join(', ')}`);
-      }
-      console.log(`⚡ Thresholds: Score ≥40 | Vol ≥0.3% | $200K+ vol | 1+ confirmação`);
-      
-      // 🛑 FLAG para parar processamento em caso de saldo insuficiente
+      const topVolatileAssets = assetsWithVolatility.sort((a, b) => b.volatility - a.volatility).slice(0, 50);
+
       let shouldStopTrading = false;
       
-      // 3. Analisar apenas os ativos mais voláteis
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
 
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
-        
-        // 🔥 Top 10 = scalping, outros = swing trade
         const isScalpAsset = top10VolatileAssets.has(symbol);
         
         try {
-          // ⚡ ANÁLISE TÉCNICA AVANÇADA - SISTEMA DE PRECISÃO APRIMORADO COM ATR
-          
-          // 1. CALCULAR ATR (Average True Range) REAL para stop loss dinâmico
           const currentPrice = parseFloat(ticker.lastPrice);
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
-          const priceRange = highPrice - lowPrice;
           
-          // ATR como % do preço - usado para stops dinâmicos
-          const atrPercent = (priceRange / currentPrice) * 100;
+          // ML nas decisões
+          let scoreThreshold = 40;
+          let minConfirmations = 1;
           
-          // 2. VALIDAÇÕES DE LIQUIDEZ E VOLATILIDADE (ULTRA-AGRESSIVAS)
-          const hasGoodVolume = volume24h > 50000; // 🔥 REDUZIDO: Volume mínimo
-          const hasExcellentVolume = volume24h > 1000000; // $1M+ = excelente
-          const hasGoodVolatility = volatility > 0.2; // 🔥 REDUZIDO: 0.2%+
-          const hasStrongVolatility = volatility > 1.5; // 1.5%+
-          
-          // 3. ANÁLISE DE TENDÊNCIA E MOMENTUM (BALANCEADO)
-          const pricePosition = (currentPrice - lowPrice) / priceRange; // 0-1, onde está no range
-          
-          // Detectar tendências claras - CRITÉRIOS MAIS AGRESSIVOS
-          const isBullishTrend = priceChange > 1.5; // 🔥 REDUZIDO: Subindo (+1.5%)
-          const isBearishTrend = priceChange < -1.5; // 🔥 REDUZIDO: Caindo (-1.5%)
-          const isModerateBullish = priceChange > 0.8 && priceChange <= 1.5; // 🔥 REDUZIDO
-          const isModerateBearish = priceChange < -0.8 && priceChange >= -1.5; // 🔥 REDUZIDO
-          
-          // String descritiva da tendência
-          const trendStrength = isBullishTrend ? 'Alta Forte' : 
-                                 isBearishTrend ? 'Baixa Forte' :
-                                 isModerateBullish ? 'Alta Moderada' :
-                                 isModerateBearish ? 'Baixa Moderada' : 'Neutro';
-          
-          // Detectar zonas de suporte/resistência - MAIS ESTRITAS
-          const nearResistance = pricePosition > 0.80; // Preço próximo do topo (80%+)
-          const nearSupport = pricePosition < 0.20; // Preço próximo do fundo (20%-)
-          const inMiddleZone = pricePosition >= 0.35 && pricePosition <= 0.65;
-          
-          // Detectar reversões (oversold/overbought) - CRITÉRIOS MAIS AGRESSIVOS
-          const isOversold = priceChange < -3.5; // 🔥 REDUZIDO: -3.5% = oversold
-          const isOverbought = priceChange > 3.5; // 🔥 REDUZIDO: +3.5% = overbought
-          const isMildOversold = priceChange < -2.0 && priceChange >= -3.5; // 🔥 REDUZIDO
-          const isMildOverbought = priceChange > 2.0 && priceChange <= 3.5; // 🔥 REDUZIDO
-          
-          // 4. ANÁLISE DE VOLUME (comparação dinâmica) - MAIS AGRESSIVO
-          const avgVolume = 1000000; // 🔥 REDUZIDO: $1M baseline
-          const volumeRatio = volume24h / avgVolume;
-          const hasVolumeSpike = volumeRatio > 1.5; // 🔥 REDUZIDO: 1.5x+ volume
-          const hasStrongVolume = volumeRatio > 0.8; // 🔥 REDUZIDO: 0.8x volume
-          
-          // 5. SISTEMA DE SCORING MULTI-CONFIRMAÇÃO (0-100) - CRITÉRIOS RIGOROSOS
-          let signalScore = 0;
-          let action: 'BUY' | 'SELL' | null = null;
-          let confirmations: string[] = [];
-          
-          // === SINAIS DE COMPRA (BUY) - CRITÉRIOS ULTRA-AGRESSIVOS ===
-          let buyScore = 0;
-          
-          // Confirmação 1: Tendência de alta com volume
-          if (isBullishTrend && hasVolumeSpike) {
-            buyScore += 40; // 🔥 AUMENTADO
-            confirmations.push('🔥 Trend bullish + volume spike');
-          } else if (isBullishTrend && hasStrongVolume) {
-            buyScore += 33; // 🔥 AUMENTADO
-            confirmations.push('Trend bullish confirmado');
-          } else if (isModerateBullish && hasVolumeSpike) {
-            buyScore += 28; // 🔥 AUMENTADO
-            confirmations.push('Trend bullish moderado + volume');
-          } else if (isModerateBullish && hasGoodVolume) {
-            buyScore += 20; // 🔥 AUMENTADO
-            confirmations.push('Momentum bullish');
-          } else if (isModerateBullish) {
-            buyScore += 15; // 🔥 NOVO: Aceita momentum sem volume forte
-            confirmations.push('Momentum bullish leve');
-          }
-          
-          // Confirmação 2: Reversão ou zona de suporte
-          if (isOversold && nearSupport && hasVolumeSpike) {
-            buyScore += 45; // 🔥 AUMENTADO
-            confirmations.push('🎯 Reversão bullish forte');
-          } else if (isMildOversold && nearSupport) {
-            buyScore += 30; // 🔥 AUMENTADO
-            confirmations.push('Zona de suporte detectada');
-          } else if (nearSupport && hasStrongVolume) {
-            buyScore += 23; // 🔥 AUMENTADO
-            confirmations.push('Suporte com volume');
-          } else if (nearSupport) {
-            buyScore += 15; // 🔥 NOVO: Aceita suporte sem volume forte
-            confirmations.push('Zona de suporte');
-          }
-          
-          // Confirmação 3: Momentum positivo
-          if (pricePosition > 0.55 && priceChange > 1.0 && volatility > 1.0) {
-            buyScore += 25; // 🔥 AUMENTADO
-            confirmations.push('💪 Momentum bullish forte');
-          } else if (pricePosition > 0.50 && priceChange > 0.5) {
-            buyScore += 17; // 🔥 AUMENTADO
-            confirmations.push('Momentum positivo');
-          } else if (priceChange > 0.3) {
-            buyScore += 10; // 🔥 NOVO: Aceita momentum leve
-            confirmations.push('Momentum leve');
-          }
-          
-          // Confirmação 4: ATR adequado
-          if (atrPercent > 1.0 && atrPercent < 10) {
-            buyScore += 20; // 🔥 AUMENTADO
-            confirmations.push('✅ ATR ideal');
-          } else if (atrPercent > 0.5 && atrPercent < 15) {
-            buyScore += 12; // 🔥 AUMENTADO
-            confirmations.push('ATR aceitável');
-          }
-          
-          // === SINAIS DE VENDA (SELL) - CRITÉRIOS ULTRA-AGRESSIVOS ===
-          let sellScore = 0;
-          
-          // Confirmação 1: Tendência de baixa com volume
-          if (isBearishTrend && hasVolumeSpike) {
-            sellScore += 40; // 🔥 AUMENTADO
-            confirmations.push('🔥 Trend bearish + volume spike');
-          } else if (isBearishTrend && hasStrongVolume) {
-            sellScore += 33; // 🔥 AUMENTADO
-            confirmations.push('Trend bearish confirmado');
-          } else if (isModerateBearish && hasVolumeSpike) {
-            sellScore += 28; // 🔥 AUMENTADO
-            confirmations.push('Trend bearish moderado + volume');
-          } else if (isModerateBearish && hasGoodVolume) {
-            sellScore += 20; // 🔥 AUMENTADO
-            confirmations.push('Momentum bearish');
-          } else if (isModerateBearish) {
-            sellScore += 15; // 🔥 NOVO: Aceita momentum sem volume forte
-            confirmations.push('Momentum bearish leve');
-          }
-          
-          // Confirmação 2: Reversão ou zona de resistência
-          if (isOverbought && nearResistance && hasVolumeSpike) {
-            sellScore += 45; // 🔥 AUMENTADO
-            confirmations.push('🎯 Reversão bearish forte');
-          } else if (isMildOverbought && nearResistance) {
-            sellScore += 30; // 🔥 AUMENTADO
-            confirmations.push('Zona de resistência detectada');
-          } else if (nearResistance && hasStrongVolume) {
-            sellScore += 23; // 🔥 AUMENTADO
-            confirmations.push('Resistência com volume');
-          } else if (nearResistance) {
-            sellScore += 15; // 🔥 NOVO: Aceita resistência sem volume forte
-            confirmations.push('Zona de resistência');
-          }
-          
-          // Confirmação 3: Momentum negativo
-          if (pricePosition < 0.45 && priceChange < -1.0 && volatility > 1.0) {
-            sellScore += 25; // 🔥 AUMENTADO
-            confirmations.push('💪 Momentum bearish forte');
-          } else if (pricePosition < 0.50 && priceChange < -0.5) {
-            sellScore += 17; // 🔥 AUMENTADO
-            confirmations.push('Momentum negativo');
-          } else if (priceChange < -0.3) {
-            sellScore += 10; // 🔥 NOVO: Aceita momentum leve
-            confirmations.push('Momentum negativo leve');
-          }
-          
-          // Confirmação 4: ATR adequado
-          if (atrPercent > 1.0 && atrPercent < 10) {
-            sellScore += 20; // 🔥 AUMENTADO
-            confirmations.push('✅ ATR ideal');
-          } else if (atrPercent > 0.5 && atrPercent < 15) {
-            sellScore += 12; // 🔥 AUMENTADO
-            confirmations.push('ATR aceitável');
-          }
-          
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO EQUILIBRADO
-          // 🎯 THRESHOLDS RELAXADOS para mais entradas com qualidade
-          // 🧠 ML INTEGRATION: Usar thresholds do ML se habilitado
-          let scoreThreshold = 40; // 🔥 REDUZIDO de 55 para 40
-          let minConfirmations = 1; // 🔥 REDUZIDO de 2 para 1
-          
-          if (mlDecisionsEnabled && mlConfig?.is_enabled && mlConfig?.optimal_patterns) {
-            // ML pode ajustar threshold baseado em performance histórica
-            const patterns = mlConfig.optimal_patterns as Record<string, any>;
-            
-            // Se win rate do ML é alto, pode ser menos rigoroso
-            if (mlConfig.confidence_score >= 70) {
-              scoreThreshold = 35; // Mais confiante
-            } else if (mlConfig.confidence_score >= 50) {
-              scoreThreshold = 40; // Normal
-            } else {
-              scoreThreshold = 45; // Mais conservador
-            }
-            
-            // Verificar se o símbolo é um dos melhores do ML
-            const bestSymbols = patterns.bestSymbols || [];
-            if (bestSymbols.includes(symbol)) {
-              buyScore += 15; // 🔥 AUMENTADO: Bônus maior para símbolos favoritos do ML
-              sellScore += 15;
-              confirmations.push('🧠 ML Best Symbol');
-            }
-            
-            // Verificar se é um dos melhores horários
-            const bestHours = patterns.bestHours || [];
+          if (mlDecisionsEnabled && mlConfig?.is_enabled) {
+            const confidence = mlConfig.confidence_score || 50;
+            scoreThreshold = Math.max(50, Math.min(60, Math.floor(50 + (confidence - 50) / 5)));
+            const patterns = mlConfig.optimal_patterns || {};
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 10;
             const currentHour = new Date().getUTCHours();
-            if (bestHours.includes(currentHour)) {
-              buyScore += 12; // 🔥 AUMENTADO
-              sellScore += 12;
-              confirmations.push('⏰ ML Best Hour');
-            }
-            
-            console.log(`🧠 ML ATIVO: Threshold ${scoreThreshold} | Conf ${mlConfig.confidence_score}%`);
+            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 5;
           }
           
-          // 🛡️ FILTRO DE DIREÇÃO: Não entrar contra tendência MUITO forte (relaxado)
-          const strongCounterTrend = (buyScore > sellScore && priceChange < -5) || (sellScore > buyScore && priceChange > 5);
+          const analysisResult = analyzeSignal({
+            currentPrice, highPrice, lowPrice, priceChange, volume24h, volatility,
+            scoreThreshold, minConfirmations, currentBalance
+          });
+
+          if (!analysisResult.shouldTrade || !analysisResult.action) continue;
+
+          // Verificar correlação
+          const correlationCheck = checkNewPosition(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell');
+          if (!correlationCheck.allowed) {
+            console.log(`🚫 ${symbol}: ${correlationCheck.reason}`);
+            continue;
+          }
+
+          // Calcular alavancagem
+          const maxLeverageInstrument = parseFloat(instrument.leverageFilter?.maxLeverage || '25');
+          let dynamicLeverage = isScalpAsset
+            ? Math.min(getLeverageForScalping(volatility), maxLeverageInstrument)
+            : Math.min(getLeverageForBalance(currentBalance, historicalWinRate), maxLeverageInstrument);
           
-          if (buyScore > sellScore && buyScore >= scoreThreshold && !strongCounterTrend) {
-            action = 'BUY';
-            signalScore = buyScore;
-          } else if (sellScore > buyScore && sellScore >= scoreThreshold && !strongCounterTrend) {
-            action = 'SELL';
-            signalScore = sellScore;
+          if (mlConfig?.is_enabled && mlConfig?.recommended_leverage) {
+            dynamicLeverage = Math.min(mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          // 7. CRITÉRIOS DE QUALIDADE - FILTROS RELAXADOS
-          const volumeCheck = volume24h > 200000; // 🔥 REDUZIDO de $500K para $200K
-          const volatilityCheck = volatility > 0.3 && volatility < 20; // 🔥 RELAXADO: 0.3%-20%
-          const atrMinCheck = atrPercent > 0.3 && atrPercent < 25; // 🔥 RELAXADO: ATR 0.3%-25%
-          
-          // 🛡️ FILTRO DE RUÍDO: Evitar movimentos extremos apenas
-          const priceMovementOk = Math.abs(priceChange) >= 0.2 && Math.abs(priceChange) < 15; // 🔥 RELAXADO
-          
-          // 🎯 CONFIRMAÇÃO DE TENDÊNCIA: Score deve ser maior (relaxado)
-          const hasStrongSignal = Math.abs(buyScore - sellScore) >= 8; // 🔥 REDUZIDO de 15 para 8
-          
-          const shouldTrade = (
-            signalScore >= scoreThreshold &&
-            volumeCheck &&
-            volatilityCheck &&
-            action !== null &&
-            currentBalance > 1 && // 🔥 REDUZIDO: $1 mínimo
-            atrMinCheck &&
-            priceMovementOk &&
-            hasStrongSignal &&
-            confirmations.length >= minConfirmations
+          const leverage = Math.floor(dynamicLeverage);
+
+          // Calcular tamanho da posição
+          const FEE_BUFFER = 0.001;
+          const safeBalance = Math.max(0, currentBalance - 0.5);
+          const baseAllocation = currentBalance < 5 ? 0.70 : (isScalpAsset ? 0.80 : 0.65);
+          const positionValue = safeBalance * baseAllocation * leverage;
+          let usdSize = positionValue;
+
+          // Martingale
+          if (martingaleEnabled && lossStreak >= 2) {
+            const multiplier = Math.min(Math.pow(2, lossStreak - 1), 3);
+            usdSize *= multiplier;
+          }
+
+          // Calcular quantidade
+          const lotSizeFilter = instrument.lotSizeFilter || {};
+          const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.01');
+          const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.01');
+          const maxOrderQty = parseFloat(lotSizeFilter.maxOrderQty || '10000');
+
+          const { qty, qtyStr, orderValueUSD } = calculateValidQuantity(
+            usdSize, currentPrice, leverage, minOrderQty, qtyStep, maxOrderQty
           );
 
-          // 📋 LOG DETALHADO DE CADA ATIVO ANALISADO
-          const assetBadge = isScalpAsset ? '⚡' : '📊';
-          if (buyScore > 0 || sellScore > 0) {
-            const status = shouldTrade ? '✅' : '⏭️';
-            let skipReason = '';
-            if (!shouldTrade) {
-              if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
-              else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/8`;
-              else if (!volumeCheck) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.2M`;
-              else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 0.3-20%`;
-              else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.3-25%`;
-              else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.2-15%`;
-              else if (action === null) skipReason = 'Sem ação definida';
-              else if (currentBalance <= 1) skipReason = `Saldo $${currentBalance.toFixed(2)} < $1`;
-              else if (confirmations.length < minConfirmations) skipReason = `Conf ${confirmations.length}/${minConfirmations}`;
-              else skipReason = 'Outro filtro';
-            }
-            
-            console.log(`${status} ${assetBadge} ${symbol}: BUY=${buyScore} SELL=${sellScore} | ${action || 'NONE'} | Vol=${volatility.toFixed(2)}% | $${(volume24h/1e6).toFixed(2)}M | ATR=${atrPercent.toFixed(2)}% | Move=${priceChange.toFixed(2)}% ${skipReason ? `| ❌ ${skipReason}` : ''}`);
-          }
+          if (parseFloat(orderValueUSD) < 5) continue;
+
+          // Calcular SL/TP
+          const priceRange = highPrice - lowPrice;
+          const atrPercent = (priceRange / currentPrice) * 100;
+          const { stopLoss, takeProfit, stopLossPct, takeProfitPct } = calculateStopTakeProfit(
+            currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig
+          );
+
+          // Verificar saldo
+          const { data: balanceCheck } = await supabase.functions.invoke('bybit-trading', {
+            body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
+          });
           
-          // 📊 LOG DE SINAIS
-          if (shouldTrade && action) {
-            const assetBadge = isScalpAsset ? '⚡ SCALP' : '📊 TRADE';
-            console.log(`\n${assetBadge} ${symbol} ${action}`);
-            console.log(`   Score: ${signalScore}/${scoreThreshold} | Conf: ${confirmations.length} | Vol: ${volatility.toFixed(2)}% | $${(volume24h/1e6).toFixed(1)}M`);
-            console.log(`   ${confirmations.slice(0, 2).join(' | ')}`);
-            
-            // Disparar evento customizado para o dashboard
-            const signalEvent = new CustomEvent('trading-signal', {
-              detail: {
-                symbol,
-                action,
-                score: signalScore,
-                confirmations: confirmations.length,
-                isScalping: isScalpAsset,
-                metrics: {
-                  volatility,
-                  volume24h,
-                  priceChange,
-                  pricePosition: pricePosition < 0.3 ? 'Suporte' : pricePosition > 0.7 ? 'Resistência' : 'Meio',
-                  trend: trendStrength,
-                },
-                technicalFactors: confirmations,
-                reasoning: `${assetBadge} - Score ${signalScore} com ${confirmations.length} conf.`,
-              }
-            });
-            window.dispatchEvent(signalEvent);
-            
-            // Toast para sinais fortes
-            if (signalScore >= 75 || (isScalpAsset && signalScore >= 60)) {
-              toast({
-                title: isScalpAsset ? "⚡ Scalp Signal" : "🎯 Trade Signal",
-                description: `${symbol} ${action} | Score: ${signalScore}`,
-                duration: 2000,
-              });
-            }
-          }
-          
-          if (shouldTrade && action) {
-            // 🎯 SISTEMA DE PRIORIZAÇÃO: Se limite atingido, verificar se vale a pena substituir
-            if (shouldCheckPrioritization) {
-              const priorityUserId = await getUserId();
+          const freshBalance = parseFloat(balanceCheck?.data?.list?.[0]?.totalAvailableBalance || '0');
+          const requiredMargin = (parseFloat(orderValueUSD) / leverage) * (1 + FEE_BUFFER);
 
-              // Buscar posições abertas no banco com seus scores
-              const { data: openDbPositions } = await supabase
-                .from('auto_trader_positions')
-                .select('*')
-                .eq('user_id', priorityUserId)
-                .eq('status', 'OPEN')
-                .order('confidence', { ascending: true }); // Menor score primeiro
-
-              if (openDbPositions && openDbPositions.length > 0) {
-                const lowestScorePosition = openDbPositions[0];
-                const lowestScore = lowestScorePosition.confidence || 0;
-
-                // Se a nova oportunidade tem score SIGNIFICATIVAMENTE superior (pelo menos 15 pontos)
-                if (signalScore >= lowestScore + 15) {
-                  console.log(`🔄 PRIORIZAÇÃO: Nova oportunidade ${symbol} (${signalScore}) > Posição atual ${lowestScorePosition.symbol} (${lowestScore})`);
-                  
-                  // Fechar a posição com menor score
-                  try {
-                    const { data: closeData, error: closeError } = await supabase.functions.invoke('bybit-trading', {
-                      body: {
-                        action: 'close_position',
-                        isTestnet: false,
-                        params: {
-                          category: 'linear',
-                          symbol: lowestScorePosition.symbol,
-                          side: lowestScorePosition.side === 'Buy' ? 'Sell' : 'Buy',
-                          qty: lowestScorePosition.qty.toString(),
-                          orderType: 'Market',
-                          positionIdx: 0
-                        }
-                      }
-                    });
-
-                    if (!closeError && closeData?.success) {
-                      // Atualizar posição no banco
-                      await supabase
-                        .from('auto_trader_positions')
-                        .update({
-                          status: 'CLOSED',
-                          closed_at: new Date().toISOString(),
-                          close_reason: `Substituída por oportunidade premium (Score ${signalScore} > ${lowestScore})`
-                        })
-                        .eq('id', lowestScorePosition.id);
-
-                      setOpenPositionsCount(prev => prev - 1);
-                      
-                      toast({
-                        title: "🔄 Posição Substituída",
-                        description: `${lowestScorePosition.symbol} (${lowestScore}) fechada para abrir ${symbol} (${signalScore})`,
-                      });
-                      
-                      console.log(`✅ SUBSTITUIÇÃO: ${lowestScorePosition.symbol} fechada, liberando vaga para ${symbol}`);
-                    } else {
-                      console.error(`❌ Erro ao fechar ${lowestScorePosition.symbol}:`, closeError);
-                      continue; // Não abre nova posição se não conseguiu fechar
-                    }
-                  } catch (error) {
-                    console.error('Erro na substituição de posição:', error);
-                    continue;
-                  }
-                } else {
-                  console.log(`⏭️ PRIORIZAÇÃO: Nova oportunidade ${symbol} (${signalScore}) não supera significativamente ${lowestScorePosition.symbol} (${lowestScore})`);
-                  continue; // Pular este trade
-                }
-              }
-            }
-            
-            // 🔍 VERIFICAR CORRELAÇÃO ANTES DE EXECUTAR
-            const correlationCheck = checkNewPosition(symbol, action === 'BUY' ? 'Buy' : 'Sell');
-            
-            if (!correlationCheck.allowed) {
-              console.log(`🚫 ${symbol}: BLOQUEADO - ${correlationCheck.reason}`);
-              toast({
-                title: "🚫 Trade Bloqueado",
-                description: `${symbol}: ${correlationCheck.reason}`,
-                variant: "destructive",
-              });
-              continue;
-            }
-            
-            // 🛡️ HEDGE DINÂMICO: Detectar reversões e considerar hedge
-            if (hedgeEnabled) {
-              const riskLevel = getCorrelationRisk();
-              
-              // Se há risco médio/alto e detectamos reversão forte, o trade serve como hedge
-              if (riskLevel.level !== 'low') {
-                const isStrongReversal = Math.abs(priceChange) > 3;
-                
-                if (isStrongReversal) {
-                  console.log(`🛡️ HEDGE: Reversão forte detectada em ${symbol} (${priceChange.toFixed(1)}%) - ${riskLevel.message}`);
-                  toast({
-                    title: "🛡️ Hedge Detectado",
-                    description: `Trade em ${symbol} pode servir como proteção contra correlação`,
-                  });
-                }
-              }
-            }
-
-            const currentVolatility = Math.abs(priceChange);
-            setAvgVolatility(currentVolatility);
-            
-            // 🔧 OBTER ALAVANCAGEM MÁXIMA DO INSTRUMENTO
-            const maxLeverageInstrument = parseFloat(instrument.leverageFilter?.maxLeverage || '25');
-            
-            // 🔥 ALAVANCAGEM PARA SCALPING: Baseada na volatilidade
-            let dynamicLeverage: number;
-            
-            if (isScalpAsset) {
-              // Scalping: 25x-50x baseado na volatilidade (limitado pelo instrumento)
-              dynamicLeverage = Math.min(getLeverageForScalping(currentVolatility), maxLeverageInstrument);
-              console.log(`⚡ SCALP ${dynamicLeverage.toFixed(0)}x (max: ${maxLeverageInstrument}x) | Vol: ${currentVolatility.toFixed(2)}%`);
-            } else if (mlConfig?.is_enabled && mlConfig?.recommended_leverage) {
-              // ML Ativo (limitado pelo instrumento)
-              dynamicLeverage = Math.min(mlConfig.recommended_leverage, maxLeverageInstrument);
-            } else {
-              // Alavancagem normal baseada em saldo (limitado pelo instrumento)
-              dynamicLeverage = Math.min(getLeverageForBalance(currentBalance, historicalWinRate), maxLeverageInstrument);
-              
-              if (dynamicLeverageEnabled) {
-                if (historicalWinRate >= 70) {
-                  dynamicLeverage = Math.min(dynamicLeverage * 1.2, maxLeverageInstrument);
-                } else if (historicalWinRate < 45 || lossStreak >= 2) {
-                  dynamicLeverage = Math.max(dynamicLeverage * 0.7, 5);
-                }
-              }
-            }
-            
-            setCurrentLeverage(dynamicLeverage);
-            const leverage = Math.floor(dynamicLeverage); // Garantir inteiro
-            
-            // 🚀 CAPITAL ALLOCATION OTIMIZADO: Usar saldo disponível eficientemente
-            // META: $15+ por dia com uso eficiente do capital
-            const dailyTargetProfit = 15;
-            
-            // 🔥 BUFFER MÍNIMO: Usar QUASE todo o capital
-            const MIN_SAFETY_BALANCE = 0.5; // 🔥 MÍNIMO: Apenas $0.50 de segurança
-            const FEE_BUFFER = 0.001; // 0.1% para taxas
-            const safeBalance = Math.max(0, currentBalance - MIN_SAFETY_BALANCE);
-            
-            // 🔥 USAR 60-80% DO SALDO DISPONÍVEL - MÁXIMA AGRESSIVIDADE
-            const baseAllocation = currentBalance < 5 ? 0.70 : (isScalpAsset ? 0.80 : 0.65);
-            const capitalAllocation = baseAllocation; // 65-80% MEGA AGRESSIVO
-            
-            // Calcular tamanho baseado no saldo seguro E na alavancagem
-            // Para leverage 50x: margin = positionValue / leverage
-            // positionValue = safeBalance * capitalAllocation * leverage
-            const positionValue = safeBalance * capitalAllocation * leverage;
-            const marginNeeded = positionValue / leverage;
-            const marginWithFees = marginNeeded * (1 + FEE_BUFFER);
-            
-            // Verificar se temos margem suficiente
-            let usdSize = positionValue;
-            if (marginWithFees > safeBalance * 0.85) {
-              // Se precisar de mais de 85% do saldo seguro, reduzir proporcionalmente
-              usdSize = (safeBalance * 0.75) * leverage;
-              console.log(`⚠️ Ajustando tamanho para margem segura: $${usdSize.toFixed(2)}`);
-            }
-            
-            const initialMargin = (usdSize / leverage) * (1 + FEE_BUFFER);
-            
-            // Calcular lucro esperado com este trade (já considerando fees)
-            const stopLossPctEstimate = isScalpAsset ? 0.008 : 0.025;
-            const takeProfitPctEstimate = isScalpAsset ? 0.015 : (stopLossPctEstimate * 2.5);
-            const expectedProfit = (usdSize * takeProfitPctEstimate * leverage) * (1 - FEE_BUFFER);
-            const expectedLoss = (usdSize * stopLossPctEstimate * leverage) * (1 + FEE_BUFFER);
-            
-            console.log(`💰 CAPITAL ULTRA CONSERVADOR: $${usdSize.toFixed(2)} (${(capitalAllocation*100).toFixed(0)}% de $${safeBalance.toFixed(2)} disponível)`);
-            console.log(`📊 LEVERAGE: ${leverage.toFixed(0)}x | Margem+Fees: $${initialMargin.toFixed(2)} | Profit: +$${expectedProfit.toFixed(2)} | Loss: -$${expectedLoss.toFixed(2)}`);
-            console.log(`🎯 META: $${dailyTargetProfit}/dia | Trade contribui: ${(expectedProfit/dailyTargetProfit*100).toFixed(1)}% | Buffer: $${MIN_SAFETY_BALANCE}`);
-            
-            // Manter referências para compatibilidade
-            const marginUsed = initialMargin;
-            const marginPerPosition = usdSize;
-            const positionSizeMultiplier = 1.0;
-            
-            // 🔥 MARTINGALE CONTROLADO: Dobrar após 2 perdas consecutivas (limite 3x)
-            if (martingaleEnabled && lossStreak >= 2) {
-              const martingaleMultiplier = Math.min(Math.pow(2, lossStreak - 1), 3); // 2x, 3x máximo
-              usdSize = usdSize * martingaleMultiplier;
-              console.log(`🎲 MARTINGALE ATIVO: ${martingaleMultiplier}x (${lossStreak} perdas) - Novo tamanho: $${usdSize.toFixed(2)}`);
-              
-              toast({
-                title: "🎲 Martingale Ativado",
-                description: `Aumentando posição ${martingaleMultiplier}x após ${lossStreak} perdas`,
-              });
-            }
-            
-            // 📋 COPY TRADING: Verificar se este é um padrão vencedor conhecido
-            if (copyTradingEnabled && winningPatterns.length > 0) {
-              const matchingPattern = winningPatterns.find(p => 
-                p.symbol === symbol && 
-                p.action === action &&
-                Math.abs(p.priceChange - priceChange) < 0.5 // Similar price movement
-              );
-              
-              if (matchingPattern) {
-                usdSize = usdSize * 1.3; // +30% em padrões vencedores conhecidos
-                console.log(`🎯 COPY TRADING: Padrão vencedor detectado! (+30% tamanho)`);
-                toast({
-                  title: "🎯 Padrão Vencedor",
-                  description: `Replicando setup similar que teve ${matchingPattern.winRate.toFixed(0)}% de sucesso`,
-                });
-              }
-            }
-            
-            // 📰 ANÁLISE DE SENTIMENTO: Filtrar trades com notícias negativas
-            if (sentimentEnabled) {
-              // Buscar análise de sentimento (simplificado - pode ser expandido com API real)
-              const sentiment = Math.abs(priceChange) > 5 ? 'volatile' : 'normal';
-              
-              if (sentiment === 'volatile' && Math.abs(priceChange) > 8) {
-                console.log(`⚠️ SENTIMENTO: Volatilidade extrema detectada (${priceChange.toFixed(1)}%) - reduzindo exposição`);
-                usdSize = usdSize * 0.7; // Reduzir 30% em volatilidade extrema
-              }
-            }
-            
-            // ATR já calculado anteriormente no código - usar o valor real
-            
-            // 📊 LOG DE MARGEM E EXPECTATIVA
-            console.log(`💼 POSIÇÃO: ${openPositionsCount}/${maxOpenPositions} | Capital: $${usdSize.toFixed(2)} | Margem: $${marginUsed.toFixed(2)}`);
-            console.log(`💵 EXPECTATIVA: +$${expectedProfit.toFixed(2)} (${(takeProfitPctEstimate*100).toFixed(2)}%) ou -$${expectedLoss.toFixed(2)} (${(stopLossPctEstimate*100).toFixed(2)}%)`);
-            
-            // Pegar filtros do instrumento para calcular quantidade válida
-            const lotSizeFilter = instrument.lotSizeFilter || {};
-            const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.01');
-            const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.01');
-            const maxOrderQty = parseFloat(lotSizeFilter.maxOrderQty || '10000');
-            
-            // CRÍTICO: Calcular quantidade garantindo valor mínimo de 5 USDT
-            const MIN_ORDER_VALUE = 5.5; // 5 USDT + margem de segurança
-            
-            // 🔧 CÁLCULO CORRETO DA QUANTIDADE:
-            // usdSize já é o valor notional da posição (com leverage)
-            // Quantidade = valor notional / preço
-            let rawQty = usdSize / currentPrice;
-            
-            // 📊 SCALE IN/OUT: Se ativado, usar posição inicial menor
-            // Mas garantir que ainda temos margem suficiente
-            const scaleInMultiplier = scaleInOutEnabled ? 0.7 : 1.0; // 70% inicial para scale-in
-            rawQty = rawQty * scaleInMultiplier;
-            
-            if (scaleInOutEnabled) {
-              console.log(`📊 SCALE IN/OUT ATIVO: Entrando com ${(scaleInMultiplier*100).toFixed(0)}% da posição`);
-            }
-            
-            // Garantir valor mínimo de 5 USDT
-            const minQtyForValue = MIN_ORDER_VALUE / currentPrice;
-            if (rawQty < minQtyForValue) {
-              rawQty = minQtyForValue;
-            }
-            
-            // 🔧 CORREÇÃO: Arredondar com precisão para evitar erros de ponto flutuante
-            // Determinar número de casas decimais baseado no qtyStep
-            const decimals = qtyStep.toString().includes('.') 
-              ? qtyStep.toString().split('.')[1].length 
-              : 0;
-            
-            // Arredondar para cima respeitando o step
-            rawQty = Math.ceil(rawQty / qtyStep) * qtyStep;
-            
-            // Aplicar arredondamento final para evitar 0.5700000000000001
-            rawQty = Number(rawQty.toFixed(decimals));
-            
-            // Garantir que está dentro dos limites
-            let qty = Math.max(minOrderQty, Math.min(maxOrderQty, rawQty));
-            
-            // Aplicar arredondamento final novamente
-            qty = Number(qty.toFixed(decimals));
-            
-            // Validação: quantidade deve ser válida (não NaN, não Infinity)
-            if (!isFinite(qty) || qty <= 0) {
-              console.log(`⚠️ ${symbol}: Quantidade inválida (${qty})`);
-              continue;
-            }
-            
-            // Validação final: verificar se atinge o valor mínimo
-            const orderValue = qty * currentPrice;
-            if (orderValue < 5) {
-              console.log(`⚠️ ${symbol}: Valor da ordem muito baixo ($${orderValue.toFixed(2)} < $5.00) - ajustando...`);
-              qty = Math.ceil(MIN_ORDER_VALUE / currentPrice / qtyStep) * qtyStep;
-              qty = Number(qty.toFixed(decimals)); // Arredondar novamente
-            }
-            
-            // Validar se a quantidade é válida após todos os ajustes
-            if (qty < minOrderQty) {
-              console.log(`⚠️ ${symbol}: Quantidade abaixo do mínimo (${qty} < ${minOrderQty})`);
-              continue;
-            }
-            
-            // Validação final de valor mínimo
-            const finalOrderValue = qty * currentPrice;
-            if (finalOrderValue < 5) {
-              console.log(`⚠️ ${symbol}: Ordem não atinge valor mínimo ($${finalOrderValue.toFixed(2)} < $5.00) - pulando`);
-              continue;
-            }
-            
-            // 🛡️ CALCULAR SL E TP - SCALPING: STOPS ULTRA-APERTADOS
-            const priceDecimals = ticker.lastPrice.includes('.') 
-              ? ticker.lastPrice.split('.')[1].length 
-              : 2;
-            
-            let stopLossPct: number;
-            let takeProfitPct: number;
-            
-            // 🎯 STOPS BASEADOS EM ATR - Mais inteligentes e adaptativos
-            // ATR = volatilidade real do ativo, stops devem respeitar isso
-            const atrMultiplierSL = 1.5; // 1.5x ATR para stop loss (dar espaço para respirar)
-            const rrRatio = 2.5; // Risk:Reward 1:2.5 (realista e lucrativo)
-            
-            if (isScalpAsset) {
-              // 🎯 SCALPING INTELIGENTE: Stops baseados em ATR real (não fixos!)
-              // Mínimo 1%, máximo 3% - evitar stops muito apertados que são ativados por ruído
-              stopLossPct = Math.max(0.01, Math.min(atrPercent * atrMultiplierSL / 100, 0.03));
-              takeProfitPct = stopLossPct * rrRatio; // 1:2.5 R:R
-              console.log(`⚡ SCALP SMART: SL ${(stopLossPct*100).toFixed(2)}% (ATR: ${atrPercent.toFixed(1)}%) | TP ${(takeProfitPct*100).toFixed(2)}% | R:R 1:${rrRatio}`);
-            } else {
-              // 🎯 NORMAL: Stops maiores baseados em ATR
-              const minStopPercent = 1.5; // Mínimo 1.5%
-              const maxStopPercent = 4.0; // Máximo 4%
-              const atrStopPercent = atrPercent * atrMultiplierSL;
-              
-              stopLossPct = mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct 
-                ? Math.max(minStopPercent/100, Math.min(mlConfig.recommended_stop_loss_pct / 100, maxStopPercent/100))
-                : Math.max(minStopPercent/100, Math.min(atrStopPercent / 100, maxStopPercent/100));
-              
-              // 🎯 R:R realista: 1:2.5
-              takeProfitPct = mlConfig?.is_enabled && mlConfig?.recommended_take_profit_pct 
-                ? Math.max(mlConfig.recommended_take_profit_pct / 100, stopLossPct * rrRatio) 
-                : stopLossPct * rrRatio;
-            }
-            
-            // 🛡️ STOP LOSS OBRIGATÓRIO - NUNCA undefined
-            let stopLoss = action === 'BUY' 
-              ? (currentPrice * (1 - stopLossPct)).toFixed(priceDecimals)
-              : (currentPrice * (1 + stopLossPct)).toFixed(priceDecimals);
-            
-            // ⚠️ VALIDAÇÃO CRÍTICA: Garantir que stop loss não é undefined/null
-            if (!stopLoss || stopLoss === 'NaN' || parseFloat(stopLoss) <= 0) {
-              console.error(`❌ STOP LOSS INVÁLIDO para ${symbol}: ${stopLoss}`);
-              continue; // NUNCA executar trade sem stop loss válido
-            }
-            
-            // Take Profit OBRIGATÓRIO
-            // 📊 SCALE IN/OUT: Se ativado, usar TP mais próximo (primeiro nível = 2%)
-            const firstTpPct = scaleInOutEnabled ? 0.02 : takeProfitPct; // 2% se scale-in ativo
-            let takeProfit = action === 'BUY'
-              ? (currentPrice * (1 + firstTpPct)).toFixed(priceDecimals)
-              : (currentPrice * (1 - firstTpPct)).toFixed(priceDecimals);
-            
-            // ⚠️ VALIDAÇÃO CRÍTICA: Garantir que take profit não é undefined/null
-            if (!takeProfit || takeProfit === 'NaN' || parseFloat(takeProfit) <= 0) {
-              console.error(`❌ TAKE PROFIT INVÁLIDO para ${symbol}: ${takeProfit}`);
-              continue; // NUNCA executar trade sem take profit válido
-            }
-            
-            if (scaleInOutEnabled) {
-              console.log(`📊 SCALE OUT: TP1=${takeProfit} (2%), TP2 será ${(takeProfitPct*100).toFixed(0)}% (fechamento manual)`);
-            }
-            
-            // 🛡️ VALIDAÇÃO CRÍTICA: SL e TP devem estar nas direções corretas
-            const slNum = parseFloat(stopLoss);
-            const tpNum = parseFloat(takeProfit);
-            
-            if (action === 'BUY') {
-              // Para BUY: SL < preço < TP
-              if (slNum >= currentPrice) {
-                console.log(`⚠️ ${symbol}: Stop Loss inválido para BUY (SL: ${stopLoss} >= Preço: ${currentPrice})`);
-                continue;
-              }
-              if (tpNum <= currentPrice) {
-                console.log(`⚠️ ${symbol}: Take Profit inválido para BUY (TP: ${takeProfit} <= Preço: ${currentPrice})`);
-                continue;
-              }
-            } else {
-              // Para SELL: TP < preço < SL
-              if (slNum <= currentPrice) {
-                console.log(`⚠️ ${symbol}: Stop Loss inválido para SELL (SL: ${stopLoss} <= Preço: ${currentPrice})`);
-                continue;
-              }
-              if (tpNum >= currentPrice) {
-                console.log(`⚠️ ${symbol}: Take Profit inválido para SELL (TP: ${takeProfit} >= Preço: ${currentPrice})`);
-                continue;
-              }
-            }
-            
-            const orderValueUSD = (qty * currentPrice).toFixed(2);
-            
-            // 🔧 Converter qty para string com precisão correta
-            const qtyStr = qty.toFixed(decimals);
-            
-            // 📊 LOG PRÉ-ORDEM
-            console.log(`${isScalpAsset ? '⚡' : '📋'} ${symbol}: ${action} ${qtyStr} @ $${currentPrice} | ${leverage}x | SL: ${stopLoss} | TP: ${takeProfit}`);
-            
-            // 🛡️ VERIFICAÇÃO CRÍTICA DE SALDO ANTES DE CADA ORDEM
-            // Buscar saldo atualizado imediatamente antes da ordem
-            const { data: balanceCheck, error: balanceError } = await supabase.functions.invoke('bybit-trading', {
-              body: {
-                action: 'get_balance',
-                isTestnet: false,
-                params: { accountType: 'UNIFIED' }
-              }
-            });
-
-            if (balanceError || !balanceCheck?.success) {
-              console.error(`❌ Erro ao verificar saldo antes de ${symbol}:`, balanceError);
-              continue;
-            }
-
-            // 🛡️ VERIFICAÇÃO TRIPLA DE SALDO (garantir margem suficiente com folga)
-            const freshBalanceFinal = parseFloat(balanceCheck.data?.list?.[0]?.totalAvailableBalance || '0');
-            const requiredMarginFinal = (parseFloat(orderValueUSD) / leverage) * (1 + FEE_BUFFER);
-            const MIN_SAFE_BALANCE_FINAL = 0.5; // 🔥 REDUZIDO: Manter apenas $0.50 de buffer
-
-            // 🛑 VERIFICAÇÃO CRÍTICA: Parar se saldo negativo ou insuficiente
-            if (freshBalanceFinal < 0) {
-              console.log(`🛑 ${symbol}: SALDO NEGATIVO - Disponível: $${freshBalanceFinal.toFixed(2)}`);
+          if (freshBalance < 0 || freshBalance < requiredMargin + 0.5) {
+            if (freshBalance < 0) {
               setIsRunning(false);
-              shouldStopTrading = true; // ATIVAR FLAG
-              toast({
-                title: "🛑 Trader Pausado",
-                description: `Saldo negativo: $${freshBalanceFinal.toFixed(2)}. Aguarde fechamento de posições.`,
-                variant: "destructive",
-              });
-              break; // Sair do loop imediatamente
+              shouldStopTrading = true;
+              toast({ title: "🛑 Trader Pausado", description: "Saldo negativo", variant: "destructive" });
+              break;
             }
+            continue;
+          }
 
-            // 🛡️ VALIDAÇÃO EXTRA: Margem não pode exceder 90% do saldo disponível
-            const maxAllowedMargin = freshBalanceFinal * 0.90; // 🔥 AUMENTADO para 90%
-            if (requiredMarginFinal > maxAllowedMargin) {
-              console.log(`🛑 ${symbol}: Margem muito alta - Necessário: $${requiredMarginFinal.toFixed(2)} | Max permitido: $${maxAllowedMargin.toFixed(2)}`);
-              continue; // Pular este trade
-            }
-
-            if (freshBalanceFinal < requiredMarginFinal + MIN_SAFE_BALANCE_FINAL) {
-              console.log(`🛑 ${symbol}: Saldo insuficiente - Disponível: $${freshBalanceFinal.toFixed(2)} | Necessário: $${(requiredMarginFinal + MIN_SAFE_BALANCE_FINAL).toFixed(2)}`);
-              continue; // Pular este trade mas continuar com outros
-            }
-            
-            const mlIndicator = mlConfig?.is_enabled ? ` [🧠ML: ${(stopLossPct*100).toFixed(1)}%/${(takeProfitPct*100).toFixed(1)}%]` : '';
-            console.log(`🎯 SINAL QUALIFICADO [Score: ${signalScore}]: ${symbol} ${action}${mlIndicator}`);
-            console.log(`   💰 Preço: $${currentPrice} | ATR: ${atrPercent.toFixed(2)}% | SL Dinâmico: ${(stopLossPct*100).toFixed(2)}%`);
-            console.log(`   📊 Vol: $${(volume24h/1e6).toFixed(1)}M | Change: ${priceChange.toFixed(2)}% | Lev: ${leverage}x`);
-            console.log(`   📈 Qty: ${qtyStr} | Value: $${orderValueUSD} | SL: ${stopLoss} | TP: ${takeProfit}`);
-            console.log(`   💵 Saldo: $${freshBalanceFinal.toFixed(2)} (Margem: $${requiredMarginFinal.toFixed(2)}) | Confirmações: ${confirmations.join(', ')}`);
-
-            // 🚀 CONFIGURAR ALAVANCAGEM COM FALLBACK INTELIGENTE
-            console.log(`🔧 Configurando alavancagem ${leverage}x para ${symbol}...`);
-            let finalLeverage = leverage;
-            let leverageAttempts = 0;
-            let leverageSuccess = false;
-            
-            // Tentar configurar alavancagem com redução gradual se houver erro
-            while (leverageAttempts < 3 && !leverageSuccess) {
-              const { data: leverageData, error: leverageError } = await supabase.functions.invoke('bybit-trading', {
-                body: {
-                  action: 'set_leverage',
-                  isTestnet: false,
-                  params: {
-                    category: 'linear',
-                    symbol: symbol,
-                    buyLeverage: finalLeverage.toString(),
-                    sellLeverage: finalLeverage.toString()
-                  }
-                }
-              });
-
-              if (leverageError) {
-                console.log(`⚠️ Alavancagem ${finalLeverage}x não suportada para ${symbol}, reduzindo...`);
-                finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10); // Reduzir 30% ou mínimo 10x
-                leverageAttempts++;
-              } else {
-                leverageSuccess = true;
-                console.log(`✅ Alavancagem ${finalLeverage}x configurada para ${symbol}`);
-              }
-            }
-            
-            // Se não conseguiu configurar nenhuma alavancagem, pular este trade
-            if (!leverageSuccess) {
-              console.error(`❌ Não foi possível configurar alavancagem para ${symbol}, pulando trade`);
-              continue;
-            }
-            
-            // Recalcular ordem com alavancagem final
-            const adjustedLeverage = finalLeverage;
-
-            // Executar ordem REAL na Bybit
-            const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
+          // Configurar alavancagem
+          let finalLeverage = leverage;
+          let leverageSuccess = false;
+          
+          for (let attempts = 0; attempts < 3 && !leverageSuccess; attempts++) {
+            const { error } = await supabase.functions.invoke('bybit-trading', {
               body: {
-                action: 'place_order',
-                isTestnet: false, // ⚡ SEMPRE CONTA REAL
-                params: {
-                  category: 'linear',
-                  symbol: symbol,
-                  side: action === 'BUY' ? 'Buy' : 'Sell',
-                  orderType: 'Market',
-                  qty: qtyStr,
-                  stopLoss: stopLoss, // 🛡️ STOP LOSS SEMPRE PRESENTE
-                  takeProfit: takeProfit, // 🎯 TAKE PROFIT SEMPRE PRESENTE
-                  timeInForce: 'GTC',
-                  positionIdx: 0,
-                  reduceOnly: false
-                }
+                action: 'set_leverage', isTestnet: false,
+                params: { category: 'linear', symbol, buyLeverage: finalLeverage.toString(), sellLeverage: finalLeverage.toString() }
               }
             });
-
-            // ⚠️ VALIDAÇÃO PÓS-ORDEM: Verificar se SL/TP foram aplicados
-            if (!orderError && orderData?.success) {
-              console.log(`🛡️ STOPS CONFIRMADOS: ${symbol} | SL: ${stopLoss} | TP: ${takeProfit}`);
-              console.log(`✅ TRADE EXECUTADO: ${symbol} | ${action} | Leverage: ${adjustedLeverage}x | USD: $${usdSize.toFixed(2)} | Score: ${signalScore}`);
-              
-              // 💾 SALVAR POSIÇÃO NO BANCO COM SCORE DE QUALIDADE
-              const savePositionUserId = await getUserId();
-              await supabase
-                .from('auto_trader_positions')
-                .insert({
-                  user_id: savePositionUserId,
-                  symbol,
-                  side: action === 'BUY' ? 'Buy' : 'Sell',
-                  entry_price: currentPrice,
-                  qty,
-                  leverage: adjustedLeverage,
-                  stop_loss: parseFloat(stopLoss),
-                  take_profit: parseFloat(takeProfit),
-                  // 🎯 TRAILING STOP DINÂMICO POR VOLATILIDADE
-                  trailing_stop_percentage: calculateDynamicTrailingStop(currentVolatility),
-                  highest_price: currentPrice, // Inicializar com preço de entrada
-                  volatility: currentVolatility, // Armazenar volatilidade do ativo
-                  partial_tp_executed: false, // Controle de take profit parcial
-                  original_quantity: qty, // Salvar quantidade original
-                  confidence: signalScore, // 🎯 SALVAR SCORE DE QUALIDADE
-                  status: 'OPEN',
-                  exchange_order_id: orderData.data?.orderId
-                });
-              
-              // 🎯 TRAILING STOP: Inicializar tracking
-              if (trailingStopEnabled) {
-                setPositionTracking(prev => {
-                  const newMap = new Map(prev);
-                  newMap.set(symbol, {
-                    highestPrice: action === 'BUY' ? currentPrice : 0,
-                    lowestPrice: action === 'SELL' ? currentPrice : Infinity,
-                    currentStopLoss: parseFloat(stopLoss)
-                  });
-                  return newMap;
-                });
-                console.log(`🎯 TRAILING STOP iniciado para ${symbol} (Distância: ${trailingStopPercent}%)`);
-              }
-              
-              // 🎯 PYRAMIDING: Inicializar tracking
-              if (scaleInOutEnabled) {
-                setPyramidingTracking(prev => {
-                  const newMap = new Map(prev);
-                  newMap.set(symbol, {
-                    timesAdded: 0,
-                    lastAddPrice: currentPrice,
-                    originalQty: qty
-                  });
-                  return newMap;
-                });
-                console.log(`🎯 PYRAMIDING iniciado para ${symbol} (Max ${mlConfig?.optimal_patterns?.pyramiding?.maxLevels || 2} níveis)`);
-              }
-              
-              // 📋 COPY TRADING: Salvar padrão para replicação futura
-              if (copyTradingEnabled) {
-                setWinningPatterns(prev => {
-                  const newPattern = {
-                    symbol,
-                    action,
-                    priceChange,
-                    volume24h,
-                    timestamp: new Date().toISOString(),
-                    winRate: 0 // Será atualizado ao fechar a posição
-                  };
-                  return [...prev.slice(-19), newPattern]; // Manter últimos 20
-                });
-              }
-              
-              // 🎲 MARTINGALE: Resetar streak de perdas em sucesso
-              if (martingaleEnabled) {
-                setLossStreak(0);
-              }
-              
-              const trade: Trade = {
-                symbol,
-                action,
-                confidence: signalScore,
-                leverage: adjustedLeverage,
-                usdSize,
-                timestamp: new Date().toISOString()
-              };
-
-              setActiveTrades(prev => [...prev.slice(-19), trade]);
-              setOpenPositionsCount(prev => prev + 1);
-              
-              toast({
-                title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`,
-                description: `${action} ${adjustedLeverage.toFixed(0)}x | Capital: $${usdSize.toFixed(0)} | Expected: +$${expectedProfit.toFixed(2)}`,
-              });
+            
+            if (!error) {
+              leverageSuccess = true;
             } else {
-              console.error(`❌ Erro ao executar ${symbol}:`, orderError);
-              const errorMsg = orderData?.error || orderError?.message || 'Erro desconhecido';
-              
-              // 🎲 MARTINGALE: Incrementar streak de perdas
-              if (martingaleEnabled) {
-                setLossStreak(prev => Math.min(prev + 1, 3)); // Max 3 perdas
+              finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10);
+            }
+          }
+          
+          if (!leverageSuccess) continue;
+
+          // Executar ordem
+          const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
+            body: {
+              action: 'place_order', isTestnet: false,
+              params: {
+                category: 'linear', symbol,
+                side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+                orderType: 'Market', qty: qtyStr,
+                stopLoss, takeProfit,
+                timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
               }
-              
-              // 📋 MOTIVOS DETALHADOS DE FALHA
-              let failureReason = errorMsg;
-              if (errorMsg.includes('ab not enough')) {
-                failureReason = `❌ SALDO INSUFICIENTE - Margem esgotada`;
-              } else if (errorMsg.includes('TakeProfit') || errorMsg.includes('StopLoss')) {
-                failureReason = `❌ SL/TP INVÁLIDO - ${errorMsg}`;
-                console.error(`🚨 ERRO CRÍTICO SL/TP para ${symbol}:`, {
-                  action,
-                  currentPrice,
-                  stopLoss,
-                  takeProfit,
-                  errorMsg
+            }
+          });
+
+          if (!orderError && orderData?.success) {
+            console.log(`✅ TRADE: ${symbol} ${analysisResult.action} | ${finalLeverage}x | $${usdSize.toFixed(2)}`);
+            
+            const saveUserId = await getUserId();
+            await supabase.from('auto_trader_positions').insert({
+              user_id: saveUserId, symbol,
+              side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+              entry_price: currentPrice, qty, leverage: finalLeverage,
+              stop_loss: parseFloat(stopLoss), take_profit: parseFloat(takeProfit),
+              trailing_stop_percentage: calculateDynamicTrailingStop(volatility),
+              highest_price: currentPrice, volatility,
+              partial_tp_executed: false, original_quantity: qty,
+              confidence: analysisResult.signalScore, status: 'OPEN',
+              exchange_order_id: orderData.data?.orderId
+            });
+            
+            if (trailingStopEnabled) {
+              setPositionTracking(prev => {
+                const newMap = new Map(prev);
+                newMap.set(symbol, {
+                  highestPrice: analysisResult.action === 'BUY' ? currentPrice : 0,
+                  lowestPrice: analysisResult.action === 'SELL' ? currentPrice : Infinity,
+                  currentStopLoss: parseFloat(stopLoss)
                 });
-              } else if (errorMsg.includes('minNotional')) {
-                failureReason = `Valor mínimo não atingido (< $5.00)`;
-              } else if (errorMsg.includes('insufficient')) {
-                failureReason = `Saldo insuficiente na conta`;
-              } else if (errorMsg.includes('not exists') || errorMsg.includes('not found')) {
-                failureReason = `Instrumento ${symbol} não listado na Bybit`;
-              } else if (errorMsg.includes('qty')) {
-                failureReason = `Quantidade inválida (minQty não respeitado)`;
-              } else if (errorMsg.includes('price')) {
-                failureReason = `Preço inválido ou fora dos limites`;
-              }
-              
-              toast({
-                title: `❌ Falha: ${symbol}`,
-                description: failureReason,
-                variant: "destructive"
+                return newMap;
               });
-              
-              // Log detalhado
-              console.log(`📋 FALHA DETALHADA ${symbol}:`, {
-                reason: failureReason,
-                originalError: errorMsg,
-                qty: qtyStr,
-                orderValue: orderValueUSD,
-                balance: currentBalance,
-                stopLoss,
-                takeProfit,
-                currentPrice
+            }
+            
+            if (scaleInOutEnabled) {
+              setPyramidingTracking(prev => {
+                const newMap = new Map(prev);
+                newMap.set(symbol, { timesAdded: 0, lastAddPrice: currentPrice, originalQty: qty });
+                return newMap;
               });
-              
-              // Incrementar perdas consecutivas em caso de erro
-              setConsecutiveLosses(prev => prev + 1);
-              
-              // Se erro de saldo insuficiente, parar o trader
-              if (errorMsg.includes('ab not enough')) {
-                console.log('🛑 SALDO INSUFICIENTE - Pausando trader');
-                setIsRunning(false);
-                shouldStopTrading = true; // ATIVAR FLAG
-                toast({
-                  title: "🛑 Trader Pausado",
-                  description: "Saldo insuficiente para novas operações. Aguarde fechamento de posições.",
-                  variant: "destructive",
-                });
-                break; // Sair do loop imediatamente
-              }
+            }
+            
+            if (martingaleEnabled) setLossStreak(0);
+            
+            setActiveTrades(prev => [...prev.slice(-19), {
+              symbol, action: analysisResult.action!, confidence: analysisResult.signalScore,
+              leverage: finalLeverage, usdSize, timestamp: new Date().toISOString()
+            }]);
+            setOpenPositionsCount(prev => prev + 1);
+            
+            toast({ title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`, description: `${analysisResult.action} ${finalLeverage}x | $${usdSize.toFixed(0)}` });
+          } else {
+            if (martingaleEnabled) setLossStreak(prev => Math.min(prev + 1, 3));
+            setConsecutiveLosses(prev => prev + 1);
+            
+            const errorMsg = orderData?.error || orderError?.message || '';
+            if (errorMsg.includes('ab not enough')) {
+              setIsRunning(false);
+              shouldStopTrading = true;
+              break;
             }
           }
 
-          // Aguardar entre análises (2s para não sobrecarregar)
           await new Promise(resolve => setTimeout(resolve, 2000));
-
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
       }
 
       setCycleCount(prev => prev + 1);
-
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erro no ciclo de trading:', error);
     }
   };
 
-  // 🚀 PERFORMANCE: Memoizar cálculos pesados
-  const leverageConfig = useMemo(() => ({
-    getLeverageForScalping,
-    getLeverageForBalance
-  }), []);
+  // Loop principal
+  useEffect(() => {
+    if (!isRunning) return;
+    
+    analyzeAndTrade();
+    const interval = setInterval(() => {
+      if (isRunning) analyzeAndTrade();
+    }, 30000);
 
-  // 🎯 PYRAMIDING: Monitorar posições para adicionar em lucro
+    const exitInterval = setInterval(updateSmartExits, 15000);
+    
+    return () => {
+      clearInterval(interval);
+      clearInterval(exitInterval);
+    };
+  }, [isRunning]);
+
+  // Pyramiding
   useEffect(() => {
     if (!scaleInOutEnabled || !isRunning || !mlConfig?.optimal_patterns?.pyramiding) return;
     
     const monitorPyramiding = async () => {
-      try {
-        const { data: openPos, error } = await supabase
-          .from('auto_trader_positions')
-          .select('*')
-          .eq('status', 'OPEN')
-          .eq('user_id', await getUserId());
+      const { data: openPos } = await supabase
+        .from('auto_trader_positions')
+        .select('*')
+        .eq('status', 'OPEN')
+        .eq('user_id', await getUserId());
+      
+      if (!openPos?.length) return;
+      
+      for (const position of openPos) {
+        const tracking = pyramidingTracking.get(position.symbol);
+        const maxLevels = mlConfig.optimal_patterns.pyramiding.maxLevels || 2;
+        const threshold = mlConfig.optimal_patterns.pyramiding.threshold || 1.5;
         
-        if (error || !openPos || openPos.length === 0) return;
+        if (tracking && tracking.timesAdded >= maxLevels) continue;
         
-        for (const position of openPos) {
-          const symbol = position.symbol;
-          const tracking = pyramidingTracking.get(symbol);
-          const maxLevels = mlConfig.optimal_patterns.pyramiding.maxLevels || 2;
-          const threshold = mlConfig.optimal_patterns.pyramiding.threshold || 1.5; // 1.5% lucro
+        const currentPrice = position.current_price || position.entry_price;
+        const pnlPercent = position.side === 'Buy' 
+          ? ((currentPrice - position.entry_price) / position.entry_price) * 100
+          : ((position.entry_price - currentPrice) / position.entry_price) * 100;
+        
+        if (pnlPercent >= threshold) {
+          const addQty = (tracking?.originalQty || position.qty) * 0.5;
           
-          // Verificar se já atingiu limite de adições
-          if (tracking && tracking.timesAdded >= maxLevels) continue;
+          const { data: addOrder, error } = await supabase.functions.invoke('bybit-trading', {
+            body: {
+              action: 'place_order', isTestnet: false,
+              params: {
+                category: 'linear', symbol: position.symbol, side: position.side,
+                orderType: 'Market', qty: addQty.toString(),
+                timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
+              }
+            }
+          });
           
-          // Calcular P&L atual
-          const currentPrice = position.current_price || position.entry_price;
-          const side = position.side;
-          const entryPrice = position.entry_price;
-          const pnlPercent = side === 'Buy' 
-            ? ((currentPrice - entryPrice) / entryPrice) * 100
-            : ((entryPrice - currentPrice) / entryPrice) * 100;
-          
-          // Se atingiu threshold e não adicionou recentemente
-          if (pnlPercent >= threshold) {
-            console.log(`🎯 PYRAMIDING: ${symbol} com +${pnlPercent.toFixed(2)}% de lucro - adicionando à posição`);
+          if (!error && addOrder?.success) {
+            setPyramidingTracking(prev => {
+              const newMap = new Map(prev);
+              newMap.set(position.symbol, {
+                timesAdded: (tracking?.timesAdded || 0) + 1,
+                lastAddPrice: currentPrice,
+                originalQty: tracking?.originalQty || position.qty
+              });
+              return newMap;
+            });
             
-            // Adicionar 50% da posição original
-            const addQty = (tracking?.originalQty || position.qty) * 0.5;
-            const addSize = addQty * currentPrice;
-            
-            // Executar adição
-            const { data: addOrder, error: addError } = await supabase.functions.invoke('bybit-trading', {
+            await supabase.functions.invoke('bybit-trading', {
               body: {
-                action: 'place_order',
-                isTestnet: false,
-                params: {
-                  category: 'linear',
-                  symbol: symbol,
-                  side: side,
-                  orderType: 'Market',
-                  qty: addQty.toString(),
-                  timeInForce: 'GTC',
-                  positionIdx: 0,
-                  reduceOnly: false
-                }
+                action: 'set_trading_stop', isTestnet: false,
+                params: { category: 'linear', symbol: position.symbol, stopLoss: position.entry_price.toString(), positionIdx: 0 }
               }
             });
             
-            if (!addError && addOrder?.success) {
-              // Atualizar tracking
-              setPyramidingTracking(prev => {
-                const newMap = new Map(prev);
-                newMap.set(symbol, {
-                  timesAdded: (tracking?.timesAdded || 0) + 1,
-                  lastAddPrice: currentPrice,
-                  originalQty: tracking?.originalQty || position.qty
-                });
-                return newMap;
-              });
-              
-              // Mover stop para breakeven
-              const breakeven = position.entry_price;
-              await supabase.functions.invoke('bybit-trading', {
-                body: {
-                  action: 'set_trading_stop',
-                  isTestnet: false,
-                  params: {
-                    category: 'linear',
-                    symbol: symbol,
-                    stopLoss: breakeven.toString(),
-                    positionIdx: 0
-                  }
-                }
-              });
-              
-              toast({
-                title: `🎯 Pyramiding ${symbol}`,
-                description: `Adicionado +50% (${(tracking?.timesAdded || 0) + 1}/${maxLevels}) | SL → Breakeven`,
-              });
-              
-              console.log(`✅ PYRAMIDING: Adicionado $${addSize.toFixed(2)} a ${symbol} | Nível ${(tracking?.timesAdded || 0) + 1}/${maxLevels}`);
-            } else {
-              console.error(`❌ Erro ao adicionar pyramiding ${symbol}:`, addError);
-            }
+            toast({ title: `🎯 Pyramiding ${position.symbol}`, description: `+50% | SL → Breakeven` });
           }
         }
-      } catch (error) {
-        console.error('Erro no monitoramento de pyramiding:', error);
       }
     };
     
-    // Monitorar a cada 30 segundos
     const interval = setInterval(monitorPyramiding, 30000);
-    monitorPyramiding(); // Executar imediatamente
-    
     return () => clearInterval(interval);
   }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
 
-  // Ciclo de trading principal (sincronização é feita por useBybitSync)
-  useEffect(() => {
-    if (isRunning) {
-      console.log("🤖 Multi-Asset Trader iniciado");
-      
-      // Executar ao iniciar
-      analyzeAndTrade();
-      
-      // Ciclo de trading otimizado a cada 3 minutos
-      const interval = setInterval(() => {
-        analyzeAndTrade();
-      }, 3 * 60 * 1000); // 3 minutos
-      
-      // 🧠 SMART EXIT: Verificar saídas inteligentes a cada 15 segundos
-      const smartExitInterval = setInterval(() => {
-        if (smartExitEnabled || trailingStopEnabled) {
-          updateSmartExits();
-        }
-      }, 15 * 1000); // 15 segundos
-      
-      return () => {
-        clearInterval(interval);
-        clearInterval(smartExitInterval);
-      };
-    }
-  }, [isRunning]); // Remover currentBalance e isTestnet das dependências
-
   const startTrading = async () => {
-    if (currentBalance < 2) {
-      toast({
-        title: "❌ Saldo insuficiente",
-        description: "Bankroll muito baixo para operar com segurança",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 🛡️ VERIFICAR GESTÃO DE RISCO ANTES DE INICIAR
-    const currentUserId = await getUserId();
-    
-    // Verificar se trading está pausado por gestão de risco
-    const { data: riskSettings } = await supabase
-      .from('risk_management_settings')
-      .select('*')
-      .eq('user_id', currentUserId)
-      .maybeSingle();
-
-    if (riskSettings?.trading_paused) {
-      toast({
-        title: "🛑 Trading Pausado",
-        description: `Limite diário de perdas atingido: $${Math.abs(riskSettings.current_daily_loss).toFixed(2)} / $${riskSettings.max_daily_loss}`,
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Atualizar max_positions baseado nas configurações de risco
-    if (riskSettings?.max_positions) {
-      setMaxOpenPositions(riskSettings.max_positions);
-    }
-
-    if (isTestnet) {
-      toast({
-        title: "⚠️ Modo Testnet ativo",
-        description: "Alterne para CONTA REAL para operar",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Sincronizar antes de iniciar
-    await fetchTop10VolatileAssets();
-    await syncBybitBalance();
-    await syncOpenPositions();
-
     setIsRunning(true);
+    setConsecutiveLosses(0);
+    
+    const userId = await getUserId();
+    await supabase.from('auto_trader_config').upsert({
+      user_id: userId, trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
 
-    // 💾 SALVAR ESTADO NO BANCO
-    const startUserId = await getUserId();
-    await supabase
-      .from('auto_trader_config')
-      .upsert({
-        user_id: startUserId,
-        trader_is_running: true,
-        last_activity_at: new Date().toISOString(),
-      });
-
-    toast({
-      title: "⚡ TRADER REAL 24/7 ATIVADO",
-      description: `Capital: $${currentBalance.toFixed(2)} | Lev: ${getLeverageForBalance(currentBalance, historicalWinRate)}x | Win Rate: ${historicalWinRate.toFixed(0)}%
-      
-🎯 Fechamento Progressivo:
-• 25% em +1% de lucro
-• 25% em +2% (Stop → Breakeven)
-• 50% livre com Trailing Stop
-🔄 Restauração automática habilitada`,
-    });
+    toast({ title: "🚀 Trader iniciado", description: "Buscando oportunidades..." });
   };
 
   const stopTrading = async () => {
     setIsRunning(false);
+    
+    const userId = await getUserId();
+    await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
 
-    // 💾 SALVAR ESTADO NO BANCO
-    const stopUserId = await getUserId();
-    await supabase
-      .from('auto_trader_config')
-      .update({
-        trader_is_running: false,
-        last_activity_at: new Date().toISOString(),
-      })
-      .eq('user_id', stopUserId);
-
-    toast({
-      title: "⏸️ Trader pausado",
-      description: `P&L Total: $${totalPnL.toFixed(2)}`,
-    });
+    toast({ title: "⏸️ Trader pausado", description: `P&L Total: $${totalPnL.toFixed(2)}` });
   };
 
   const resetBankroll = async () => {
@@ -1914,10 +577,7 @@ export const MultiAssetTrader = () => {
     setActiveTrades([]);
     setCycleCount(0);
     setConsecutiveLosses(0);
-    toast({
-      title: "🔄 Reset Completo",
-      description: "Estatísticas resetadas e saldo sincronizado",
-    });
+    toast({ title: "🔄 Reset Completo" });
   };
 
   return (
@@ -1929,9 +589,7 @@ export const MultiAssetTrader = () => {
               <Zap className="h-6 w-6 text-yellow-500" />
               Multi-Asset Trader 24/7
             </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Estratégia agressiva com alavancagem dinâmica
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">Estratégia com alavancagem dinâmica</p>
           </div>
           
           <div className="flex items-center gap-2">
@@ -1939,13 +597,7 @@ export const MultiAssetTrader = () => {
               {isTestnet ? '🧪 TESTNET' : '⚡ CONTA REAL'}
             </Badge>
             <Badge 
-              variant={
-                getCorrelationRisk().level === 'low' 
-                  ? 'default' 
-                  : getCorrelationRisk().level === 'medium' 
-                  ? 'secondary' 
-                  : 'destructive'
-              }
+              variant={getCorrelationRisk().level === 'low' ? 'default' : getCorrelationRisk().level === 'medium' ? 'secondary' : 'destructive'}
               className="text-xs flex items-center gap-1"
             >
               <Network className="h-3 w-3" />
@@ -1963,13 +615,9 @@ export const MultiAssetTrader = () => {
             </div>
             <div className="text-xl font-bold">${currentBalance.toFixed(2)}</div>
             <div className={`text-xs ${dailyPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              Hoje: {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)} ({((dailyPnL/currentBalance)*100).toFixed(1)}%)
+              Hoje: {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)}
             </div>
-            {lastSyncTime && (
-              <div className="text-[10px] text-muted-foreground mt-1">
-                Sync: {lastSyncTime.toLocaleTimeString()}
-              </div>
-            )}
+            {lastSyncTime && <div className="text-[10px] text-muted-foreground mt-1">Sync: {lastSyncTime.toLocaleTimeString()}</div>}
           </Card>
 
           <Card className="p-4 bg-background/50">
@@ -1978,9 +626,7 @@ export const MultiAssetTrader = () => {
               <span className="text-xs text-muted-foreground">Alavancagem</span>
             </div>
             <div className="text-xl font-bold">{getLeverageForBalance(currentBalance, historicalWinRate)}x</div>
-            <div className="text-xs text-muted-foreground">
-              Dinâmica (Win: {historicalWinRate.toFixed(0)}%)
-            </div>
+            <div className="text-xs text-muted-foreground">Win: {historicalWinRate.toFixed(0)}%</div>
           </Card>
 
           <Card className="p-4 bg-background/50">
@@ -1989,121 +635,52 @@ export const MultiAssetTrader = () => {
               <span className="text-xs text-muted-foreground">Posições</span>
             </div>
             <div className="text-xl font-bold">{openPositionsCount}/{maxOpenPositions}</div>
-            <div className="text-xs text-muted-foreground">
-              Abertas | {activeTrades.length} total
-            </div>
+            <div className="text-xs text-muted-foreground">{activeTrades.length} total</div>
           </Card>
 
           <Card className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
               <Target className="h-4 w-4 text-green-500" />
-              <span className="text-xs text-muted-foreground">Sistema de Saída</span>
-            </div>
-            <div className="text-sm font-semibold text-green-500">Progressivo</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              25% +1% | 25% +2% | 50% trailing
-            </div>
-          </Card>
-
-          <Card className="p-4 bg-background/50">
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="h-4 w-4 text-purple-500" />
               <span className="text-xs text-muted-foreground">Proteção</span>
             </div>
             <div className="text-xl font-bold">{consecutiveLosses}/{MAX_CONSECUTIVE_LOSSES}</div>
-            <div className="text-xs text-muted-foreground">
-              Perdas seguidas
-            </div>
+            <div className="text-xs text-muted-foreground">Perdas seguidas</div>
           </Card>
         </div>
 
-        {/* Proteções Ativas */}
+        {/* Proteções */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
             <div className="text-xs font-medium mb-1">🛡️ Stop Loss Diário</div>
-            <div className="text-sm">
-              <span className={dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT ? 'text-red-500 font-bold' : ''}>
-                {((DAILY_STOP_LOSS_PCT * 100).toFixed(0))}% = ${(currentBalance * DAILY_STOP_LOSS_PCT).toFixed(2)}
-              </span>
-            </div>
+            <div className="text-sm">{(DAILY_STOP_LOSS_PCT * 100).toFixed(0)}% = ${(currentBalance * DAILY_STOP_LOSS_PCT).toFixed(2)}</div>
           </div>
           
           <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <div className="text-xs font-medium mb-1">📊 Posições Max</div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onClick={() => setMaxOpenPositions(Math.max(1, maxOpenPositions - 1))}
-                disabled={isRunning}
-              >
-                -
-              </Button>
-              <span className={`text-sm font-bold ${openPositionsCount >= maxOpenPositions ? 'text-yellow-500' : ''}`}>
-                {openPositionsCount} de {maxOpenPositions}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onClick={() => setMaxOpenPositions(Math.min(50, maxOpenPositions + 1))}
-                disabled={isRunning}
-              >
-                +
-              </Button>
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setMaxOpenPositions(Math.max(1, maxOpenPositions - 1))} disabled={isRunning}>-</Button>
+              <span className="text-sm font-bold">{maxOpenPositions}</span>
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setMaxOpenPositions(Math.min(200, maxOpenPositions + 1))} disabled={isRunning}>+</Button>
             </div>
           </div>
         </div>
 
-        {/* 💼 GERENCIAMENTO DE MARGEM */}
+        {/* Margem */}
         <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-purple-400" />
-              <span className="text-sm font-medium">Gerenciamento de Margem Dinâmico</span>
+              <span className="text-sm font-medium">Gerenciamento de Margem</span>
             </div>
-            <Badge variant="outline" className="text-purple-400 border-purple-400">
-              {openPositionsCount}/{maxOpenPositions} posições
-            </Badge>
+            <Badge variant="outline" className="text-purple-400 border-purple-400">{openPositionsCount}/{maxOpenPositions}</Badge>
           </div>
           
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between">
               <span className="text-muted-foreground">Margem Total:</span>
               <span className="font-mono text-purple-400">${currentBalance.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Margem Usada (Est.):</span>
-              <span className="font-mono">
-                ${(currentBalance * 0.80 * (openPositionsCount / Math.max(maxOpenPositions, 20))).toFixed(2)}
-                <span className="text-xs text-muted-foreground ml-1">
-                  ({((openPositionsCount / Math.max(maxOpenPositions, 20)) * 80).toFixed(0)}%)
-                </span>
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Margem Livre:</span>
-              <span className="font-mono text-green-400">
-                ${(currentBalance * (1 - 0.80 * (openPositionsCount / Math.max(maxOpenPositions, 20)))).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Próxima Posição (Est.):</span>
-              <span className="font-mono text-xs">
-                ~${((currentBalance * 0.80 / Math.max(maxOpenPositions, 20)) * Math.max(0.3, 1 - (openPositionsCount / Math.max(maxOpenPositions, 20)) * 0.5)).toFixed(2)}
-              </span>
-            </div>
-            <Progress 
-              value={(openPositionsCount / maxOpenPositions) * 100} 
-              className="h-2 mt-2"
-            />
-            <div className="text-xs text-muted-foreground text-center">
-              Capacidade utilizada: {((openPositionsCount / maxOpenPositions) * 100).toFixed(0)}%
-              {openPositionsCount > maxOpenPositions * 0.8 && (
-                <span className="text-yellow-500 ml-2">⚠️ Próximo ao limite</span>
-              )}
-            </div>
+            <Progress value={(openPositionsCount / maxOpenPositions) * 100} className="h-2 mt-2" />
           </div>
         </Card>
 
@@ -2111,20 +688,11 @@ export const MultiAssetTrader = () => {
         <div className="flex items-center justify-between p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
           <div>
             <Label className="text-sm font-medium">Modo de operação</Label>
-            <p className="text-xs text-muted-foreground">
-              {isTestnet ? 'Testnet - sem risco real' : '⚠️ REAL - dinheiro real em risco'}
-            </p>
+            <p className="text-xs text-muted-foreground">{isTestnet ? 'Testnet' : '⚠️ REAL'}</p>
           </div>
           <div className="flex items-center gap-2">
             <Label className="text-xs">Testnet</Label>
-            <Switch
-              checked={!isTestnet}
-              onCheckedChange={(checked) => {
-                setIsTestnet(!checked);
-                setIsRunning(false);
-              }}
-              disabled={isRunning}
-            />
+            <Switch checked={!isTestnet} onCheckedChange={(checked) => { setIsTestnet(!checked); setIsRunning(false); }} disabled={isRunning} />
             <Label className="text-xs">Real</Label>
           </div>
         </div>
@@ -2133,80 +701,42 @@ export const MultiAssetTrader = () => {
         <div className="flex gap-2 mb-4">
           {!isRunning ? (
             <>
-              <Button 
-                onClick={startTrading} 
-                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                size="lg"
-              >
-                <Play className="h-5 w-5 mr-2" />
-                Iniciar Trader 24/7
+              <Button onClick={startTrading} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600" size="lg">
+                <Play className="h-5 w-5 mr-2" />Iniciar Trader 24/7
               </Button>
-              <Button 
-                onClick={resetBankroll} 
-                variant="outline"
-                size="lg"
-              >
-                Reset
-              </Button>
+              <Button onClick={resetBankroll} variant="outline" size="lg">Reset</Button>
             </>
           ) : (
-            <Button 
-              onClick={stopTrading} 
-              variant="destructive"
-              className="w-full"
-              size="lg"
-            >
-              <Square className="h-5 w-5 mr-2" />
-              Parar Trader
+            <Button onClick={stopTrading} variant="destructive" className="w-full" size="lg">
+              <Square className="h-5 w-5 mr-2" />Parar Trader
             </Button>
           )}
         </div>
 
-        {/* ML Adaptativo Card */}
+        {/* ML Card */}
         <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h4 className="text-sm font-semibold flex items-center gap-2">
-                🧠 ML Adaptativo Agressivo
-                {mlConfig?.is_enabled && (
-                  <Badge variant="default" className="text-xs">ATIVO</Badge>
-                )}
+                🧠 ML Adaptativo
+                {mlConfig?.is_enabled && <Badge variant="default" className="text-xs">ATIVO</Badge>}
               </h4>
               <p className="text-xs text-muted-foreground mt-1">
-                {mlConfig?.is_enabled 
-                  ? `Aprende com ${mlConfig.trades_analyzed} trades | ${mlConfig.confidence_score.toFixed(0)}% confiança`
-                  : `Analise seu histórico para otimizar automaticamente`}
+                {mlConfig?.is_enabled ? `${mlConfig.trades_analyzed} trades | ${mlConfig.confidence_score?.toFixed(0)}% confiança` : 'Analise seu histórico'}
               </p>
             </div>
             <Button
-              variant="outline"
-              size="sm"
+              variant="outline" size="sm"
               onClick={async () => {
                 const userId = await getUserId();
-                const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', {
-                  body: { userId }
-                });
-                
+                const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', { body: { userId } });
                 if (error) {
-                  toast({
-                    title: "❌ Erro no ML",
-                    description: error.message,
-                    variant: "destructive"
-                  });
+                  toast({ title: "❌ Erro no ML", description: error.message, variant: "destructive" });
                   return;
                 }
-                
                 if (data.success) {
                   setMlConfig(data.config);
-                  toast({
-                    title: "🧠 ML Configurado!",
-                    description: `Alavancagem: ${data.recommendations.leverage}x | Pyramiding: ${data.recommendations.pyramiding.maxLevels}x`,
-                  });
-                } else {
-                  toast({
-                    title: "⚠️ ML não disponível",
-                    description: data.message,
-                  });
+                  toast({ title: "🧠 ML Configurado!", description: `Leverage: ${data.recommendations.leverage}x` });
                 }
               }}
               disabled={isRunning}
@@ -2216,167 +746,87 @@ export const MultiAssetTrader = () => {
           </div>
           
           {mlConfig?.is_enabled && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-              <div className="p-2 bg-background/50 rounded border border-border">
-                <div className="text-muted-foreground">Alavancagem</div>
-                <div className="font-bold text-purple-400">{mlConfig.recommended_leverage}x</div>
-              </div>
-              <div className="p-2 bg-background/50 rounded border border-border">
-                <div className="text-muted-foreground">Stop Loss</div>
-                <div className="font-bold text-red-400">{mlConfig.recommended_stop_loss_pct}%</div>
-              </div>
-              <div className="p-2 bg-background/50 rounded border border-border">
-                <div className="text-muted-foreground">Take Profit</div>
-                <div className="font-bold text-green-400">{mlConfig.recommended_take_profit_pct}%</div>
-              </div>
-              <div className="p-2 bg-background/50 rounded border border-border">
-                <div className="text-muted-foreground">Pyramiding</div>
-                <div className="font-bold text-yellow-400">
-                  {mlConfig.optimal_patterns?.pyramiding?.maxLevels || 2}x em +{mlConfig.optimal_patterns?.pyramiding?.threshold || 1.5}%
-                </div>
-              </div>
+            <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Lev</div><div className="font-bold text-purple-400">{mlConfig.recommended_leverage}x</div></div>
+              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">SL</div><div className="font-bold text-red-400">{mlConfig.recommended_stop_loss_pct}%</div></div>
+              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">TP</div><div className="font-bold text-green-400">{mlConfig.recommended_take_profit_pct}%</div></div>
+              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Pyram</div><div className="font-bold text-yellow-400">{mlConfig.optimal_patterns?.pyramiding?.maxLevels || 2}x</div></div>
             </div>
           )}
         </Card>
 
-        {/* 🧠 CONFIGURAÇÕES INTELIGENTES */}
+        {/* Gestão de Saídas */}
         <Card className="p-4 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20 mb-4">
           <div className="flex items-center gap-2 mb-3">
             <Brain className="h-5 w-5 text-blue-400" />
-            <span className="text-sm font-medium">Gestão Inteligente de Saídas</span>
+            <span className="text-sm font-medium">Gestão de Saídas</span>
           </div>
           
           <div className="grid grid-cols-2 gap-3">
-            {/* Smart Exit */}
             <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
-              <div>
-                <Label className="text-xs font-medium">Smart Exit (ML)</Label>
-                <p className="text-[10px] text-muted-foreground">Trailing + Breakeven adaptativo</p>
-              </div>
-              <Switch
-                checked={smartExitEnabled}
-                onCheckedChange={setSmartExitEnabled}
-                disabled={isRunning}
-              />
+              <div><Label className="text-xs font-medium">Smart Exit (ML)</Label></div>
+              <Switch checked={smartExitEnabled} onCheckedChange={setSmartExitEnabled} disabled={isRunning} />
             </div>
             
-            {/* Saídas Parciais */}
             <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
-              <div>
-                <Label className="text-xs font-medium">Saídas Parciais</Label>
-                <p className="text-[10px] text-muted-foreground">50% em +1.5%, 50% em +3%</p>
-              </div>
-              <Switch
-                checked={partialExitEnabled}
-                onCheckedChange={setPartialExitEnabled}
-                disabled={isRunning}
-              />
+              <div><Label className="text-xs font-medium">Saídas Parciais</Label></div>
+              <Switch checked={partialExitEnabled} onCheckedChange={setPartialExitEnabled} disabled={isRunning} />
             </div>
             
-            {/* ML nas Decisões */}
             <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
-              <div>
-                <Label className="text-xs font-medium">ML nas Decisões</Label>
-                <p className="text-[10px] text-muted-foreground">Usar recomendações do ML</p>
-              </div>
-              <Switch
-                checked={mlDecisionsEnabled}
-                onCheckedChange={setMlDecisionsEnabled}
-                disabled={isRunning}
-              />
+              <div><Label className="text-xs font-medium">ML nas Decisões</Label></div>
+              <Switch checked={mlDecisionsEnabled} onCheckedChange={setMlDecisionsEnabled} disabled={isRunning} />
             </div>
             
-            {/* Trailing Stop */}
             <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
-              <div>
-                <Label className="text-xs font-medium">Trailing Stop</Label>
-                <p className="text-[10px] text-muted-foreground">Move SL quando em lucro</p>
-              </div>
-              <Switch
-                checked={trailingStopEnabled}
-                onCheckedChange={setTrailingStopEnabled}
-                disabled={isRunning}
-              />
+              <div><Label className="text-xs font-medium">Trailing Stop</Label></div>
+              <Switch checked={trailingStopEnabled} onCheckedChange={setTrailingStopEnabled} disabled={isRunning} />
             </div>
           </div>
-          
-          {(smartExitEnabled || partialExitEnabled) && mlConfig?.is_enabled && (
-            <div className="mt-3 p-2 bg-primary/5 rounded-lg border border-primary/10">
-              <div className="text-xs text-muted-foreground mb-1">🧠 Parâmetros ML Ativos:</div>
-              <div className="grid grid-cols-3 gap-2 text-[10px]">
-                <div>
-                  <span className="text-muted-foreground">Breakeven:</span>
-                  <span className="font-bold ml-1 text-blue-400">+0.5%</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Trail Ativa:</span>
-                  <span className="font-bold ml-1 text-green-400">+1%</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Trail %:</span>
-                  <span className="font-bold ml-1 text-yellow-400">{mlConfig?.optimal_patterns?.dynamicStops?.mediumVolatility || 0.6}%</span>
-                </div>
-              </div>
-            </div>
-          )}
         </Card>
 
-        {mlConfig?.is_enabled && (
-          <div className="text-xs text-center text-muted-foreground bg-primary/5 p-2 rounded-lg border border-primary/10 mb-4">
-            🎯 Best Symbols: {mlConfig.optimal_patterns?.bestSymbols?.slice(0, 3).join(', ')} | 
-            ⏰ Best Hours: {mlConfig.optimal_patterns?.bestHours?.slice(0, 2).join('h, ')}h UTC
-          </div>
-        )}
-
-        {isRunning && (
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-sm mb-2">
-              <div className="flex items-center gap-3">
-                <span className="text-green-500 font-semibold animate-pulse">● OPERANDO</span>
-                <span className="text-xs text-muted-foreground">
-                  Ciclo: {cycleCount} | Próx: 60s | 24/7 | Auto-restaura
-                </span>
-              </div>
-              <span className="text-xs">
-                {openPositionsCount < maxOpenPositions ? '🎯 Buscando setups...' : '⏸️ Posições cheias'}
-              </span>
+        {/* Opções Avançadas */}
+        <Card className="p-4 bg-background/50 mb-4">
+          <div className="text-sm font-medium mb-3">⚙️ Opções Avançadas</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <Label className="text-xs">Pyramiding</Label>
+              <Switch checked={scaleInOutEnabled} onCheckedChange={setScaleInOutEnabled} disabled={isRunning} />
             </div>
-            <Progress value={100} className="h-2 animate-pulse" />
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <Label className="text-xs">Martingale</Label>
+              <Switch checked={martingaleEnabled} onCheckedChange={setMartingaleEnabled} disabled={isRunning} />
+            </div>
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <Label className="text-xs">Hedge</Label>
+              <Switch checked={hedgeEnabled} onCheckedChange={setHedgeEnabled} disabled={isRunning} />
+            </div>
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <Label className="text-xs">Lev. Dinâmica</Label>
+              <Switch checked={dynamicLeverageEnabled} onCheckedChange={setDynamicLeverageEnabled} disabled={isRunning} />
+            </div>
           </div>
+        </Card>
+
+        {/* Recent Trades */}
+        {activeTrades.length > 0 && (
+          <Card className="p-4 bg-background/50">
+            <div className="text-sm font-medium mb-2">📊 Trades Recentes</div>
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {activeTrades.slice(-5).reverse().map((trade, i) => (
+                <div key={i} className="flex justify-between items-center text-xs p-2 bg-background/50 rounded">
+                  <span className="font-medium">{trade.symbol}</span>
+                  <Badge variant={trade.action === 'BUY' ? 'default' : 'destructive'} className="text-[10px]">{trade.action}</Badge>
+                  <span>{trade.leverage}x</span>
+                  <span className="text-muted-foreground">${trade.usdSize.toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
         )}
       </Card>
-
-      {/* Configurações avançadas movidas para AutoTraderSettings */}
-
-      {/* Recent Trades */}
-      {activeTrades.length > 0 && (
-        <Card className="p-6">
-          <h4 className="font-semibold mb-4">Últimos Trades ({activeTrades.length})</h4>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {activeTrades.slice().reverse().map((trade, idx) => (
-              <div 
-                key={idx} 
-                className="p-3 bg-muted rounded-lg border border-border flex items-center justify-between"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold">{trade.symbol}</span>
-                    <Badge variant={trade.action === 'BUY' ? 'default' : 'destructive'} className="text-xs">
-                      {trade.action}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs">
-                      {trade.leverage}x
-                    </Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    ${trade.usdSize.toFixed(2)} | {trade.confidence.toFixed(0)}% conf | {new Date(trade.timestamp).toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   );
 };
+
+export default MultiAssetTrader;
