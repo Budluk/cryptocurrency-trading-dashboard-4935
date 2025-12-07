@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
 import { useSmartExitManager } from "@/hooks/useSmartExitManager";
+import { useContinuousMLTraining } from "@/hooks/useContinuousMLTraining";
 
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -39,10 +40,12 @@ export const MultiAssetTrader = () => {
   const { toast } = useToast();
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
   const { processOpenPositions, clearPositionState, getAdaptiveTrailingConfig } = useSmartExitManager();
+  const { addTradeToBuffer, triggerFullTraining, getMLRecommendations } = useContinuousMLTraining();
   
   // 🧠 ML Integration - Referência para última verificação
   const lastMLCheck = useRef<number>(0);
   const ML_CHECK_INTERVAL = 30000; // Verificar ML a cada 30 segundos
+  const lastClosedPositionsRef = useRef<string[]>([]); // Track closed positions for ML training
 
   // 🔥 PROTEÇÕES MÍNIMAS - MODO AGRESSIVO TOTAL
   const DAILY_STOP_LOSS_PCT = 0.30; // 🔥 30% de drawdown diário permitido
@@ -90,15 +93,47 @@ export const MultiAssetTrader = () => {
 
   const { openPositions, closedPositions } = usePositions();
   
-  // Calcular win rate histórico usando closedPositions do contexto
+  // 🧠 TREINAMENTO CONTÍNUO: Detectar novas posições fechadas e treinar ML
   useEffect(() => {
     if (closedPositions.length > 0) {
+      // Detectar trades fechados que ainda não foram processados
+      const currentIds = closedPositions.map(p => p.id);
+      const newClosed = closedPositions.filter(p => 
+        !lastClosedPositionsRef.current.includes(p.id) && 
+        p.realized_pnl !== null
+      );
+
+      if (newClosed.length > 0) {
+        console.log(`📚 ${newClosed.length} novos trades fechados detectados para treinamento ML`);
+        
+        // Adicionar ao buffer de treinamento
+        for (const trade of newClosed) {
+          addTradeToBuffer({
+            symbol: trade.symbol,
+            side: trade.side,
+            entry_price: trade.entry_price,
+            exit_price: trade.exit_price || trade.current_price || trade.entry_price,
+            realized_pnl: trade.realized_pnl || 0,
+            leverage: trade.leverage || 10,
+            volatility: trade.volatility || 2,
+            confidence: trade.confidence || 50,
+            close_reason: trade.close_reason || 'UNKNOWN',
+            opened_at: trade.opened_at,
+            closed_at: trade.closed_at || new Date().toISOString(),
+          });
+        }
+      }
+
+      // Atualizar referência de IDs processados
+      lastClosedPositionsRef.current = currentIds;
+
+      // Calcular win rate histórico
       const recent20 = closedPositions.slice(0, 20);
       const wins = recent20.filter(t => (t.realized_pnl || 0) > 0).length;
       const rate = (wins / recent20.length) * 100;
       setHistoricalWinRate(rate);
     }
-  }, [closedPositions]);
+  }, [closedPositions, addTradeToBuffer]);
 
   // 💾 RESTAURAR ESTADO AUTOMATICAMENTE AO CARREGAR
   useEffect(() => {
