@@ -2490,6 +2490,36 @@ export type Database = {
           },
         ]
       }
+      user_exchange_keys: {
+        Row: {
+          api_key: string
+          api_secret: string
+          created_at: string | null
+          exchange: string
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          api_secret: string
+          created_at?: string | null
+          exchange: string
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          api_secret?: string
+          created_at?: string | null
+          exchange?: string
+          id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_preferences: {
         Row: {
           auto_tracking: boolean | null
