@@ -1,17 +1,17 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
+import { useSmartExitManager } from "@/hooks/useSmartExitManager";
 
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
-// AdvancedTradingSettings removido - settings integrados no AutoTraderSettings
 import { getUserId } from "@/lib/anonymousUser";
 
 interface Trade {
@@ -38,6 +38,11 @@ export const MultiAssetTrader = () => {
   const [mlConfig, setMlConfig] = useState<any>(null);
   const { toast } = useToast();
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
+  const { processOpenPositions, clearPositionState, getAdaptiveTrailingConfig } = useSmartExitManager();
+  
+  // 🧠 ML Integration - Referência para última verificação
+  const lastMLCheck = useRef<number>(0);
+  const ML_CHECK_INTERVAL = 30000; // Verificar ML a cada 30 segundos
 
   // 🔥 PROTEÇÕES MÍNIMAS - MODO AGRESSIVO TOTAL
   const DAILY_STOP_LOSS_PCT = 0.30; // 🔥 30% de drawdown diário permitido
@@ -50,16 +55,19 @@ export const MultiAssetTrader = () => {
   
   // ⚡ CONFIGURAÇÕES AVANÇADAS
   const [trailingStopEnabled, setTrailingStopEnabled] = useState(true);
-  const [trailingStopPercent, setTrailingStopPercent] = useState(1.2); // Mais apertado para proteger lucros
-  const [timeFilterEnabled, setTimeFilterEnabled] = useState(false); // 🔄 24/7 por padrão
-  const [startHour, setStartHour] = useState(14); // 14h UTC (início de NY)
-  const [endHour, setEndHour] = useState(20); // 20h UTC (fim de NY)
+  const [trailingStopPercent, setTrailingStopPercent] = useState(1.2);
+  const [smartExitEnabled, setSmartExitEnabled] = useState(true); // 🧠 SAÍDAS INTELIGENTES
+  const [partialExitEnabled, setPartialExitEnabled] = useState(true); // 📊 SAÍDAS PARCIAIS
+  const [timeFilterEnabled, setTimeFilterEnabled] = useState(false);
+  const [startHour, setStartHour] = useState(14);
+  const [endHour, setEndHour] = useState(20);
   const [scaleInOutEnabled, setScaleInOutEnabled] = useState(true);
   const [martingaleEnabled, setMartingaleEnabled] = useState(false);
   const [copyTradingEnabled, setCopyTradingEnabled] = useState(false);
   const [hedgeEnabled, setHedgeEnabled] = useState(false);
   const [sentimentEnabled, setSentimentEnabled] = useState(false);
   const [dynamicLeverageEnabled, setDynamicLeverageEnabled] = useState(false);
+  const [mlDecisionsEnabled, setMlDecisionsEnabled] = useState(true); // 🧠 ML NAS DECISÕES
   
   // 📊 TRACKING DE POSIÇÕES PARA TRAILING STOP
   const [positionTracking, setPositionTracking] = useState<Map<string, {
@@ -357,9 +365,9 @@ export const MultiAssetTrader = () => {
     }
   }, []);
 
-  // 🎯 TRAILING STOP LOSS - Atualizar stops dinamicamente
-  const updateTrailingStops = async () => {
-    if (!trailingStopEnabled || positionTracking.size === 0) return;
+  // 🎯 TRAILING STOP LOSS INTELIGENTE - Usando ML e saídas parciais
+  const updateSmartExits = async () => {
+    if (!smartExitEnabled && !trailingStopEnabled) return;
     
     try {
       // Buscar posições abertas
@@ -379,106 +387,124 @@ export const MultiAssetTrader = () => {
       const positions = data.data?.list || [];
       const openPositions = positions.filter((p: any) => parseFloat(p.size) > 0);
 
-      for (const position of openPositions) {
-        const symbol = position.symbol;
-        const tracking = positionTracking.get(symbol);
-        if (!tracking) continue;
+      // Obter mapa de volatilidade
+      const volatilityMap = (window as any).assetVolatility || new Map();
 
-        const currentPrice = parseFloat(position.markPrice);
-        const side = position.side; // 'Buy' ou 'Sell'
-        let shouldUpdateStop = false;
-        let newStopLoss = tracking.currentStopLoss;
+      // 🧠 PROCESSAMENTO INTELIGENTE COM ML
+      if (smartExitEnabled && mlConfig?.is_enabled) {
+        const positionsData = openPositions.map((p: any) => ({
+          symbol: p.symbol,
+          side: p.side,
+          size: parseFloat(p.size),
+          entryPrice: parseFloat(p.avgPrice),
+          currentPrice: parseFloat(p.markPrice),
+          unrealizedPnl: parseFloat(p.unrealisedPnl),
+          leverage: parseFloat(p.leverage),
+        }));
 
-        if (side === 'Buy') {
-          // Para BUY: Mover SL para cima quando preço sobe
-          if (currentPrice > tracking.highestPrice) {
-            const newHighest = currentPrice;
-            newStopLoss = newHighest * (1 - trailingStopPercent / 100);
-            
-            // Só atualizar se o novo SL for maior que o atual (movendo para cima)
-            if (newStopLoss > tracking.currentStopLoss) {
-              shouldUpdateStop = true;
-              console.log(`🎯 TRAILING STOP ${symbol}: Novo SL $${newStopLoss.toFixed(4)} (era $${tracking.currentStopLoss.toFixed(4)})`);
-              
-              // Atualizar tracking
-              setPositionTracking(prev => {
-                const newMap = new Map(prev);
-                newMap.set(symbol, {
-                  ...tracking,
-                  highestPrice: newHighest,
-                  currentStopLoss: newStopLoss
-                });
-                return newMap;
-              });
-            }
-          }
-        } else {
-          // Para SELL: Mover SL para baixo quando preço cai
-          if (currentPrice < tracking.lowestPrice) {
-            const newLowest = currentPrice;
-            newStopLoss = newLowest * (1 + trailingStopPercent / 100);
-            
-            // Só atualizar se o novo SL for menor que o atual (movendo para baixo)
-            if (newStopLoss < tracking.currentStopLoss) {
-              shouldUpdateStop = true;
-              console.log(`🎯 TRAILING STOP ${symbol}: Novo SL $${newStopLoss.toFixed(4)} (era $${tracking.currentStopLoss.toFixed(4)})`);
-              
-              // Atualizar tracking
-              setPositionTracking(prev => {
-                const newMap = new Map(prev);
-                newMap.set(symbol, {
-                  ...tracking,
-                  lowestPrice: newLowest,
-                  currentStopLoss: newStopLoss
-                });
-                return newMap;
-              });
-            }
-          }
+        // Usar o hook de saídas inteligentes
+        const results = await processOpenPositions(positionsData, mlConfig, volatilityMap);
+        
+        if (results.length > 0) {
+          console.log(`🧠 Smart Exit: ${results.length} ações executadas`);
         }
+      }
 
-        // Atualizar stop loss na Bybit se necessário
-        if (shouldUpdateStop) {
-          const priceDecimals = position.avgPrice.includes('.') 
-            ? position.avgPrice.split('.')[1].length 
-            : 2;
-          
-          const { error: updateError } = await supabase.functions.invoke('bybit-trading', {
-            body: {
-              action: 'set_trading_stop',
-              isTestnet: false,
-              params: {
-                category: 'linear',
-                symbol: symbol,
-                stopLoss: newStopLoss.toFixed(priceDecimals),
-                positionIdx: 0
+      // 📊 TRAILING STOP TRADICIONAL (fallback se ML não ativo)
+      if (trailingStopEnabled && (!smartExitEnabled || !mlConfig?.is_enabled)) {
+        for (const position of openPositions) {
+          const symbol = position.symbol;
+          const tracking = positionTracking.get(symbol);
+          if (!tracking) continue;
+
+          const currentPrice = parseFloat(position.markPrice);
+          const side = position.side;
+          let shouldUpdateStop = false;
+          let newStopLoss = tracking.currentStopLoss;
+
+          // Calcular trailing stop adaptativo baseado em volatilidade
+          const volatility = volatilityMap.get(symbol) || 2;
+          const adaptiveTrailPct = getAdaptiveTrailingConfig(volatility, mlConfig).trailingPct;
+
+          if (side === 'Buy') {
+            if (currentPrice > tracking.highestPrice) {
+              const newHighest = currentPrice;
+              newStopLoss = newHighest * (1 - adaptiveTrailPct / 100);
+              
+              if (newStopLoss > tracking.currentStopLoss) {
+                shouldUpdateStop = true;
+                console.log(`🎯 TRAILING ${symbol}: SL $${newStopLoss.toFixed(4)} (Vol: ${volatility.toFixed(1)}%, Trail: ${adaptiveTrailPct.toFixed(1)}%)`);
+                
+                setPositionTracking(prev => {
+                  const newMap = new Map(prev);
+                  newMap.set(symbol, {
+                    ...tracking,
+                    highestPrice: newHighest,
+                    currentStopLoss: newStopLoss
+                  });
+                  return newMap;
+                });
               }
             }
-          });
-
-          if (updateError) {
-            console.error(`❌ Erro ao atualizar trailing stop ${symbol}:`, updateError);
           } else {
-            console.log(`✅ Trailing Stop atualizado na Bybit: ${symbol} → $${newStopLoss.toFixed(priceDecimals)}`);
+            if (currentPrice < tracking.lowestPrice) {
+              const newLowest = currentPrice;
+              newStopLoss = newLowest * (1 + adaptiveTrailPct / 100);
+              
+              if (newStopLoss < tracking.currentStopLoss) {
+                shouldUpdateStop = true;
+                console.log(`🎯 TRAILING ${symbol}: SL $${newStopLoss.toFixed(4)} (Vol: ${volatility.toFixed(1)}%, Trail: ${adaptiveTrailPct.toFixed(1)}%)`);
+                
+                setPositionTracking(prev => {
+                  const newMap = new Map(prev);
+                  newMap.set(symbol, {
+                    ...tracking,
+                    lowestPrice: newLowest,
+                    currentStopLoss: newStopLoss
+                  });
+                  return newMap;
+                });
+              }
+            }
+          }
+
+          if (shouldUpdateStop) {
+            const priceDecimals = position.avgPrice.includes('.') 
+              ? position.avgPrice.split('.')[1].length 
+              : 2;
+            
+            await supabase.functions.invoke('bybit-trading', {
+              body: {
+                action: 'set_trading_stop',
+                isTestnet: false,
+                params: {
+                  category: 'linear',
+                  symbol: symbol,
+                  stopLoss: newStopLoss.toFixed(priceDecimals),
+                  positionIdx: 0
+                }
+              }
+            });
           }
         }
       }
 
-      // Limpar tracking de posições que foram fechadas
+      // Limpar tracking de posições fechadas
       const openSymbols = new Set(openPositions.map((p: any) => p.symbol));
       setPositionTracking(prev => {
         const newMap = new Map(prev);
         for (const [symbol] of newMap) {
           if (!openSymbols.has(symbol)) {
             newMap.delete(symbol);
-            console.log(`🧹 Removido tracking de ${symbol} (posição fechada)`);
+            clearPositionState(symbol);
+            console.log(`🧹 Removido tracking de ${symbol}`);
           }
         }
         return newMap;
       });
 
     } catch (error) {
-      console.error('Erro ao atualizar trailing stops:', error);
+      console.error('Erro ao atualizar smart exits:', error);
     }
   };
 
@@ -789,8 +815,40 @@ export const MultiAssetTrader = () => {
           
           // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO PRECISO
           // 🎯 THRESHOLDS OTIMIZADOS para melhor win rate
-          const scoreThreshold = 55; // 🎯 AUMENTADO: Exigir score mais alto
-          const minConfirmations = 2; // Mínimo 2 confirmações
+          // 🧠 ML INTEGRATION: Usar thresholds do ML se habilitado
+          let scoreThreshold = 55;
+          let minConfirmations = 2;
+          
+          if (mlDecisionsEnabled && mlConfig?.is_enabled && mlConfig?.optimal_patterns) {
+            // ML pode ajustar threshold baseado em performance histórica
+            const patterns = mlConfig.optimal_patterns;
+            
+            // Se win rate do ML é alto, pode ser menos rigoroso
+            if (mlConfig.confidence_score >= 70) {
+              scoreThreshold = 50; // Mais confiante
+            } else if (mlConfig.confidence_score < 50) {
+              scoreThreshold = 60; // Mais conservador
+            }
+            
+            // Verificar se o símbolo é um dos melhores do ML
+            const bestSymbols = patterns.bestSymbols || [];
+            if (bestSymbols.includes(symbol)) {
+              buyScore += 10; // Bônus para símbolos favoritos do ML
+              sellScore += 10;
+              confirmations.push('🧠 ML Best Symbol');
+            }
+            
+            // Verificar se é um dos melhores horários
+            const bestHours = patterns.bestHours || [];
+            const currentHour = new Date().getUTCHours();
+            if (bestHours.includes(currentHour)) {
+              buyScore += 8;
+              sellScore += 8;
+              confirmations.push('⏰ ML Best Hour');
+            }
+            
+            console.log(`🧠 ML ATIVO: Threshold ${scoreThreshold} | Conf ${mlConfig.confidence_score}%`);
+          }
           
           // 🛡️ FILTRO DE DIREÇÃO: Não entrar contra tendência forte
           const trendAlignment = (action === 'BUY' && priceChange > 0) || (action === 'SELL' && priceChange < 0);
@@ -1697,7 +1755,17 @@ export const MultiAssetTrader = () => {
         analyzeAndTrade();
       }, 3 * 60 * 1000); // 3 minutos
       
-      return () => clearInterval(interval);
+      // 🧠 SMART EXIT: Verificar saídas inteligentes a cada 15 segundos
+      const smartExitInterval = setInterval(() => {
+        if (smartExitEnabled || trailingStopEnabled) {
+          updateSmartExits();
+        }
+      }, 15 * 1000); // 15 segundos
+      
+      return () => {
+        clearInterval(interval);
+        clearInterval(smartExitInterval);
+      };
     }
   }, [isRunning]); // Remover currentBalance e isTestnet das dependências
 
@@ -2118,6 +2186,88 @@ export const MultiAssetTrader = () => {
                 <div className="text-muted-foreground">Pyramiding</div>
                 <div className="font-bold text-yellow-400">
                   {mlConfig.optimal_patterns?.pyramiding?.maxLevels || 2}x em +{mlConfig.optimal_patterns?.pyramiding?.threshold || 1.5}%
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* 🧠 CONFIGURAÇÕES INTELIGENTES */}
+        <Card className="p-4 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain className="h-5 w-5 text-blue-400" />
+            <span className="text-sm font-medium">Gestão Inteligente de Saídas</span>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            {/* Smart Exit */}
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <div>
+                <Label className="text-xs font-medium">Smart Exit (ML)</Label>
+                <p className="text-[10px] text-muted-foreground">Trailing + Breakeven adaptativo</p>
+              </div>
+              <Switch
+                checked={smartExitEnabled}
+                onCheckedChange={setSmartExitEnabled}
+                disabled={isRunning}
+              />
+            </div>
+            
+            {/* Saídas Parciais */}
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <div>
+                <Label className="text-xs font-medium">Saídas Parciais</Label>
+                <p className="text-[10px] text-muted-foreground">50% em +1.5%, 50% em +3%</p>
+              </div>
+              <Switch
+                checked={partialExitEnabled}
+                onCheckedChange={setPartialExitEnabled}
+                disabled={isRunning}
+              />
+            </div>
+            
+            {/* ML nas Decisões */}
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <div>
+                <Label className="text-xs font-medium">ML nas Decisões</Label>
+                <p className="text-[10px] text-muted-foreground">Usar recomendações do ML</p>
+              </div>
+              <Switch
+                checked={mlDecisionsEnabled}
+                onCheckedChange={setMlDecisionsEnabled}
+                disabled={isRunning}
+              />
+            </div>
+            
+            {/* Trailing Stop */}
+            <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
+              <div>
+                <Label className="text-xs font-medium">Trailing Stop</Label>
+                <p className="text-[10px] text-muted-foreground">Move SL quando em lucro</p>
+              </div>
+              <Switch
+                checked={trailingStopEnabled}
+                onCheckedChange={setTrailingStopEnabled}
+                disabled={isRunning}
+              />
+            </div>
+          </div>
+          
+          {(smartExitEnabled || partialExitEnabled) && mlConfig?.is_enabled && (
+            <div className="mt-3 p-2 bg-primary/5 rounded-lg border border-primary/10">
+              <div className="text-xs text-muted-foreground mb-1">🧠 Parâmetros ML Ativos:</div>
+              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                <div>
+                  <span className="text-muted-foreground">Breakeven:</span>
+                  <span className="font-bold ml-1 text-blue-400">+0.5%</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Trail Ativa:</span>
+                  <span className="font-bold ml-1 text-green-400">+1%</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Trail %:</span>
+                  <span className="font-bold ml-1 text-yellow-400">{mlConfig?.optimal_patterns?.dynamicStops?.mediumVolatility || 0.6}%</span>
                 </div>
               </div>
             </div>
