@@ -145,28 +145,29 @@ export const MultiAssetTrader = () => {
     'SHIBUSDT', 'PEPEUSDT', 'AVAXUSDT', 'NEARUSDT', 'APTUSDT'
   ]));
 
-  // 🔥 SISTEMA DE ALAVANCAGEM ULTRA-AGRESSIVA PARA SCALPING
+  // 🎯 SISTEMA DE ALAVANCAGEM EQUILIBRADA PARA SCALPING
   const getLeverageForScalping = (volatility: number): number => {
-    // 🚀 MÁXIMA ALAVANCAGEM para lucros rápidos
-    if (volatility > 3.0) return 75; // Extrema volatilidade - max power
-    if (volatility > 2.0) return 60; // Alta volatilidade
-    if (volatility > 1.5) return 50; // Média-alta volatilidade
-    if (volatility > 1.0) return 45; // Volatilidade normal
-    return 40; // Padrão agressivo para scalping
+    // 🎯 ALAVANCAGEM ADAPTATIVA: Menor alavancagem em alta volatilidade
+    if (volatility > 5.0) return 15; // Alta volatilidade = baixa alavancagem
+    if (volatility > 3.0) return 20;
+    if (volatility > 2.0) return 25;
+    if (volatility > 1.0) return 30;
+    return 35; // Baixa volatilidade = pode usar mais
   };
 
-  // Estratégia de alavancagem ULTRA-AGRESSIVA baseada no bankroll
+  // Estratégia de alavancagem EQUILIBRADA baseada no bankroll
   const getLeverageForBalance = (balance: number, winRate: number) => {
-    // 🚀 ALAVANCAGEM MÁXIMA para multiplicar capital rapidamente
-    let baseLeverage = 40; // Base MUITO agressiva
-    if (balance < 5) baseLeverage = 75; // MÁXIMO para contas pequenas
-    else if (balance < 10) baseLeverage = 60;
-    else if (balance < 20) baseLeverage = 50;
-    else if (balance < 50) baseLeverage = 45;
+    // 🎯 ALAVANCAGEM MODERADA para melhor win rate
+    let baseLeverage = 20; // Base moderada
+    if (balance < 5) baseLeverage = 30; // Contas pequenas = moderado
+    else if (balance < 10) baseLeverage = 25;
+    else if (balance < 20) baseLeverage = 20;
+    else if (balance < 50) baseLeverage = 18;
+    else baseLeverage = 15; // Contas maiores = conservador
 
-    // Bônus por performance
-    if (winRate >= 55) baseLeverage = Math.min(baseLeverage + 15, 100); // Max 100x
-    else if (winRate < 35) baseLeverage = Math.max(baseLeverage - 10, 25);
+    // Ajuste por performance
+    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 5, 40); // Bom desempenho
+    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 8, 10); // Desempenho ruim
 
     return baseLeverage;
   };
@@ -786,37 +787,44 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO MEGA-AGRESSIVO
-          // 🔥 THRESHOLDS MÍNIMOS para MÁXIMAS entradas
-          const scoreThreshold = isScalpAsset ? 15 : 20; // 🔥 SUPER BAIXO: Scalp: 15+ | Normal: 20+
-          const minConfirmations = 1; // Apenas 1 confirmação
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO PRECISO
+          // 🎯 THRESHOLDS OTIMIZADOS para melhor win rate
+          const scoreThreshold = 55; // 🎯 AUMENTADO: Exigir score mais alto
+          const minConfirmations = 2; // Mínimo 2 confirmações
           
-          if (buyScore > sellScore && buyScore >= scoreThreshold) {
+          // 🛡️ FILTRO DE DIREÇÃO: Não entrar contra tendência forte
+          const trendAlignment = (action === 'BUY' && priceChange > 0) || (action === 'SELL' && priceChange < 0);
+          const strongCounterTrend = (buyScore > sellScore && priceChange < -3) || (sellScore > buyScore && priceChange > 3);
+          
+          if (buyScore > sellScore && buyScore >= scoreThreshold && !strongCounterTrend) {
             action = 'BUY';
-            signalScore = Math.min(buyScore + 20, 100); // Boost de score
-          } else if (sellScore > buyScore && sellScore >= scoreThreshold) {
+            signalScore = buyScore;
+          } else if (sellScore > buyScore && sellScore >= scoreThreshold && !strongCounterTrend) {
             action = 'SELL';
-            signalScore = Math.min(sellScore + 20, 100); // Boost de score
-          } else if (buyScore >= 10 || sellScore >= 10) {
-            // 🔥 ACEITAR SINAIS FRACOS também
-            action = buyScore > sellScore ? 'BUY' : 'SELL';
-            signalScore = Math.max(buyScore, sellScore) + 15;
+            signalScore = sellScore;
           }
           
-          // 7. CRITÉRIOS MEGA-AGRESSIVOS - QUASE TUDO PASSA
-          const volumeCheck = volume24h > 100000; // 🔥 SUPER BAIXO: $100K+ volume
-          const volatilityCheck = volatility > 0.1; // 🔥 MÍNIMO: 0.1%+ movimento
-          const atrMinCheck = atrPercent > 0.1; // 🔥 MÍNIMO: 0.1% ATR
-          const hasVolumeConfirmation = true; // 🔥 IGNORAR volume confirmation
+          // 7. CRITÉRIOS DE QUALIDADE - FILTROS MAIS RIGOROSOS
+          const volumeCheck = volume24h > 500000; // 🎯 $500K+ volume mínimo
+          const volatilityCheck = volatility > 0.5 && volatility < 15; // 🎯 0.5%-15% range ideal
+          const atrMinCheck = atrPercent > 0.5 && atrPercent < 20; // 🎯 ATR entre 0.5% e 20%
+          
+          // 🛡️ FILTRO DE RUÍDO: Evitar entrar em movimentos muito pequenos ou muito grandes
+          const priceMovementOk = Math.abs(priceChange) > 0.3 && Math.abs(priceChange) < 12;
+          
+          // 🎯 CONFIRMAÇÃO DE TENDÊNCIA: Score deve ser significativamente maior
+          const hasStrongSignal = Math.abs(buyScore - sellScore) >= 15;
           
           const shouldTrade = (
             signalScore >= scoreThreshold &&
             volumeCheck &&
             volatilityCheck &&
             action !== null &&
-            currentBalance > 1.5 && // 🔥 REDUZIDO: $1.50 mínimo
+            currentBalance > 2 && // 🎯 $2 mínimo
             atrMinCheck &&
-            atrPercent < 50 // 🔥 ACEITAR ATR até 50%
+            priceMovementOk &&
+            hasStrongSignal &&
+            confirmations.length >= minConfirmations
           );
 
           // 📋 LOG DETALHADO DE CADA ATIVO ANALISADO
@@ -1184,24 +1192,31 @@ export const MultiAssetTrader = () => {
             let stopLossPct: number;
             let takeProfitPct: number;
             
+            // 🎯 STOPS BASEADOS EM ATR - Mais inteligentes e adaptativos
+            // ATR = volatilidade real do ativo, stops devem respeitar isso
+            const atrMultiplierSL = 1.5; // 1.5x ATR para stop loss (dar espaço para respirar)
+            const rrRatio = 2.5; // Risk:Reward 1:2.5 (realista e lucrativo)
+            
             if (isScalpAsset) {
-              // 🔥 SCALPING AGRESSIVO: Stops apertados + TP explosivo (0.5% SL, 4% TP = 1:8 R:R)
-              stopLossPct = 0.005; // 0.5% - SUPER apertado
-              takeProfitPct = 0.04; // 4% - MÁXIMO lucro por trade
-              console.log(`⚡ SCALP ULTRA: SL ${(stopLossPct*100).toFixed(1)}% | TP ${(takeProfitPct*100).toFixed(1)}%`);
+              // 🎯 SCALPING INTELIGENTE: Stops baseados em ATR real (não fixos!)
+              // Mínimo 1%, máximo 3% - evitar stops muito apertados que são ativados por ruído
+              stopLossPct = Math.max(0.01, Math.min(atrPercent * atrMultiplierSL / 100, 0.03));
+              takeProfitPct = stopLossPct * rrRatio; // 1:2.5 R:R
+              console.log(`⚡ SCALP SMART: SL ${(stopLossPct*100).toFixed(2)}% (ATR: ${atrPercent.toFixed(1)}%) | TP ${(takeProfitPct*100).toFixed(2)}% | R:R 1:${rrRatio}`);
             } else {
-              // 🔥 NORMAL AGRESSIVO: Stops pequenos, TP grande
-              const minStopPercent = 1.5; // Reduzido de 2.5%
-              const atrStopPercent = Math.max(atrPercent * 1.2, minStopPercent); // Multiplicador menor
+              // 🎯 NORMAL: Stops maiores baseados em ATR
+              const minStopPercent = 1.5; // Mínimo 1.5%
+              const maxStopPercent = 4.0; // Máximo 4%
+              const atrStopPercent = atrPercent * atrMultiplierSL;
               
               stopLossPct = mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct 
-                ? Math.min(mlConfig.recommended_stop_loss_pct / 100, 0.02) // Max 2% SL
-                : Math.min(atrStopPercent / 100, 0.02);
+                ? Math.max(minStopPercent/100, Math.min(mlConfig.recommended_stop_loss_pct / 100, maxStopPercent/100))
+                : Math.max(minStopPercent/100, Math.min(atrStopPercent / 100, maxStopPercent/100));
               
-              // 🔥 R:R AGRESSIVO: 1:4 mínimo
+              // 🎯 R:R realista: 1:2.5
               takeProfitPct = mlConfig?.is_enabled && mlConfig?.recommended_take_profit_pct 
-                ? Math.max(mlConfig.recommended_take_profit_pct / 100, stopLossPct * 4) 
-                : stopLossPct * 4; // 1:4 R:R
+                ? Math.max(mlConfig.recommended_take_profit_pct / 100, stopLossPct * rrRatio) 
+                : stopLossPct * rrRatio;
             }
             
             // 🛡️ STOP LOSS OBRIGATÓRIO - NUNCA undefined
