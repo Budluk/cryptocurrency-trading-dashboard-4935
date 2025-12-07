@@ -187,8 +187,12 @@ async function makeBybitRequest(
     throw new Error('Invalid JSON response from Bybit API');
   }
 
-  // Handle "not modified" as success (code 10005) - stop loss already at this level
-  if (data.retCode !== 0 && data.retCode !== 10005) {
+  // Handle "not modified" as success - these are not real errors:
+  // 10005 = stop loss not modified
+  // 110043 = leverage not modified
+  // 110044 = available balance not enough (for leverage change)
+  const nonErrorCodes = [0, 10005, 110043];
+  if (!nonErrorCodes.includes(data.retCode)) {
     throw new Error(`Bybit API Error: ${data.retMsg || 'Unknown error'}`);
   }
 
