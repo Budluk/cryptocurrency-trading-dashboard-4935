@@ -635,7 +635,7 @@ export const MultiAssetTrader = () => {
 
       const tickers = tickerData?.data?.list || [];
       
-      // 🔥 FILTRAR ATIVOS COM BOA LIQUIDEZ E MOVIMENTO - MODO ULTRA-AGRESSIVO
+      // 🔥 FILTRAR ATIVOS COM BOA LIQUIDEZ E MOVIMENTO - MODO EQUILIBRADO
       const assetsWithVolatility = tradableAssets.map((instrument: any) => {
         const ticker = tickers.find((t: any) => t.symbol === instrument.symbol);
         const priceChange = parseFloat(ticker?.price24hPcnt || '0') * 100;
@@ -649,22 +649,30 @@ export const MultiAssetTrader = () => {
           volume24h
         };
       }).filter(a => {
-        // 🎯 TOP 10 VOLÁTEIS: Critérios ULTRA-AGRESSIVOS
+        // 🔥 CRITÉRIOS RELAXADOS: Vol > 0.2% e $100K+ volume para qualquer ativo
+        // TOP 10: Critérios ainda mais relaxados
         const isInTop10 = top10VolatileAssets.has(a.instrument.symbol);
-        // 🔥 REDUZIDO: Vol > 0.1% e $30K+ volume
-        if (isInTop10) return a.volatility > 0.1 && a.volume24h > 30000;
-        return false; // Apenas top 10
+        
+        if (isInTop10) {
+          // TOP 10: Muito permissivo
+          return a.volatility > 0.1 && a.volume24h > 50000;
+        }
+        
+        // OUTROS ATIVOS: Critérios normais mas acessíveis
+        return a.volatility > 0.3 && a.volume24h > 200000;
       });
       
       // 📊 ORDENAR POR VOLATILIDADE (descendente) e processar TODOS os ativos voláteis
       const topVolatileAssets = assetsWithVolatility
-        .sort((a, b) => b.volatility - a.volatility);
+        .sort((a, b) => b.volatility - a.volatility)
+        .slice(0, 50); // 🔥 AUMENTADO: Analisar até 50 ativos
       
-      console.log(`🔥 Analisando ${topVolatileAssets.length} ativos TOP 10 da Bybit (Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions})`);
+      console.log(`🔥 ${topVolatileAssets.length} ativos passaram nos filtros | Total disponível: ${assetsWithVolatility.length}`);
+      console.log(`💰 Saldo: $${currentBalance.toFixed(2)} | Posições: ${openPositionsCount}/${maxOpenPositions}`);
       if (topVolatileAssets.length > 0) {
-        console.log(`📊 Range de Volatilidade: ${topVolatileAssets[0].instrument.symbol} (${topVolatileAssets[0].volatility.toFixed(2)}%) até ${topVolatileAssets[topVolatileAssets.length-1].instrument.symbol} (${topVolatileAssets[topVolatileAssets.length-1].volatility.toFixed(2)}%)`);
+        console.log(`📊 Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.volatility.toFixed(1)}%)`).join(', ')}`);
       }
-      console.log(`⚡ MODO ULTRA AGRESSIVO: Score ≥30 (scalp) ou ≥40 (normal) | Vol >0.1% | $30K+ | Apenas 1 confirmação`);
+      console.log(`⚡ Thresholds: Score ≥40 | Vol ≥0.3% | $200K+ vol | 1+ confirmação`);
       
       // 🛑 FLAG para parar processamento em caso de saldo insuficiente
       let shouldStopTrading = false;
@@ -676,8 +684,8 @@ export const MultiAssetTrader = () => {
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
         
-        // 🔥 Todos os ativos no top 10 são tratados como scalping
-        const isScalpAsset = true;
+        // 🔥 Top 10 = scalping, outros = swing trade
+        const isScalpAsset = top10VolatileAssets.has(symbol);
         
         try {
           // ⚡ ANÁLISE TÉCNICA AVANÇADA - SISTEMA DE PRECISÃO APRIMORADO COM ATR
@@ -848,28 +856,30 @@ export const MultiAssetTrader = () => {
             confirmations.push('ATR aceitável');
           }
           
-          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO PRECISO
-          // 🎯 THRESHOLDS OTIMIZADOS para melhor win rate
+          // 6. DETERMINAR AÇÃO E SCORE FINAL - MODO EQUILIBRADO
+          // 🎯 THRESHOLDS RELAXADOS para mais entradas com qualidade
           // 🧠 ML INTEGRATION: Usar thresholds do ML se habilitado
-          let scoreThreshold = 55;
-          let minConfirmations = 2;
+          let scoreThreshold = 40; // 🔥 REDUZIDO de 55 para 40
+          let minConfirmations = 1; // 🔥 REDUZIDO de 2 para 1
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled && mlConfig?.optimal_patterns) {
             // ML pode ajustar threshold baseado em performance histórica
-            const patterns = mlConfig.optimal_patterns;
+            const patterns = mlConfig.optimal_patterns as Record<string, any>;
             
             // Se win rate do ML é alto, pode ser menos rigoroso
             if (mlConfig.confidence_score >= 70) {
-              scoreThreshold = 50; // Mais confiante
-            } else if (mlConfig.confidence_score < 50) {
-              scoreThreshold = 60; // Mais conservador
+              scoreThreshold = 35; // Mais confiante
+            } else if (mlConfig.confidence_score >= 50) {
+              scoreThreshold = 40; // Normal
+            } else {
+              scoreThreshold = 45; // Mais conservador
             }
             
             // Verificar se o símbolo é um dos melhores do ML
             const bestSymbols = patterns.bestSymbols || [];
             if (bestSymbols.includes(symbol)) {
-              buyScore += 10; // Bônus para símbolos favoritos do ML
-              sellScore += 10;
+              buyScore += 15; // 🔥 AUMENTADO: Bônus maior para símbolos favoritos do ML
+              sellScore += 15;
               confirmations.push('🧠 ML Best Symbol');
             }
             
@@ -877,17 +887,16 @@ export const MultiAssetTrader = () => {
             const bestHours = patterns.bestHours || [];
             const currentHour = new Date().getUTCHours();
             if (bestHours.includes(currentHour)) {
-              buyScore += 8;
-              sellScore += 8;
+              buyScore += 12; // 🔥 AUMENTADO
+              sellScore += 12;
               confirmations.push('⏰ ML Best Hour');
             }
             
             console.log(`🧠 ML ATIVO: Threshold ${scoreThreshold} | Conf ${mlConfig.confidence_score}%`);
           }
           
-          // 🛡️ FILTRO DE DIREÇÃO: Não entrar contra tendência forte
-          const trendAlignment = (action === 'BUY' && priceChange > 0) || (action === 'SELL' && priceChange < 0);
-          const strongCounterTrend = (buyScore > sellScore && priceChange < -3) || (sellScore > buyScore && priceChange > 3);
+          // 🛡️ FILTRO DE DIREÇÃO: Não entrar contra tendência MUITO forte (relaxado)
+          const strongCounterTrend = (buyScore > sellScore && priceChange < -5) || (sellScore > buyScore && priceChange > 5);
           
           if (buyScore > sellScore && buyScore >= scoreThreshold && !strongCounterTrend) {
             action = 'BUY';
@@ -897,23 +906,23 @@ export const MultiAssetTrader = () => {
             signalScore = sellScore;
           }
           
-          // 7. CRITÉRIOS DE QUALIDADE - FILTROS MAIS RIGOROSOS
-          const volumeCheck = volume24h > 500000; // 🎯 $500K+ volume mínimo
-          const volatilityCheck = volatility > 0.5 && volatility < 15; // 🎯 0.5%-15% range ideal
-          const atrMinCheck = atrPercent > 0.5 && atrPercent < 20; // 🎯 ATR entre 0.5% e 20%
+          // 7. CRITÉRIOS DE QUALIDADE - FILTROS RELAXADOS
+          const volumeCheck = volume24h > 200000; // 🔥 REDUZIDO de $500K para $200K
+          const volatilityCheck = volatility > 0.3 && volatility < 20; // 🔥 RELAXADO: 0.3%-20%
+          const atrMinCheck = atrPercent > 0.3 && atrPercent < 25; // 🔥 RELAXADO: ATR 0.3%-25%
           
-          // 🛡️ FILTRO DE RUÍDO: Evitar entrar em movimentos muito pequenos ou muito grandes
-          const priceMovementOk = Math.abs(priceChange) > 0.3 && Math.abs(priceChange) < 12;
+          // 🛡️ FILTRO DE RUÍDO: Evitar movimentos extremos apenas
+          const priceMovementOk = Math.abs(priceChange) >= 0.2 && Math.abs(priceChange) < 15; // 🔥 RELAXADO
           
-          // 🎯 CONFIRMAÇÃO DE TENDÊNCIA: Score deve ser significativamente maior
-          const hasStrongSignal = Math.abs(buyScore - sellScore) >= 15;
+          // 🎯 CONFIRMAÇÃO DE TENDÊNCIA: Score deve ser maior (relaxado)
+          const hasStrongSignal = Math.abs(buyScore - sellScore) >= 8; // 🔥 REDUZIDO de 15 para 8
           
           const shouldTrade = (
             signalScore >= scoreThreshold &&
             volumeCheck &&
             volatilityCheck &&
             action !== null &&
-            currentBalance > 2 && // 🎯 $2 mínimo
+            currentBalance > 1 && // 🔥 REDUZIDO: $1 mínimo
             atrMinCheck &&
             priceMovementOk &&
             hasStrongSignal &&
@@ -926,16 +935,19 @@ export const MultiAssetTrader = () => {
             const status = shouldTrade ? '✅' : '⏭️';
             let skipReason = '';
             if (!shouldTrade) {
-              if (signalScore < scoreThreshold) skipReason = `Score baixo: ${signalScore}/${scoreThreshold}`;
-              else if (!volumeCheck) skipReason = `Vol: $${(volume24h/1e6).toFixed(1)}M < $0.05M`;
-              else if (!volatilityCheck) skipReason = `Vol%: ${volatility.toFixed(2)}% < 0.3%`;
-              else if (!atrMinCheck) skipReason = `ATR: ${atrPercent.toFixed(2)}% < 0.3%`;
-              else if (atrPercent >= 25) skipReason = `ATR alto: ${atrPercent.toFixed(2)}%`;
-              else if (action === null) skipReason = 'Sem sinal';
-              else if (currentBalance <= 2) skipReason = 'Saldo baixo';
+              if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
+              else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/8`;
+              else if (!volumeCheck) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.2M`;
+              else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 0.3-20%`;
+              else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.3-25%`;
+              else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.2-15%`;
+              else if (action === null) skipReason = 'Sem ação definida';
+              else if (currentBalance <= 1) skipReason = `Saldo $${currentBalance.toFixed(2)} < $1`;
+              else if (confirmations.length < minConfirmations) skipReason = `Conf ${confirmations.length}/${minConfirmations}`;
+              else skipReason = 'Outro filtro';
             }
             
-            console.log(`${status} ${assetBadge} ${symbol}: BUY=${buyScore} SELL=${sellScore} | ${action || 'NONE'} (${signalScore}) | Vol=${volatility.toFixed(2)}% | $${(volume24h/1e6).toFixed(1)}M | ATR=${atrPercent.toFixed(2)}% ${skipReason ? `| ❌ ${skipReason}` : ''}`);
+            console.log(`${status} ${assetBadge} ${symbol}: BUY=${buyScore} SELL=${sellScore} | ${action || 'NONE'} | Vol=${volatility.toFixed(2)}% | $${(volume24h/1e6).toFixed(2)}M | ATR=${atrPercent.toFixed(2)}% | Move=${priceChange.toFixed(2)}% ${skipReason ? `| ❌ ${skipReason}` : ''}`);
           }
           
           // 📊 LOG DE SINAIS
