@@ -177,23 +177,19 @@ export const useSignalAnalysis = () => {
       signalScore = sellScore;
     }
     
-    // Critérios de qualidade - MAIS RELAXADOS para maior atividade
-    const volumeCheck = volume24h > 50000; // Reduzido de 200k
-    const volatilityCheck = volatility > 0.1 && volatility < 25; // Mais permissivo
-    const atrMinCheck = atrPercent > 0.1 && atrPercent < 30; // Mais permissivo
-    const priceMovementOk = Math.abs(priceChange) >= 0.1 && Math.abs(priceChange) < 20; // Mais permissivo
-    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 5; // Reduzido de 8
+    // Critérios ULTRA RELAXADOS para máxima atividade
+    const volumeCheck = volume24h > 10000; // Mínimo $10k volume
+    const volatilityCheck = volatility > 0.05 && volatility < 50; // Quase sem restrição
+    const atrMinCheck = atrPercent > 0.01 && atrPercent < 50; // Quase sem restrição
+    const priceMovementOk = Math.abs(priceChange) < 50; // Só bloqueia movimentos extremos
+    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 3; // Mínimo 3 pontos diferença
     
     const shouldTrade = (
       signalScore >= scoreThreshold &&
-      volumeCheck &&
-      volatilityCheck &&
       action !== null &&
-      currentBalance > 0.5 && // Reduzido de 1
-      atrMinCheck &&
-      priceMovementOk &&
-      hasStrongSignal &&
+      currentBalance > 0.1 && // Mínimo $0.10
       confirmations.length >= minConfirmations
+      // Removidos: volumeCheck, volatilityCheck, atrMinCheck, priceMovementOk, hasStrongSignal
     );
 
     // Determinar razão do skip
