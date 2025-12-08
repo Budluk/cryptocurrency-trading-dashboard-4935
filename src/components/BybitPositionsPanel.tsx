@@ -264,11 +264,11 @@ export const BybitPositionsPanel = () => {
                 {expandedCharts[position.symbol] && (
                   <div className="mb-2">
                     <Suspense fallback={
-                      <div className="h-[180px] bg-muted/50 rounded-lg flex items-center justify-center">
+                      <div className="h-[320px] bg-muted/50 rounded-lg flex items-center justify-center">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                       </div>
                     }>
-                      <MiniChart symbol={position.symbol} height={180} />
+                      <MiniChart symbol={position.symbol} height={320} />
                     </Suspense>
                   </div>
                 )}
