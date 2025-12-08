@@ -284,12 +284,13 @@ export const MultiAssetTrader = () => {
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
           // ML nas decisões
-          let scoreThreshold = 40;
+          // Score mais agressivo para entrar em mais operações
+          let scoreThreshold = 35; // Reduzido de 40
           let minConfirmations = 1;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const confidence = mlConfig.confidence_score || 50;
-            scoreThreshold = Math.max(50, Math.min(60, Math.floor(50 + (confidence - 50) / 5)));
+            scoreThreshold = Math.max(35, Math.min(50, Math.floor(40 + (confidence - 50) / 10))); // Mais permissivo
             const patterns = mlConfig.optimal_patterns || {};
             if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 10;
             const currentHour = new Date().getUTCHours();
