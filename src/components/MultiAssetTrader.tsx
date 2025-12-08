@@ -57,7 +57,6 @@ export const MultiAssetTrader = () => {
   const lastClosedPositionsRef = useRef<string[]>([]);
 
   // Configurações
-  const DAILY_STOP_LOSS_PCT = 0.30;
   const [maxOpenPositions, setMaxOpenPositions] = useState(200);
   const MAX_CONSECUTIVE_LOSSES = 10;
   const [historicalWinRate, setHistoricalWinRate] = useState(50);
@@ -219,12 +218,6 @@ export const MultiAssetTrader = () => {
       await fetchTop10VolatileAssets();
 
       // Verificar proteções
-      if (dailyPnL <= -currentBalance * DAILY_STOP_LOSS_PCT) {
-        toast({ title: "🛑 Stop Loss Diário Atingido", variant: "destructive" });
-        setIsRunning(false);
-        return;
-      }
-
       if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
         toast({ title: "⚠️ Sequência de Perdas", variant: "destructive" });
         setIsRunning(false);
@@ -698,12 +691,7 @@ export const MultiAssetTrader = () => {
         </div>
 
         {/* Proteções */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <div className="text-xs font-medium mb-1">🛡️ Stop Loss Diário</div>
-            <div className="text-sm">{(DAILY_STOP_LOSS_PCT * 100).toFixed(0)}% = ${(currentBalance * DAILY_STOP_LOSS_PCT).toFixed(2)}</div>
-          </div>
-          
+        <div className="grid grid-cols-1 gap-3 mb-4">
           <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <div className="text-xs font-medium mb-1">📊 Posições Max</div>
             <div className="flex items-center gap-2">
