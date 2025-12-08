@@ -177,19 +177,19 @@ export const useSignalAnalysis = () => {
       signalScore = sellScore;
     }
     
-    // Critérios de qualidade
-    const volumeCheck = volume24h > 200000;
-    const volatilityCheck = volatility > 0.3 && volatility < 20;
-    const atrMinCheck = atrPercent > 0.3 && atrPercent < 25;
-    const priceMovementOk = Math.abs(priceChange) >= 0.2 && Math.abs(priceChange) < 15;
-    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 8;
+    // Critérios de qualidade - MAIS RELAXADOS para maior atividade
+    const volumeCheck = volume24h > 50000; // Reduzido de 200k
+    const volatilityCheck = volatility > 0.1 && volatility < 25; // Mais permissivo
+    const atrMinCheck = atrPercent > 0.1 && atrPercent < 30; // Mais permissivo
+    const priceMovementOk = Math.abs(priceChange) >= 0.1 && Math.abs(priceChange) < 20; // Mais permissivo
+    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 5; // Reduzido de 8
     
     const shouldTrade = (
       signalScore >= scoreThreshold &&
       volumeCheck &&
       volatilityCheck &&
       action !== null &&
-      currentBalance > 1 &&
+      currentBalance > 0.5 && // Reduzido de 1
       atrMinCheck &&
       priceMovementOk &&
       hasStrongSignal &&
