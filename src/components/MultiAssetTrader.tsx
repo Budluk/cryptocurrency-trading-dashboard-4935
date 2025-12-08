@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -601,17 +601,26 @@ export const MultiAssetTrader = () => {
   return (
     <div className="space-y-4">
       <Card className="p-6 bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-purple-500/20">
+        {/* Header com 24/7 Badge */}
         <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-2xl font-bold flex items-center gap-2">
-              <Zap className="h-6 w-6 text-yellow-500" />
-              Multi-Asset Trader 24/7
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">Estratégia com alavancagem dinâmica</p>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30">
+                <Zap className="h-7 w-7 text-yellow-500" />
+              </div>
+              <div className="absolute -top-1 -right-1 flex items-center gap-0.5 bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
+                <Clock className="h-2.5 w-2.5" />
+                24/7
+              </div>
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold">Multi-Asset Trader</h3>
+              <p className="text-sm text-muted-foreground">Estratégia com IA e alavancagem dinâmica</p>
+            </div>
           </div>
           
           <div className="flex items-center gap-2">
-            <Badge variant={isTestnet ? "outline" : "destructive"} className="text-lg px-4 py-2 animate-pulse">
+            <Badge variant={isTestnet ? "outline" : "destructive"} className="text-sm px-3 py-1.5 animate-pulse">
               {isTestnet ? '🧪 TESTNET' : '⚡ CONTA REAL'}
             </Badge>
             <Badge 
@@ -624,20 +633,41 @@ export const MultiAssetTrader = () => {
           </div>
         </div>
 
-        {/* Status Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <Card className="p-4 bg-background/50">
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign className="h-4 w-4 text-green-500" />
-              <span className="text-xs text-muted-foreground">Saldo Real</span>
+        {/* Saldo Real em Destaque */}
+        <Card className="p-5 mb-6 bg-gradient-to-br from-green-500/15 to-emerald-500/10 border-green-500/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-green-500/20">
+                <Wallet className="h-8 w-8 text-green-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground font-medium">Saldo Total da Banca</span>
+                  <Badge className="bg-green-500/20 text-green-400 border-0 text-[10px]">
+                    AO VIVO
+                  </Badge>
+                </div>
+                <div className="text-4xl font-bold text-green-400 font-mono tracking-tight">
+                  ${currentBalance.toFixed(2)}
+                </div>
+                {lastSyncTime && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Última atualização: {lastSyncTime.toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="text-xl font-bold">${currentBalance.toFixed(2)}</div>
-            <div className={`text-xs ${dailyPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              Hoje: {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)}
+            <div className="text-right">
+              <div className="text-xs text-muted-foreground mb-1">P&L Hoje</div>
+              <div className={`text-2xl font-bold font-mono ${dailyPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)}
+              </div>
             </div>
-            {lastSyncTime && <div className="text-[10px] text-muted-foreground mt-1">Sync: {lastSyncTime.toLocaleTimeString()}</div>}
-          </Card>
+          </div>
+        </Card>
 
+        {/* Status Cards */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
           <Card className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="h-4 w-4 text-blue-500" />
