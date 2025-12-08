@@ -477,16 +477,20 @@ export const MultiAssetTrader = () => {
     }
   };
 
-  // Loop principal
+  // Loop principal - otimizado com intervalos maiores
   useEffect(() => {
     if (!isRunning) return;
     
+    // Executar imediatamente
     analyzeAndTrade();
+    
+    // Intervalo principal: 45s (era 30s)
     const interval = setInterval(() => {
       if (isRunning) analyzeAndTrade();
-    }, 30000);
+    }, 45000);
 
-    const exitInterval = setInterval(updateSmartExits, 15000);
+    // Smart exits: 30s (era 15s)
+    const exitInterval = setInterval(updateSmartExits, 30000);
     
     return () => {
       clearInterval(interval);
@@ -557,7 +561,8 @@ export const MultiAssetTrader = () => {
       }
     };
     
-    const interval = setInterval(monitorPyramiding, 30000);
+    // Pyramiding: 60s (era 30s)
+    const interval = setInterval(monitorPyramiding, 60000);
     return () => clearInterval(interval);
   }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
 
