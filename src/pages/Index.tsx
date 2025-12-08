@@ -24,7 +24,7 @@ import SmartAlerts from "@/components/SmartAlerts";
 
 const Index = () => {
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
+    <div className="min-h-screen bg-background relative">
       {/* Background Effects */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px] animate-float" />
@@ -32,7 +32,7 @@ const Index = () => {
         <div className="absolute top-1/2 left-0 w-[300px] h-[300px] bg-success/3 rounded-full blur-[80px]" />
       </div>
       
-      <ScrollArea className="h-screen relative z-10">
+      <div className="relative z-10 overflow-y-auto h-screen">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           {/* Header */}
           <header className="mb-8 sm:mb-10">
@@ -140,7 +140,7 @@ const Index = () => {
           {/* Footer Spacing */}
           <div className="h-8" />
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 };
