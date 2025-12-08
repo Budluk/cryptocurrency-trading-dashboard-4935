@@ -323,19 +323,21 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // Calcular tamanho da posição - CONSERVADOR para evitar "not enough balance"
-          const FEE_BUFFER = 0.02; // 2% buffer para fees
-          const safeBalance = Math.max(0, currentBalance * 0.80); // Usa só 80% do saldo
-          const baseAllocation = 0.30; // Reduzido para evitar margem insuficiente
-          const maxMarginPerTrade = safeBalance * baseAllocation;
-          const positionValue = maxMarginPerTrade * leverage;
-          let usdSize = Math.min(positionValue, 100); // Máximo $100 por trade
-
-          // Martingale
-          if (martingaleEnabled && lossStreak >= 2) {
-            const multiplier = Math.min(Math.pow(2, lossStreak - 1), 2);
-            usdSize *= multiplier;
+          // VERIFICAR SALDO PRIMEIRO antes de calcular posição
+          const { data: balanceCheck } = await supabase.functions.invoke('bybit-trading', {
+            body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
+          });
+          
+          const freshBalance = parseFloat(balanceCheck?.data?.list?.[0]?.totalAvailableBalance || '0');
+          if (freshBalance < 2) {
+            console.log(`⚠️ Saldo muito baixo: $${freshBalance.toFixed(2)}`);
+            continue;
           }
+
+          // Calcular tamanho ULTRA CONSERVADOR
+          const maxMarginPerTrade = freshBalance * 0.15; // Só 15% do saldo por trade
+          const positionValue = maxMarginPerTrade * leverage;
+          let usdSize = Math.min(positionValue, 50); // Máximo $50 por trade
 
           // Calcular quantidade
           const lotSizeFilter = instrument.lotSizeFilter || {};
@@ -347,36 +349,21 @@ export const MultiAssetTrader = () => {
             usdSize, currentPrice, leverage, minOrderQty, qtyStep, maxOrderQty
           );
 
-          // Verificar se margem requerida não excede saldo disponível
-          const requiredMarginCheck = parseFloat(orderValueUSD) / leverage;
-          if (requiredMarginCheck > safeBalance * 0.5) continue; // Skip se precisar mais de 50% do saldo seguro
+          // Verificar margem requerida vs saldo disponível
+          const requiredMargin = (parseFloat(orderValueUSD) / leverage) * 1.05; // 5% buffer fees
+          if (requiredMargin > freshBalance * 0.5) {
+            console.log(`⚠️ Margem ${requiredMargin.toFixed(2)} > 50% saldo ${freshBalance.toFixed(2)}`);
+            continue;
+          }
 
           if (parseFloat(orderValueUSD) < 5) continue;
 
           // Calcular SL/TP
           const priceRange = highPrice - lowPrice;
           const atrPercent = (priceRange / currentPrice) * 100;
-          const { stopLoss, takeProfit, stopLossPct, takeProfitPct } = calculateStopTakeProfit(
+          const { stopLoss, takeProfit } = calculateStopTakeProfit(
             currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig
           );
-
-          // Verificar saldo
-          const { data: balanceCheck } = await supabase.functions.invoke('bybit-trading', {
-            body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
-          });
-          
-          const freshBalance = parseFloat(balanceCheck?.data?.list?.[0]?.totalAvailableBalance || '0');
-          const requiredMargin = (parseFloat(orderValueUSD) / leverage) * (1 + FEE_BUFFER);
-
-          if (freshBalance < 0 || freshBalance < requiredMargin + 0.5) {
-            if (freshBalance < 0) {
-              setIsRunning(false);
-              shouldStopTrading = true;
-              toast({ title: "🛑 Trader Pausado", description: "Saldo negativo", variant: "destructive" });
-              break;
-            }
-            continue;
-          }
 
           // Configurar alavancagem
           let finalLeverage = leverage;
