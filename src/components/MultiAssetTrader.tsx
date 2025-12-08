@@ -323,16 +323,17 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // Calcular tamanho da posição
-          const FEE_BUFFER = 0.001;
-          const safeBalance = Math.max(0, currentBalance - 0.5);
-          const baseAllocation = currentBalance < 5 ? 0.70 : (isScalpAsset ? 0.80 : 0.65);
-          const positionValue = safeBalance * baseAllocation * leverage;
-          let usdSize = positionValue;
+          // Calcular tamanho da posição - CONSERVADOR para evitar "not enough balance"
+          const FEE_BUFFER = 0.02; // 2% buffer para fees
+          const safeBalance = Math.max(0, currentBalance * 0.80); // Usa só 80% do saldo
+          const baseAllocation = 0.30; // Reduzido para evitar margem insuficiente
+          const maxMarginPerTrade = safeBalance * baseAllocation;
+          const positionValue = maxMarginPerTrade * leverage;
+          let usdSize = Math.min(positionValue, 100); // Máximo $100 por trade
 
           // Martingale
           if (martingaleEnabled && lossStreak >= 2) {
-            const multiplier = Math.min(Math.pow(2, lossStreak - 1), 3);
+            const multiplier = Math.min(Math.pow(2, lossStreak - 1), 2);
             usdSize *= multiplier;
           }
 
@@ -345,6 +346,10 @@ export const MultiAssetTrader = () => {
           const { qty, qtyStr, orderValueUSD } = calculateValidQuantity(
             usdSize, currentPrice, leverage, minOrderQty, qtyStep, maxOrderQty
           );
+
+          // Verificar se margem requerida não excede saldo disponível
+          const requiredMarginCheck = parseFloat(orderValueUSD) / leverage;
+          if (requiredMarginCheck > safeBalance * 0.5) continue; // Skip se precisar mais de 50% do saldo seguro
 
           if (parseFloat(orderValueUSD) < 5) continue;
 
