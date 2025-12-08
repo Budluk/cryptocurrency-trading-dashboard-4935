@@ -6,7 +6,7 @@ interface MiniChartProps {
   height?: number;
 }
 
-const MiniChart = ({ symbol, height = 200 }: MiniChartProps) => {
+const MiniChart = ({ symbol, height = 250 }: MiniChartProps) => {
   // State para forçar remount quando símbolo mudar
   const [key, setKey] = useState(`${symbol}_${Date.now()}`);
   
@@ -22,24 +22,25 @@ const MiniChart = ({ symbol, height = 200 }: MiniChartProps) => {
     <div 
       key={key}
       style={{ height: `${height}px` }} 
-      className="w-full rounded-lg overflow-hidden border border-border"
+      className="w-full rounded-lg overflow-hidden border border-border bg-background"
     >
       <TradingViewWidget
         symbol={tvSymbol}
         theme="Dark"
         locale="pt_BR"
         autosize
-        hide_side_toolbar={true}
-        allow_symbol_change={false}
+        hide_side_toolbar={false}
+        allow_symbol_change={true}
         interval="5"
-        toolbar_bg="#0a0a0a"
+        toolbar_bg="#1a1a2e"
         enable_publishing={false}
-        hide_top_toolbar={true}
+        hide_top_toolbar={false}
         save_image={false}
         container_id={`chart_${symbol}_${key}`}
-        withdateranges={false}
-        hide_legend={true}
+        withdateranges={true}
+        hide_legend={false}
         style="1"
+        studies={["RSI@tv-basicstudies"]}
       />
     </div>
   );
