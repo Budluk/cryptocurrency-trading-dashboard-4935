@@ -15,7 +15,7 @@ import {
   LazyPortfolioRebalancer,
   LazyOrderFlowDashboard,
   LazyTrailingStopVisual,
-  LazyRiskManagementPanel,
+  
   LazyAutoTraderSettings,
   LazyMLAdaptiveSettings,
   LazyTraderProfileSettings,
@@ -106,7 +106,6 @@ const Index = () => {
                   <LazyTrailingStopVisual />
                 </div>
                 <div className="space-y-6">
-                  <LazyRiskManagementPanel />
                   <LazyAdvancedAISignals />
                 </div>
               </div>

@@ -11,7 +11,7 @@ const SentimentDashboard = lazy(() => import("@/components/SentimentDashboard").
 const PortfolioRebalancer = lazy(() => import("@/components/PortfolioRebalancer").then(m => ({ default: m.PortfolioRebalancer })));
 const OrderFlowDashboard = lazy(() => import("@/components/OrderFlowDashboard").then(m => ({ default: m.OrderFlowDashboard })));
 const TrailingStopVisual = lazy(() => import("@/components/TrailingStopVisual").then(m => ({ default: m.TrailingStopVisual })));
-const RiskManagementPanel = lazy(() => import("@/components/RiskManagementPanel").then(m => ({ default: m.RiskManagementPanel })));
+
 const AutoTraderSettings = lazy(() => import("@/components/AutoTraderSettings").then(m => ({ default: m.AutoTraderSettings })));
 const MLAdaptiveSettings = lazy(() => import("@/components/MLAdaptiveSettings").then(m => ({ default: m.MLAdaptiveSettings })));
 const TraderProfileSettings = lazy(() => import("@/components/TraderProfileSettings").then(m => ({ default: m.TraderProfileSettings })));
@@ -72,11 +72,6 @@ export const LazyTrailingStopVisual = () => (
   </Suspense>
 );
 
-export const LazyRiskManagementPanel = () => (
-  <Suspense fallback={<ComponentSkeleton />}>
-    <RiskManagementPanel />
-  </Suspense>
-);
 
 export const LazyAutoTraderSettings = () => (
   <Suspense fallback={<ComponentSkeleton />}>
