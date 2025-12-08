@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -12,6 +12,7 @@ import { useContinuousMLTraining } from "@/hooks/useContinuousMLTraining";
 import { useTradingCalculations } from "@/hooks/useTradingCalculations";
 import { useBybitSync } from "@/hooks/useBybitSync";
 import { useSignalAnalysis } from "@/hooks/useSignalAnalysis";
+import { useLosingPatternBlocker } from "@/hooks/useLosingPatternBlocker";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
@@ -50,6 +51,7 @@ export const MultiAssetTrader = () => {
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
   const { analyzeSignal } = useSignalAnalysis();
+  const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount } = useLosingPatternBlocker();
   
   const lastMLCheck = useRef<number>(0);
   const lastClosedPositionsRef = useRef<string[]>([]);
@@ -99,6 +101,7 @@ export const MultiAssetTrader = () => {
       if (newClosed.length > 0) {
         console.log(`📚 ${newClosed.length} novos trades para treinamento ML`);
         for (const trade of newClosed) {
+          // Registrar no buffer de ML
           addTradeToBuffer({
             symbol: trade.symbol,
             side: trade.side,
@@ -112,6 +115,14 @@ export const MultiAssetTrader = () => {
             opened_at: trade.opened_at,
             closed_at: trade.closed_at || new Date().toISOString(),
           });
+          
+          // 🚫 Registrar resultado para bloqueio de padrão perdedor
+          recordTradeResult(
+            trade.symbol,
+            trade.side,
+            trade.leverage || 10,
+            trade.realized_pnl || 0
+          );
         }
       }
 
@@ -292,14 +303,7 @@ export const MultiAssetTrader = () => {
 
           if (!analysisResult.shouldTrade || !analysisResult.action) continue;
 
-          // Verificar correlação
-          const correlationCheck = checkNewPosition(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell');
-          if (!correlationCheck.allowed) {
-            console.log(`🚫 ${symbol}: ${correlationCheck.reason}`);
-            continue;
-          }
-
-          // Calcular alavancagem
+          // Calcular alavancagem antes de verificar padrão
           const maxLeverageInstrument = parseFloat(instrument.leverageFilter?.maxLeverage || '25');
           let dynamicLeverage = isScalpAsset
             ? Math.min(getLeverageForScalping(volatility), maxLeverageInstrument)
@@ -310,6 +314,20 @@ export const MultiAssetTrader = () => {
           }
           
           const leverage = Math.floor(dynamicLeverage);
+
+          // 🚫 Verificar padrão perdedor ANTES de entrar
+          const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
+          if (patternCheck.blocked) {
+            console.log(`🚫 BLOQUEADO: ${symbol} - ${patternCheck.reason}`);
+            continue;
+          }
+
+          // Verificar correlação
+          const correlationCheck = checkNewPosition(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell');
+          if (!correlationCheck.allowed) {
+            console.log(`🚫 ${symbol}: ${correlationCheck.reason}`);
+            continue;
+          }
 
           // Calcular tamanho da posição
           const FEE_BUFFER = 0.001;
@@ -753,6 +771,52 @@ export const MultiAssetTrader = () => {
               <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Pyram</div><div className="font-bold text-yellow-400">{mlConfig.optimal_patterns?.pyramiding?.maxLevels || 2}x</div></div>
             </div>
           )}
+        </Card>
+
+        {/* 🚫 Bloqueio de Padrões Perdedores */}
+        <Card className="p-4 bg-gradient-to-br from-red-500/10 to-orange-500/10 border-red-500/20 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-red-400" />
+              <span className="text-sm font-medium">Bloqueio de Padrões</span>
+            </div>
+            {blockedCount > 0 && (
+              <Badge variant="destructive" className="text-xs">
+                {blockedCount} bloqueados
+              </Badge>
+            )}
+          </div>
+          
+          <p className="text-xs text-muted-foreground mb-3">
+            Bloqueia automaticamente símbolos, horários e alavancagens que geram perdas consecutivas.
+          </p>
+
+          {(() => {
+            const stats = getBlockedStats();
+            return (
+              <div className="space-y-2 text-xs">
+                {stats.blockedSymbols.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-muted-foreground">Símbolos:</span>
+                    {stats.blockedSymbols.map(s => (
+                      <Badge key={s} variant="outline" className="text-red-400 border-red-500/30">{s}</Badge>
+                    ))}
+                  </div>
+                )}
+                {stats.blockedHours.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-muted-foreground">Horários:</span>
+                    {stats.blockedHours.map(h => (
+                      <Badge key={h} variant="outline" className="text-orange-400 border-orange-500/30">{h}:00 UTC</Badge>
+                    ))}
+                  </div>
+                )}
+                {stats.totalBlocked === 0 && (
+                  <p className="text-green-400">✓ Nenhum padrão bloqueado</p>
+                )}
+              </div>
+            );
+          })()}
         </Card>
 
         {/* Gestão de Saídas */}
