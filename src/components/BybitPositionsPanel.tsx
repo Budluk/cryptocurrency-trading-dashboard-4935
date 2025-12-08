@@ -50,12 +50,38 @@ export const BybitPositionsPanel = () => {
       const positions = data.data?.list || [];
       return positions.filter((p: any) => parseFloat(p.size || 0) > 0);
     },
-    refetchInterval: 10000, // Aumentado de 5s para 10s
-    staleTime: 8000, // Aumentado de 3s para 8s
-    gcTime: 120000, // Aumentado de 60s para 120s
-    refetchOnWindowFocus: false, // Desativado para evitar re-fetches desnecessários
-    refetchOnMount: false, // Desativado - só refetch quando necessário
+    refetchInterval: 10000,
+    staleTime: 8000,
+    gcTime: 120000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
+
+  const { data: balanceData } = useQuery({
+    queryKey: ['bybit-balance'],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_balance',
+          isTestnet: false,
+          params: { accountType: 'UNIFIED' }
+        }
+      });
+
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Erro ao buscar saldo');
+
+      return data.data?.list?.[0] || null;
+    },
+    refetchInterval: 15000,
+    staleTime: 10000,
+    gcTime: 120000,
+    refetchOnWindowFocus: false,
+  });
+
+  const totalEquity = parseFloat(balanceData?.totalEquity || '0');
+  const totalWalletBalance = parseFloat(balanceData?.totalWalletBalance || '0');
+  const totalAvailableBalance = parseFloat(balanceData?.totalAvailableBalance || '0');
 
   const totalPnL = positions?.reduce((sum: number, p: any) => 
     sum + parseFloat(p.unrealisedPnl || 0), 0) || 0;
@@ -153,6 +179,26 @@ export const BybitPositionsPanel = () => {
 
   return (
     <Card className="p-3 sm:p-4 md:p-6">
+      {/* Saldo Total Bybit */}
+      <div className="mb-4 p-3 bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg border border-primary/20">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs text-muted-foreground">Saldo Total Bybit</p>
+            <p className="text-xl sm:text-2xl font-bold text-primary">${totalEquity.toFixed(2)}</p>
+          </div>
+          <div className="flex gap-4 text-xs sm:text-sm">
+            <div>
+              <p className="text-muted-foreground">Carteira</p>
+              <p className="font-semibold">${totalWalletBalance.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Disponível</p>
+              <p className="font-semibold text-green-500">${totalAvailableBalance.toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div>
           <h3 className="text-base sm:text-lg md:text-xl font-bold">🔴 Posições na Bybit (Tempo Real)</h3>
