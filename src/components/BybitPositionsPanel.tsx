@@ -260,15 +260,23 @@ export const BybitPositionsPanel = () => {
                   </div>
                 </div>
 
-                {/* Mini Chart - Estável */}
+                {/* Mini Chart Bybit com preços */}
                 {expandedCharts[position.symbol] && (
                   <div className="mb-2">
                     <Suspense fallback={
-                      <div className="h-[320px] bg-muted/50 rounded-lg flex items-center justify-center">
+                      <div className="h-[280px] bg-muted/50 rounded-lg flex items-center justify-center">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                       </div>
                     }>
-                      <MiniChart symbol={position.symbol} height={320} />
+                      <MiniChart 
+                        symbol={position.symbol} 
+                        height={280}
+                        entryPrice={parseFloat(position.avgPrice)}
+                        currentPrice={parseFloat(position.markPrice)}
+                        stopLoss={position.stopLoss ? parseFloat(position.stopLoss) : undefined}
+                        takeProfit={position.takeProfit ? parseFloat(position.takeProfit) : undefined}
+                        side={position.side}
+                      />
                     </Suspense>
                   </div>
                 )}
