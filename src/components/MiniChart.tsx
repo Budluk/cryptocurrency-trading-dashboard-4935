@@ -1,26 +1,18 @@
 import TradingViewWidget from 'react-tradingview-widget';
-import { useEffect, useState } from 'react';
+import { memo } from 'react';
 
 interface MiniChartProps {
   symbol: string;
   height?: number;
 }
 
-const MiniChart = ({ symbol, height = 250 }: MiniChartProps) => {
-  // State para forçar remount quando símbolo mudar
-  const [key, setKey] = useState(`${symbol}_${Date.now()}`);
-  
-  // Forçar remount do widget quando o símbolo mudar
-  useEffect(() => {
-    setKey(`${symbol}_${Date.now()}`);
-  }, [symbol]);
-  
+// Memo com comparação por symbol para evitar re-renders desnecessários
+const MiniChart = memo(({ symbol, height = 220 }: MiniChartProps) => {
   // Converte símbolo Bybit para TradingView (ex: BTCUSDT -> BINANCE:BTCUSDT)
   const tvSymbol = `BINANCE:${symbol}`;
   
   return (
     <div 
-      key={key}
       style={{ height: `${height}px` }} 
       className="w-full rounded-lg overflow-hidden border border-border bg-background"
     >
@@ -36,15 +28,14 @@ const MiniChart = ({ symbol, height = 250 }: MiniChartProps) => {
         enable_publishing={false}
         hide_top_toolbar={false}
         save_image={false}
-        container_id={`chart_${symbol}_${key}`}
+        container_id={`tv_chart_${symbol}`}
         withdateranges={true}
         hide_legend={false}
         style="1"
-        studies={["RSI@tv-basicstudies"]}
       />
     </div>
   );
-};
+}, (prevProps, nextProps) => prevProps.symbol === nextProps.symbol && prevProps.height === nextProps.height);
 
 MiniChart.displayName = 'MiniChart';
 
