@@ -1,7 +1,7 @@
 import { useMemo, memo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, DollarSign, Calendar } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Calendar, Activity, BarChart3 } from "lucide-react";
 import { usePositions } from "@/contexts/PositionsContext";
 
 export const DailyPnLSummary = memo(() => {
@@ -11,7 +11,6 @@ export const DailyPnLSummary = memo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Posições fechadas hoje
     const closedToday = closedPositions.filter(p => 
       p.closed_at && new Date(p.closed_at) >= today
     );
@@ -19,11 +18,8 @@ export const DailyPnLSummary = memo(() => {
     const dailyRealized = closedToday.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
     const currentUnrealized = openPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
     const partialRealized = openPositions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
-
-    // P&L Total de Hoje
     const dailyTotal = dailyRealized + partialRealized + currentUnrealized;
 
-    // P&L Total (últimos 30 dias)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -38,99 +34,107 @@ export const DailyPnLSummary = memo(() => {
       dailyTotal,
       currentUnrealized,
       totalRealized: totalRealized + currentUnrealized,
+      openCount: openPositions.length,
+      closedTodayCount: closedToday.length,
     };
   }, [openPositions, closedPositions]);
 
-  const getDailyColor = (value: number) => {
-    return value > 0 ? 'text-green-500' : value < 0 ? 'text-red-500' : 'text-muted-foreground';
+  const formatValue = (value: number) => {
+    const prefix = value >= 0 ? '+' : '';
+    return `${prefix}$${Math.abs(value).toFixed(2)}`;
   };
 
-  const getDailyBg = (value: number) => {
-    return value > 0 
-      ? 'bg-gradient-to-br from-success/20 to-success/5 border-success/40 shadow-lg shadow-success/20' 
-      : value < 0 
-      ? 'bg-gradient-to-br from-destructive/20 to-destructive/5 border-destructive/40 shadow-lg shadow-destructive/20' 
-      : 'bg-gradient-to-br from-card to-card/80 border-border/50';
+  const getColorClass = (value: number) => {
+    if (value > 0) return 'text-success';
+    if (value < 0) return 'text-destructive';
+    return 'text-muted-foreground';
+  };
+
+  const getIconBgClass = (value: number) => {
+    if (value > 0) return 'bg-success/15 text-success';
+    if (value < 0) return 'bg-destructive/15 text-destructive';
+    return 'bg-muted/30 text-muted-foreground';
   };
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {/* P&L Diário Total */}
-      <Card className={`p-3 sm:p-4 md:p-6 border-2 ${getDailyBg(pnlData?.dailyTotal || 0)} backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated`}>
-        <div className="flex items-center justify-between mb-1 sm:mb-2">
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
-            <span className="text-xs sm:text-sm font-medium text-muted-foreground">P&L Hoje</span>
+      <Card className="stat-card group">
+        <div className="flex items-start justify-between mb-4">
+          <div className={`p-2.5 rounded-xl ${getIconBgClass(pnlData.dailyTotal)} transition-colors`}>
+            <Calendar className="h-5 w-5" />
           </div>
-          {(pnlData?.dailyTotal || 0) > 0 ? (
-            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-green-500" />
-          ) : (
-            <TrendingDown className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
+          {pnlData.dailyTotal !== 0 && (
+            <div className={`flex items-center gap-1 text-xs font-medium ${getColorClass(pnlData.dailyTotal)}`}>
+              {pnlData.dailyTotal > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+              <span>{pnlData.dailyTotal > 0 ? 'Lucro' : 'Perda'}</span>
+            </div>
           )}
         </div>
-        <p className={`text-lg sm:text-xl md:text-2xl font-bold ${getDailyColor(pnlData?.dailyTotal || 0)}`}>
-          {(pnlData?.dailyTotal || 0) >= 0 ? '+' : ''}${(pnlData?.dailyTotal || 0).toFixed(2)}
-        </p>
-        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1 hidden sm:block">
-          Realizado + Não Realizado
-        </p>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">P&L Hoje</p>
+          <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(pnlData.dailyTotal)}`}>
+            {formatValue(pnlData.dailyTotal)}
+          </p>
+          <p className="text-xs text-muted-foreground/70">Realizado + Não Realizado</p>
+        </div>
       </Card>
 
-      {/* P&L Realizado Hoje */}
-      <Card className="p-3 sm:p-4 md:p-6 border-2 bg-gradient-to-br from-card to-card/80 border-border/50 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated">
-        <div className="flex items-center justify-between mb-1 sm:mb-2">
-          <div className="flex items-center gap-1 sm:gap-2">
-            <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
-            <span className="text-xs sm:text-sm font-medium text-muted-foreground">Realizado</span>
+      {/* P&L Realizado */}
+      <Card className="stat-card group">
+        <div className="flex items-start justify-between mb-4">
+          <div className={`p-2.5 rounded-xl ${getIconBgClass(pnlData.dailyRealized)} transition-colors`}>
+            <DollarSign className="h-5 w-5" />
           </div>
-          <Badge variant="secondary" className="text-[10px] sm:text-xs px-1 sm:px-2 hidden sm:flex">
-            Fechado
+          <Badge variant="secondary" className="text-[10px] px-2 py-0.5 bg-secondary/50">
+            {pnlData.closedTodayCount} ops
           </Badge>
         </div>
-        <p className={`text-lg sm:text-xl md:text-2xl font-bold ${getDailyColor(pnlData?.dailyRealized || 0)}`}>
-          {(pnlData?.dailyRealized || 0) >= 0 ? '+' : ''}${(pnlData?.dailyRealized || 0).toFixed(2)}
-        </p>
-        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1 hidden sm:block">
-          Operações fechadas
-        </p>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Realizado</p>
+          <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(pnlData.dailyRealized)}`}>
+            {formatValue(pnlData.dailyRealized)}
+          </p>
+          <p className="text-xs text-muted-foreground/70">Operações fechadas</p>
+        </div>
       </Card>
 
-      {/* P&L Não Realizado */}
-      <Card className="p-3 sm:p-4 md:p-6 border-2 bg-gradient-to-br from-card to-card/80 border-border/50 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated">
-        <div className="flex items-center justify-between mb-1 sm:mb-2">
-          <div className="flex items-center gap-1 sm:gap-2">
-            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-500" />
-            <span className="text-xs sm:text-sm font-medium text-muted-foreground">Aberto</span>
+      {/* Não Realizado */}
+      <Card className="stat-card group">
+        <div className="flex items-start justify-between mb-4">
+          <div className={`p-2.5 rounded-xl ${getIconBgClass(pnlData.currentUnrealized)} transition-colors`}>
+            <Activity className="h-5 w-5" />
           </div>
-          <Badge variant="outline" className="text-[10px] sm:text-xs px-1 sm:px-2 hidden sm:flex">
-            Aberto
+          <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-primary/30 text-primary">
+            {pnlData.openCount} abertas
           </Badge>
         </div>
-        <p className={`text-lg sm:text-xl md:text-2xl font-bold ${getDailyColor(pnlData?.currentUnrealized || 0)}`}>
-          {(pnlData?.currentUnrealized || 0) >= 0 ? '+' : ''}${(pnlData?.currentUnrealized || 0).toFixed(2)}
-        </p>
-        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1 hidden sm:block">
-          Posições abertas
-        </p>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Aberto</p>
+          <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(pnlData.currentUnrealized)}`}>
+            {formatValue(pnlData.currentUnrealized)}
+          </p>
+          <p className="text-xs text-muted-foreground/70">Posições ativas</p>
+        </div>
       </Card>
 
-      {/* P&L Total (30 dias) */}
-      <Card className={`p-3 sm:p-4 md:p-6 border-2 ${getDailyBg(pnlData?.totalRealized || 0)} backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] card-elevated`}>
-        <div className="flex items-center justify-between mb-1 sm:mb-2">
-          <div className="flex items-center gap-1 sm:gap-2">
-            <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
-            <span className="text-xs sm:text-sm font-medium text-muted-foreground">30 dias</span>
+      {/* Total 30 dias */}
+      <Card className="stat-card group">
+        <div className="flex items-start justify-between mb-4">
+          <div className={`p-2.5 rounded-xl ${getIconBgClass(pnlData.totalRealized)} transition-colors`}>
+            <BarChart3 className="h-5 w-5" />
           </div>
-          <Badge variant="default" className="text-[10px] sm:text-xs px-1 sm:px-2 hidden sm:flex">
-            Total
+          <Badge className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary border-0">
+            30 dias
           </Badge>
         </div>
-        <p className={`text-lg sm:text-xl md:text-2xl font-bold ${getDailyColor(pnlData?.totalRealized || 0)}`}>
-          {(pnlData?.totalRealized || 0) >= 0 ? '+' : ''}${(pnlData?.totalRealized || 0).toFixed(2)}
-        </p>
-        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1 hidden sm:block">
-          Últimos 30 dias
-        </p>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</p>
+          <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(pnlData.totalRealized)}`}>
+            {formatValue(pnlData.totalRealized)}
+          </p>
+          <p className="text-xs text-muted-foreground/70">Últimos 30 dias</p>
+        </div>
       </Card>
     </div>
   );
