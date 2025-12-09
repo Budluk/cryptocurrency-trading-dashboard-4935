@@ -177,32 +177,35 @@ export const useSignalAnalysis = () => {
       signalScore = sellScore;
     }
     
-    // Critérios ULTRA RELAXADOS para máxima atividade
-    const volumeCheck = volume24h > 10000; // Mínimo $10k volume
-    const volatilityCheck = volatility > 0.05 && volatility < 50; // Quase sem restrição
-    const atrMinCheck = atrPercent > 0.01 && atrPercent < 50; // Quase sem restrição
-    const priceMovementOk = Math.abs(priceChange) < 50; // Só bloqueia movimentos extremos
-    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 3; // Mínimo 3 pontos diferença
+    // Critérios MELHORADOS para reduzir perdas
+    const volumeCheck = volume24h > 100000; // Mínimo $100k volume
+    const volatilityCheck = volatility > 0.5 && volatility < 15; // Range saudável
+    const atrMinCheck = atrPercent > 0.3 && atrPercent < 8; // ATR ideal
+    const priceMovementOk = Math.abs(priceChange) > 0.5 && Math.abs(priceChange) < 12; // Movimento significativo
+    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 10; // Mínimo 10 pontos diferença
     
     const shouldTrade = (
       signalScore >= scoreThreshold &&
       action !== null &&
-      currentBalance > 0.1 && // Mínimo $0.10
-      confirmations.length >= minConfirmations
-      // Removidos: volumeCheck, volatilityCheck, atrMinCheck, priceMovementOk, hasStrongSignal
+      currentBalance > 2 && // Mínimo $2
+      confirmations.length >= minConfirmations &&
+      volumeCheck &&
+      volatilityCheck &&
+      hasStrongSignal &&
+      priceMovementOk
     );
 
     // Determinar razão do skip
     let skipReason = '';
     if (!shouldTrade) {
       if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
-      else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/8`;
-      else if (!volumeCheck) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.2M`;
-      else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 0.3-20%`;
-      else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.3-25%`;
-      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.2-15%`;
+      else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/10`;
+      else if (!volumeCheck) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.1M`;
+      else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 0.5-15%`;
+      else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.3-8%`;
+      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.5-12%`;
       else if (action === null) skipReason = 'Sem ação definida';
-      else if (currentBalance <= 1) skipReason = `Saldo $${currentBalance.toFixed(2)} < $1`;
+      else if (currentBalance <= 2) skipReason = `Saldo $${currentBalance.toFixed(2)} < $2`;
       else if (confirmations.length < minConfirmations) skipReason = `Conf ${confirmations.length}/${minConfirmations}`;
       else skipReason = 'Outro filtro';
     }
