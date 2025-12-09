@@ -51,30 +51,40 @@ serve(async (req) => {
 
     // Paginar através de todo o histórico
     while (hasMore) {
-      const { data: bybitResponse, error: bybitError } = await supabase.functions.invoke('bybit-trading', {
-        body: {
-          action: 'get_closed_pnl',
-          params: {
-            category: 'linear',
-            limit: 100,
-            cursor: cursor || undefined,
-            startTime: twoYearsAgo.toString(),
+      try {
+        const { data: bybitResponse, error: bybitError } = await supabase.functions.invoke('bybit-trading', {
+          body: {
+            action: 'get_closed_pnl',
+            params: {
+              category: 'linear',
+              limit: 100,
+              cursor: cursor || undefined,
+              startTime: twoYearsAgo.toString(),
+            }
           }
+        });
+
+        if (bybitError) {
+          console.log('⚠️ Erro Bybit invoke:', bybitError.message);
+          break;
         }
-      });
 
-      if (bybitError) {
-        console.log('⚠️ Erro Bybit, usando dados internos:', bybitError.message);
+        // A resposta vem em bybitResponse.data (resultado da função bybit-trading)
+        const result = bybitResponse?.data;
+        console.log('📥 Bybit response:', JSON.stringify(bybitResponse).substring(0, 200));
+
+        if (result?.list && result.list.length > 0) {
+          bybitTrades = [...bybitTrades, ...result.list];
+          cursor = result.nextPageCursor || '';
+          hasMore = !!cursor && bybitTrades.length < 2000;
+          console.log(`📥 Carregados ${bybitTrades.length} trades da Bybit...`);
+        } else {
+          console.log('📭 Sem mais trades da Bybit');
+          hasMore = false;
+        }
+      } catch (fetchError) {
+        console.log('⚠️ Erro fetch Bybit:', fetchError.message);
         break;
-      }
-
-      if (bybitResponse?.result?.list) {
-        bybitTrades = [...bybitTrades, ...bybitResponse.result.list];
-        cursor = bybitResponse.result.nextPageCursor || '';
-        hasMore = !!cursor && bybitTrades.length < 2000; // Limite de segurança
-        console.log(`📥 Carregados ${bybitTrades.length} trades da Bybit...`);
-      } else {
-        hasMore = false;
       }
     }
 
