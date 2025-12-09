@@ -257,7 +257,8 @@ export const MultiAssetTrader = () => {
         return { instrument, ticker, volatility: Math.abs(priceChange), priceChange, volume24h };
       }).filter(a => {
         const isInTop10 = top10VolatileAssets.has(a.instrument.symbol);
-        return isInTop10 ? (a.volatility > 0.1 && a.volume24h > 50000) : (a.volatility > 0.3 && a.volume24h > 200000);
+        // Priorizar ativos com alta volatilidade
+        return isInTop10 ? (a.volatility > 1.5 && a.volume24h > 100000) : (a.volatility > 2.5 && a.volume24h > 300000);
       });
       
       const topVolatileAssets = assetsWithVolatility.sort((a, b) => b.volatility - a.volatility).slice(0, 50);

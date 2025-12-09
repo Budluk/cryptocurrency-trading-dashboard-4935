@@ -179,9 +179,9 @@ export const useSignalAnalysis = () => {
     
     // Critérios MELHORADOS para reduzir perdas
     const volumeCheck = volume24h > 100000; // Mínimo $100k volume
-    const volatilityCheck = volatility > 0.5 && volatility < 15; // Range saudável
-    const atrMinCheck = atrPercent > 0.3 && atrPercent < 8; // ATR ideal
-    const priceMovementOk = Math.abs(priceChange) > 0.5 && Math.abs(priceChange) < 12; // Movimento significativo
+    const volatilityCheck = volatility > 2.0 && volatility < 20; // Alta volatilidade (mínimo 2%)
+    const atrMinCheck = atrPercent > 0.5 && atrPercent < 10; // ATR maior
+    const priceMovementOk = Math.abs(priceChange) > 1.0 && Math.abs(priceChange) < 15; // Movimento forte
     const hasStrongSignal = Math.abs(buyScore - sellScore) >= 10; // Mínimo 10 pontos diferença
     
     const shouldTrade = (
