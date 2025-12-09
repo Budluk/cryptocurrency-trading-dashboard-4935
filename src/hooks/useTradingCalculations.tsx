@@ -71,12 +71,12 @@ export const useTradingCalculations = () => {
     };
   }, []);
 
-  // 🧠 Trailing stop dinâmico baseado na volatilidade
+  // 🧠 Trailing stop dinâmico para SCALPING (mais apertado)
   const calculateDynamicTrailingStop = useCallback((volatility: number): number => {
-    if (volatility < 2) return 1.0;
-    if (volatility < 5) return 1.5;
-    if (volatility < 10) return 2.5;
-    return 3.5;
+    if (volatility < 2) return 0.4;
+    if (volatility < 5) return 0.6;
+    if (volatility < 10) return 0.8;
+    return 1.2;
   }, []);
 
   // 📊 Calcular quantidade válida para ordem
@@ -119,21 +119,21 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
     
-    // Usar recomendações do ML se disponível
+    // Usar recomendações do ML se disponível (mas com limites para scalping)
     if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
-      stopLossPct = mlConfig.recommended_stop_loss_pct / 100;
-      takeProfitPct = mlConfig.recommended_take_profit_pct / 100;
+      stopLossPct = Math.min(mlConfig.recommended_stop_loss_pct / 100, 0.005); // Max 0.5% para scalping
+      takeProfitPct = Math.min(mlConfig.recommended_take_profit_pct / 100, 0.01); // Max 1% TP
     } else if (isScalpAsset) {
-      // Scalping: stops apertados
-      stopLossPct = 0.008;
-      takeProfitPct = 0.015;
+      // SCALPING AGRESSIVO: stops ultra-apertados
+      stopLossPct = 0.003; // 0.3% stop loss
+      takeProfitPct = 0.006; // 0.6% take profit (2:1 ratio)
     } else {
-      // Normal: baseado no ATR
+      // Normal: stops mais apertados para scalping
       const atrBasedSL = (atrPercent / 100) * ATR_SL_MULTIPLIER;
-      const minSL = 0.01;
-      const maxSL = 0.05;
+      const minSL = 0.004; // Mínimo 0.4%
+      const maxSL = 0.015; // Máximo 1.5%
       stopLossPct = Math.max(minSL, Math.min(maxSL, atrBasedSL));
-      takeProfitPct = stopLossPct * 2.5;
+      takeProfitPct = stopLossPct * 2; // R:R 2:1
     }
     
     let stopLoss: number;
