@@ -276,19 +276,19 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // ML nas decisões - ULTRA AGRESSIVO
-          let scoreThreshold = 25; // Muito baixo para entrar em mais operações
-          let minConfirmations = 1;
+          // ML nas decisões - MELHORADO para qualidade
+          let scoreThreshold = 50; // Score mínimo mais alto para sinais de qualidade
+          let minConfirmations = 2; // Mínimo 2 confirmações
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 10;
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 8; // Bônus menor
             const currentHour = new Date().getUTCHours();
             if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 5;
           }
           
-          // Mínimo score de 15
-          scoreThreshold = Math.max(15, scoreThreshold);
+          // Mínimo score de 35 para garantir qualidade
+          scoreThreshold = Math.max(35, scoreThreshold);
           
           const analysisResult = analyzeSignal({
             currentPrice, highPrice, lowPrice, priceChange, volume24h, volatility,
