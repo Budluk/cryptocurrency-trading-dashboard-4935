@@ -6,40 +6,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Cache for server time offset
-let serverTimeOffset = 0;
-let lastTimeSync = 0;
-const TIME_SYNC_INTERVAL = 60000; // Resync every 60 seconds
-
-// Get Bybit server time to calculate offset
-async function syncServerTime(baseUrl: string): Promise<void> {
-  const now = Date.now();
-  
-  // Only sync if we haven't synced recently
-  if (now - lastTimeSync < TIME_SYNC_INTERVAL) {
-    return;
-  }
-  
+// Get Bybit server time and calculate synchronized timestamp
+async function getBybitServerTime(baseUrl: string): Promise<number> {
   try {
+    const localTimeBefore = Date.now();
     const response = await fetch(`${baseUrl}/v5/market/time`);
+    const localTimeAfter = Date.now();
     const data = await response.json();
     
     if (data.retCode === 0 && data.result?.timeSecond) {
-      const serverTime = parseInt(data.result.timeSecond) * 1000;
-      serverTimeOffset = serverTime - Date.now();
-      lastTimeSync = Date.now();
-      console.log(`Time synced with Bybit. Offset: ${serverTimeOffset}ms`);
+      // Calculate network latency and adjust
+      const networkLatency = (localTimeAfter - localTimeBefore) / 2;
+      const serverTime = parseInt(data.result.timeSecond) * 1000 + networkLatency;
+      console.log(`Bybit server time: ${serverTime}, local: ${Date.now()}, offset: ${serverTime - Date.now()}ms`);
+      return serverTime;
     }
   } catch (error) {
-    console.error('Failed to sync server time:', error);
-    // Use 0 offset if sync fails
-    serverTimeOffset = 0;
+    console.error('Failed to get server time:', error);
   }
-}
-
-// Get synchronized timestamp
-function getSyncedTimestamp(): number {
-  return Date.now() + serverTimeOffset;
+  // Fallback to local time
+  return Date.now();
 }
 
 serve(async (req) => {
@@ -73,44 +59,44 @@ serve(async (req) => {
 
     console.log(`Bybit ${isTestnet ? 'TESTNET' : 'MAINNET'} - Action: ${action}`);
 
-    // Sync server time before making authenticated requests
-    await syncServerTime(baseUrl);
+    // Get synchronized server time for this request
+    const serverTime = await getBybitServerTime(baseUrl);
 
     // Route to appropriate handler
     let result;
     switch (action) {
       case 'get_balance':
-        result = await getBalance(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getBalance(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_positions':
-        result = await getPositions(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getPositions(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'place_order':
-        result = await placeOrder(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await placeOrder(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'set_trading_stop':
-        result = await setTradingStop(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await setTradingStop(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_ticker':
-        result = await getTicker(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getTicker(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_tickers':
-        result = await getTickers(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getTickers(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_instruments':
-        result = await getInstruments(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getInstruments(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'set_leverage':
-        result = await setLeverage(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await setLeverage(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_closed_pnl':
-        result = await getClosedPnL(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getClosedPnL(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_order_history':
-        result = await getOrderHistory(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getOrderHistory(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       case 'get_execution_list':
-        result = await getExecutionList(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params);
+        result = await getExecutionList(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
         break;
       default:
         throw new Error(`Unknown action: ${action}`);
@@ -140,11 +126,12 @@ async function makeBybitRequest(
   apiKey: string,
   apiSecret: string,
   method: string = 'GET',
-  params: any = {}
+  params: any = {},
+  serverTime: number
 ) {
-  // Use synced timestamp instead of Date.now()
-  const timestamp = getSyncedTimestamp();
-  const recvWindow = '20000'; // Increased to 20 seconds for more tolerance
+  // Use the pre-fetched server time
+  const timestamp = serverTime;
+  const recvWindow = '30000'; // 30 seconds window
   
   let queryString = '';
   let queryStringForSignature = '';
@@ -177,7 +164,6 @@ async function makeBybitRequest(
     method,
     endpoint,
     timestamp,
-    serverTimeOffset,
     recvWindow,
     paramsStr: paramsStr.substring(0, 100),
     signature: signature.substring(0, 20) + '...'
@@ -240,27 +226,28 @@ async function makeBybitRequest(
   return data.result;
 }
 
-async function getBalance(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getBalance(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/account/wallet-balance',
     apiKey,
     apiSecret,
     'GET',
-    { accountType: params.accountType || 'UNIFIED' }
+    { accountType: params?.accountType || 'UNIFIED' },
+    serverTime
   );
 }
 
-async function getPositions(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getPositions(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   // Bybit requires either 'symbol' OR 'settleCoin' to list positions
   const positionParams: any = { 
-    category: params.category || 'linear'
+    category: params?.category || 'linear'
   };
   
   // Add symbol if provided, otherwise use settleCoin
-  if (params.symbol) {
+  if (params?.symbol) {
     positionParams.symbol = params.symbol;
-  } else if (params.settleCoin) {
+  } else if (params?.settleCoin) {
     positionParams.settleCoin = params.settleCoin;
   }
   
@@ -270,45 +257,48 @@ async function getPositions(baseUrl: string, apiKey: string, apiSecret: string, 
     apiKey,
     apiSecret,
     'GET',
-    positionParams
+    positionParams,
+    serverTime
   );
 }
 
-async function placeOrder(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function placeOrder(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/order/create',
     apiKey,
     apiSecret,
     'POST',
-    params
+    params,
+    serverTime
   );
 }
 
-async function getTicker(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getTicker(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/market/tickers',
     apiKey,
     apiSecret,
     'GET',
-    { category: params.category || 'linear', symbol: params.symbol }
+    { category: params?.category || 'linear', symbol: params?.symbol },
+    serverTime
   );
 }
 
-async function getTickers(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
-  // Get all tickers for a category (without specifying symbol)
+async function getTickers(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/market/tickers',
     apiKey,
     apiSecret,
     'GET',
-    { category: params.category || 'linear' }
+    { category: params?.category || 'linear' },
+    serverTime
   );
 }
 
-async function getInstruments(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getInstruments(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/market/instruments-info',
@@ -316,37 +306,39 @@ async function getInstruments(baseUrl: string, apiKey: string, apiSecret: string
     apiSecret,
     'GET',
     { 
-      category: params.category || 'linear',
-      limit: params.limit || 1000,
+      category: params?.category || 'linear',
+      limit: params?.limit || 1000,
       status: 'Trading'
-    }
+    },
+    serverTime
   );
 }
 
-async function setTradingStop(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function setTradingStop(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/position/trading-stop',
     apiKey,
     apiSecret,
     'POST',
-    params
+    params,
+    serverTime
   );
 }
 
-async function setLeverage(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function setLeverage(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/position/set-leverage',
     apiKey,
     apiSecret,
     'POST',
-    params
+    params,
+    serverTime
   );
 }
 
-// Get closed PnL history - últimos 2 anos de trades fechados
-async function getClosedPnL(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getClosedPnL(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/position/closed-pnl',
@@ -354,18 +346,18 @@ async function getClosedPnL(baseUrl: string, apiKey: string, apiSecret: string, 
     apiSecret,
     'GET',
     {
-      category: params.category || 'linear',
-      symbol: params.symbol,
-      startTime: params.startTime,
-      endTime: params.endTime,
-      limit: params.limit || 100,
-      cursor: params.cursor
-    }
+      category: params?.category || 'linear',
+      symbol: params?.symbol,
+      startTime: params?.startTime,
+      endTime: params?.endTime,
+      limit: params?.limit || 100,
+      cursor: params?.cursor
+    },
+    serverTime
   );
 }
 
-// Get order history - histórico de ordens
-async function getOrderHistory(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getOrderHistory(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/order/history',
@@ -373,24 +365,24 @@ async function getOrderHistory(baseUrl: string, apiKey: string, apiSecret: strin
     apiSecret,
     'GET',
     {
-      category: params.category || 'linear',
-      symbol: params.symbol,
-      baseCoin: params.baseCoin,
-      settleCoin: params.settleCoin,
-      orderId: params.orderId,
-      orderLinkId: params.orderLinkId,
-      orderFilter: params.orderFilter,
-      orderStatus: params.orderStatus,
-      startTime: params.startTime,
-      endTime: params.endTime,
-      limit: params.limit || 50,
-      cursor: params.cursor
-    }
+      category: params?.category || 'linear',
+      symbol: params?.symbol,
+      baseCoin: params?.baseCoin,
+      settleCoin: params?.settleCoin,
+      orderId: params?.orderId,
+      orderLinkId: params?.orderLinkId,
+      orderFilter: params?.orderFilter,
+      orderStatus: params?.orderStatus,
+      startTime: params?.startTime,
+      endTime: params?.endTime,
+      limit: params?.limit || 50,
+      cursor: params?.cursor
+    },
+    serverTime
   );
 }
 
-// Get execution/trade list - todas as execuções
-async function getExecutionList(baseUrl: string, apiKey: string, apiSecret: string, params: any) {
+async function getExecutionList(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
   return await makeBybitRequest(
     baseUrl,
     '/v5/execution/list',
@@ -398,14 +390,15 @@ async function getExecutionList(baseUrl: string, apiKey: string, apiSecret: stri
     apiSecret,
     'GET',
     {
-      category: params.category || 'linear',
-      symbol: params.symbol,
-      baseCoin: params.baseCoin,
-      startTime: params.startTime,
-      endTime: params.endTime,
-      execType: params.execType,
-      limit: params.limit || 100,
-      cursor: params.cursor
-    }
+      category: params?.category || 'linear',
+      symbol: params?.symbol,
+      baseCoin: params?.baseCoin,
+      startTime: params?.startTime,
+      endTime: params?.endTime,
+      execType: params?.execType,
+      limit: params?.limit || 100,
+      cursor: params?.cursor
+    },
+    serverTime
   );
 }
