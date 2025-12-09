@@ -111,28 +111,27 @@ export const DailyPnLSummary = memo(() => {
 
   if (cards.length === 0) return null;
 
-  const gridCols = cards.length === 1 ? 'grid-cols-1' : 
-                   cards.length === 2 ? 'grid-cols-2' : 
-                   cards.length === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4';
+  // Mobile: sempre 2 colunas para melhor visualização
+  const gridCols = cards.length === 1 ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4';
 
   return (
-    <div className={`grid ${gridCols} gap-4`}>
+    <div className={`grid ${gridCols} gap-2 sm:gap-4`}>
       {cards.map(card => {
         const IconComponent = card.icon;
         return (
-          <Card key={card.key} className="stat-card group">
-            <div className="flex items-start justify-between mb-4">
-              <div className={`p-2.5 rounded-xl ${getIconBgClass(card.value)} transition-colors`}>
-                <IconComponent className="h-5 w-5" />
+          <Card key={card.key} className="stat-card group p-3 sm:p-4">
+            <div className="flex items-start justify-between mb-2 sm:mb-4">
+              <div className={`p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl ${getIconBgClass(card.value)} transition-colors`}>
+                <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
-              {card.badge}
+              <div className="hidden sm:block">{card.badge}</div>
             </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
-              <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(card.value)}`}>
+            <div className="space-y-0.5 sm:space-y-1">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
+              <p className={`text-xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(card.value)}`}>
                 {formatValue(card.value)}
               </p>
-              <p className="text-xs text-muted-foreground/70">{card.sublabel}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground/70 hidden sm:block">{card.sublabel}</p>
             </div>
           </Card>
         );

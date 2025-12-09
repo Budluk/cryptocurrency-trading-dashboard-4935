@@ -166,31 +166,31 @@ const SmartAlerts = () => {
 
   return (
     <Card className="glass-card border-2 border-primary/20 shadow-elevated">
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20">
-              <BellIcon className="w-6 h-6 text-primary" />
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {/* Header - Mobile Optimized */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="p-1.5 sm:p-2 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20">
+              <BellIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold glow-text">Alertas Inteligentes</h2>
-              <p className="text-sm text-muted-foreground">Configure notificações automáticas</p>
+              <h2 className="text-lg sm:text-2xl font-bold glow-text">Alertas</h2>
+              <p className="text-xs sm:text-sm text-muted-foreground">Notificações automáticas</p>
             </div>
             {unreadCount > 0 && (
-              <Badge className="bg-gradient-to-r from-destructive to-destructive/80 border-0 shadow-lg shadow-destructive/30 animate-glow">
-                {unreadCount} novos
+              <Badge className="bg-gradient-to-r from-destructive to-destructive/80 border-0 shadow-lg shadow-destructive/30 animate-glow text-xs">
+                {unreadCount}
               </Badge>
             )}
           </div>
           <Dialog open={isCreating} onOpenChange={setIsCreating}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 transition-all hover:scale-105">
-                <PlusIcon className="w-4 h-4 mr-2" />
+              <Button size="sm" className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 transition-all h-9 text-xs sm:text-sm w-full sm:w-auto">
+                <PlusIcon className="w-4 h-4 mr-1 sm:mr-2" />
                 Criar Alerta
               </Button>
             </DialogTrigger>
-            <DialogContent className="glass-card border-2 border-primary/20">
+            <DialogContent className="glass-card border-2 border-primary/20 mx-4 max-w-[calc(100vw-2rem)] sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle className="text-xl glow-text">Novo Alerta Inteligente</DialogTitle>
               </DialogHeader>
@@ -276,15 +276,15 @@ const SmartAlerts = () => {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Alertas Configurados */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Alertas Configurados - Mobile Optimized */}
         <Card className="border-2 border-border/50 bg-card/50 backdrop-blur-sm shadow-card">
-          <div className="p-6">
-            <h3 className="font-semibold mb-4 flex items-center gap-2 text-lg">
-              <div className="p-1.5 rounded-lg bg-primary/20">
-                <Settings2Icon className="w-4 h-4 text-primary" />
+          <div className="p-4 sm:p-6">
+            <h3 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-base sm:text-lg">
+              <div className="p-1 sm:p-1.5 rounded-lg bg-primary/20">
+                <Settings2Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
               </div>
-              Alertas Configurados
+              Configurados
             </h3>
           
           {configsLoading ? (
@@ -336,18 +336,18 @@ const SmartAlerts = () => {
           </div>
         </Card>
 
-        {/* Alertas Disparados */}
+        {/* Alertas Disparados - Mobile Optimized */}
         <Card className="border-2 border-border/50 bg-card/50 backdrop-blur-sm shadow-card">
-          <div className="p-6">
-            <h3 className="font-semibold mb-4 flex items-center gap-2 text-lg">
-              <div className="p-1.5 rounded-lg bg-accent/20">
-                <AlertTriangleIcon className="w-4 h-4 text-accent" />
+          <div className="p-4 sm:p-6">
+            <h3 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-base sm:text-lg">
+              <div className="p-1 sm:p-1.5 rounded-lg bg-accent/20">
+                <AlertTriangleIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-accent" />
               </div>
-              Alertas Recentes
+              Recentes
             </h3>
           
           {triggeredAlerts?.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="text-center py-6 sm:py-8 text-muted-foreground text-sm">
               <AlertTriangleIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>Nenhum alerta disparado</p>
               <p className="text-sm">Os alertas aparecerão aqui quando ativados</p>
