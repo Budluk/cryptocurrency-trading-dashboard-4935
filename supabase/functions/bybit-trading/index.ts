@@ -6,6 +6,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Cache for server time offset
+let serverTimeOffset = 0;
+let lastTimeSync = 0;
+const TIME_SYNC_INTERVAL = 60000; // Resync every 60 seconds
+
+// Get Bybit server time to calculate offset
+async function syncServerTime(baseUrl: string): Promise<void> {
+  const now = Date.now();
+  
+  // Only sync if we haven't synced recently
+  if (now - lastTimeSync < TIME_SYNC_INTERVAL) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${baseUrl}/v5/market/time`);
+    const data = await response.json();
+    
+    if (data.retCode === 0 && data.result?.timeSecond) {
+      const serverTime = parseInt(data.result.timeSecond) * 1000;
+      serverTimeOffset = serverTime - Date.now();
+      lastTimeSync = Date.now();
+      console.log(`Time synced with Bybit. Offset: ${serverTimeOffset}ms`);
+    }
+  } catch (error) {
+    console.error('Failed to sync server time:', error);
+    // Use 0 offset if sync fails
+    serverTimeOffset = 0;
+  }
+}
+
+// Get synchronized timestamp
+function getSyncedTimestamp(): number {
+  return Date.now() + serverTimeOffset;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -36,6 +72,9 @@ serve(async (req) => {
       : 'https://api.bybit.com';
 
     console.log(`Bybit ${isTestnet ? 'TESTNET' : 'MAINNET'} - Action: ${action}`);
+
+    // Sync server time before making authenticated requests
+    await syncServerTime(baseUrl);
 
     // Route to appropriate handler
     let result;
@@ -103,8 +142,9 @@ async function makeBybitRequest(
   method: string = 'GET',
   params: any = {}
 ) {
-  const timestamp = Date.now();
-  const recvWindow = '5000';
+  // Use synced timestamp instead of Date.now()
+  const timestamp = getSyncedTimestamp();
+  const recvWindow = '20000'; // Increased to 20 seconds for more tolerance
   
   let queryString = '';
   let queryStringForSignature = '';
@@ -137,6 +177,7 @@ async function makeBybitRequest(
     method,
     endpoint,
     timestamp,
+    serverTimeOffset,
     recvWindow,
     paramsStr: paramsStr.substring(0, 100),
     signature: signature.substring(0, 20) + '...'
