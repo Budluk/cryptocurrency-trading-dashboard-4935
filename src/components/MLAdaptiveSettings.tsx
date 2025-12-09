@@ -74,14 +74,23 @@ export function MLAdaptiveSettings() {
       await new Promise(r => setTimeout(r, 300));
       
       // Step 2: Call ML function
-      addLog('📡 Buscando histórico da Bybit...');
-      setTrainingStatus({ step: 'Bybit API', progress: 25, details: 'Carregando trades fechados da Bybit...' });
+      addLog('📡 Chamando API ml-adaptive-learning...');
+      setTrainingStatus({ step: 'Bybit API', progress: 25, details: 'Conectando à função de treinamento...' });
       
+      const startTime = Date.now();
       const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', {
         body: { userId, minTrades: 10 }
       });
       
-      if (error) throw error;
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      addLog(`⏱️ Resposta recebida em ${elapsed}s`);
+      
+      if (error) {
+        addLog(`❌ Erro na função: ${error.message}`);
+        throw error;
+      }
+      
+      addLog(`📦 Dados recebidos: ${JSON.stringify(data).substring(0, 100)}...`);
       
       if (data.success) {
         // Show data sources
