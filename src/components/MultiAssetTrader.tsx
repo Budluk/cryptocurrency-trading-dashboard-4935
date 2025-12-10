@@ -570,9 +570,19 @@ export const MultiAssetTrader = () => {
     setConsecutiveLosses(0);
     
     const userId = await getUserId();
-    await supabase.from('auto_trader_config').upsert({
-      user_id: userId, trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString()
-    }, { onConflict: 'user_id' });
+    
+    // Check if config exists, then insert or update
+    const { data: existing } = await supabase.from('auto_trader_config')
+      .select('id').eq('user_id', userId).maybeSingle();
+    
+    if (existing) {
+      await supabase.from('auto_trader_config')
+        .update({ trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() })
+        .eq('user_id', userId);
+    } else {
+      await supabase.from('auto_trader_config')
+        .insert({ user_id: userId, trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() });
+    }
 
     toast({ title: "🚀 Trader iniciado", description: "Buscando oportunidades..." });
   };
