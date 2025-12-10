@@ -45,27 +45,25 @@ export function useBybitSync() {
       if (error) throw error;
       
       // Check for API errors
-      if (data?.code || data?.error || !data?.success === false) {
+      if (data?.code || data?.error || data?.success === false) {
         console.warn('Bybit API error:', data?.message || data?.error);
         return currentBalance;
       }
 
-      // Handle multiple response formats
+      // Response format: { success: true, data: { totalWalletBalance: "14.88" } }
+      const balanceData = data?.data;
       let balance = 0;
-      if (data?.data?.list?.[0]?.totalWalletBalance) {
-        balance = parseFloat(data.data.list[0].totalWalletBalance);
-      } else if (data?.data?.totalWalletBalance) {
-        balance = parseFloat(data.data.totalWalletBalance);
-      } else if (data?.totalWalletBalance) {
-        balance = parseFloat(data.totalWalletBalance);
+      
+      if (balanceData?.totalWalletBalance) {
+        balance = parseFloat(balanceData.totalWalletBalance);
+      } else if (balanceData?.list?.[0]?.totalWalletBalance) {
+        balance = parseFloat(balanceData.list[0].totalWalletBalance);
       }
 
-      if (balance > 0) {
-        syncCache.balance = { data: balance, timestamp: Date.now() };
-        setCurrentBalance(balance);
-        setLastSyncTime(new Date());
-        console.log('💰 Saldo sincronizado: $' + balance.toFixed(2));
-      }
+      syncCache.balance = { data: balance, timestamp: Date.now() };
+      setCurrentBalance(balance);
+      setLastSyncTime(new Date());
+      if (balance > 0) console.log('💰 Saldo sincronizado: $' + balance.toFixed(2));
       return balance;
     } catch (error) {
       console.error('Erro ao sincronizar saldo:', error);
@@ -100,10 +98,9 @@ export function useBybitSync() {
         return openPositionsCount;
       }
 
-      const positions = data?.data?.list || data?.list || [];
-      const activePositions = Array.isArray(positions) 
-        ? positions.filter((p: any) => parseFloat(p.size || '0') > 0)
-        : [];
+      // Response: { success: true, data: [{...position...}] } - data is array directly
+      const positions = Array.isArray(data?.data) ? data.data : (data?.data?.list || []);
+      const activePositions = positions.filter((p: any) => parseFloat(p.size || '0') > 0);
       const count = activePositions.length;
 
       syncCache.positions = { data: count, timestamp: Date.now() };
@@ -144,9 +141,10 @@ export function useBybitSync() {
         return top10VolatileAssets;
       }
 
-      const tickers = data?.data?.list || data?.list || [];
+      // Response: { success: true, data: [{...ticker...}] } - data is array directly
+      const tickers = Array.isArray(data?.data) ? data.data : (data?.data?.list || []);
       
-      if (!Array.isArray(tickers) || tickers.length === 0) {
+      if (tickers.length === 0) {
         console.warn('Sem dados de tickers disponíveis');
         return top10VolatileAssets;
       }
