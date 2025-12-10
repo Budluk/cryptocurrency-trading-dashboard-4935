@@ -43,17 +43,29 @@ export function useBybitSync() {
       });
 
       if (error) throw error;
+      
+      // Check for API errors
+      if (data?.code || data?.error || !data?.success === false) {
+        console.warn('Bybit API error:', data?.message || data?.error);
+        return currentBalance;
+      }
 
-      // Handle both formats: data.list[0] or data directly
-      const responseData = data?.data;
-      const balanceData = responseData?.list?.[0] || responseData || {};
-      const balance = balanceData?.totalWalletBalance 
-        ? parseFloat(balanceData.totalWalletBalance) 
-        : 0;
+      // Handle multiple response formats
+      let balance = 0;
+      if (data?.data?.list?.[0]?.totalWalletBalance) {
+        balance = parseFloat(data.data.list[0].totalWalletBalance);
+      } else if (data?.data?.totalWalletBalance) {
+        balance = parseFloat(data.data.totalWalletBalance);
+      } else if (data?.totalWalletBalance) {
+        balance = parseFloat(data.totalWalletBalance);
+      }
 
-      syncCache.balance = { data: balance, timestamp: Date.now() };
-      setCurrentBalance(balance);
-      setLastSyncTime(new Date());
+      if (balance > 0) {
+        syncCache.balance = { data: balance, timestamp: Date.now() };
+        setCurrentBalance(balance);
+        setLastSyncTime(new Date());
+        console.log('💰 Saldo sincronizado: $' + balance.toFixed(2));
+      }
       return balance;
     } catch (error) {
       console.error('Erro ao sincronizar saldo:', error);
@@ -81,8 +93,14 @@ export function useBybitSync() {
       });
 
       if (error) throw error;
+      
+      // Check for API errors
+      if (data?.code || data?.error || data?.success === false) {
+        console.warn('Bybit API error (positions):', data?.message || data?.error);
+        return openPositionsCount;
+      }
 
-      const positions = data?.data?.list || data?.data || [];
+      const positions = data?.data?.list || data?.list || [];
       const activePositions = Array.isArray(positions) 
         ? positions.filter((p: any) => parseFloat(p.size || '0') > 0)
         : [];
@@ -91,6 +109,7 @@ export function useBybitSync() {
       syncCache.positions = { data: count, timestamp: Date.now() };
       setOpenPositionsCount(count);
       setLastSyncTime(new Date());
+      if (count > 0) console.log('📈 Posições Bybit:', count);
       return count;
     } catch (error) {
       console.error('Erro ao sincronizar posições:', error);
@@ -118,8 +137,19 @@ export function useBybitSync() {
       });
 
       if (error) throw error;
+      
+      // Check for API errors
+      if (data?.code || data?.error || data?.success === false) {
+        console.warn('Bybit API error (tickers):', data?.message || data?.error);
+        return top10VolatileAssets;
+      }
 
-      const tickers = data?.data?.list || data?.data || [];
+      const tickers = data?.data?.list || data?.list || [];
+      
+      if (!Array.isArray(tickers) || tickers.length === 0) {
+        console.warn('Sem dados de tickers disponíveis');
+        return top10VolatileAssets;
+      }
       
       const scored = tickers
         .filter((t: any) => t.symbol?.endsWith('USDT'))
@@ -133,8 +163,11 @@ export function useBybitSync() {
         .slice(0, 10)
         .map((t: any) => t.symbol);
 
-      syncCache.volatileAssets = { data: scored, timestamp: Date.now() };
-      setTop10VolatileAssets(scored);
+      if (scored.length > 0) {
+        syncCache.volatileAssets = { data: scored, timestamp: Date.now() };
+        setTop10VolatileAssets(scored);
+        console.log('✅ Top 10 ativos voláteis:', scored.join(', '));
+      }
       return scored;
     } catch (error) {
       console.error('Erro ao buscar ativos voláteis:', error);
