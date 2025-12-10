@@ -1,32 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createHmac } from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Get Bybit server time and calculate synchronized timestamp
-async function getBybitServerTime(baseUrl: string): Promise<number> {
-  try {
-    const localTimeBefore = Date.now();
-    const response = await fetch(`${baseUrl}/v5/market/time`);
-    const localTimeAfter = Date.now();
-    const data = await response.json();
-    
-    if (data.retCode === 0 && data.result?.timeSecond) {
-      // Calculate network latency and adjust
-      const networkLatency = (localTimeAfter - localTimeBefore) / 2;
-      const serverTime = parseInt(data.result.timeSecond) * 1000 + networkLatency;
-      console.log(`Bybit server time: ${serverTime}, local: ${Date.now()}, offset: ${serverTime - Date.now()}ms`);
-      return serverTime;
-    }
-  } catch (error) {
-    console.error('Failed to get server time:', error);
-  }
-  // Fallback to local time
-  return Date.now();
-}
+const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
+const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
+const RECV_WINDOW = "30000";
+const BASE_URL = "https://api.bybit.com";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -34,69 +16,46 @@ serve(async (req) => {
   }
 
   try {
-    const { action, isTestnet, params } = await req.json();
+    const { action, ...params } = await req.json();
     
-    let BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY');
-    let BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET');
+    console.log(`Bybit MAINNET - Action: ${action}`);
+    console.log(`API Key configured: ${BYBIT_API_KEY ? 'YES' : 'NO'}`);
+    console.log(`API Secret configured: ${BYBIT_API_SECRET ? 'YES' : 'NO'}`);
+    console.log(`API Key length: ${BYBIT_API_KEY.length}`);
+    console.log(`API Secret length: ${BYBIT_API_SECRET.length}`);
 
-    // Trim whitespace from credentials
-    if (BYBIT_API_KEY) BYBIT_API_KEY = BYBIT_API_KEY.trim();
-    if (BYBIT_API_SECRET) BYBIT_API_SECRET = BYBIT_API_SECRET.trim();
-
-    console.log('API Key configured:', BYBIT_API_KEY ? 'YES' : 'NO');
-    console.log('API Key length:', BYBIT_API_KEY?.length);
-    console.log('API Secret configured:', BYBIT_API_SECRET ? 'YES' : 'NO');
-    console.log('API Secret length:', BYBIT_API_SECRET?.length);
-
-    if (!BYBIT_API_KEY || !BYBIT_API_SECRET) {
-      throw new Error('Bybit API credentials not configured');
-    }
-
-    // Select base URL based on environment
-    const baseUrl = isTestnet 
-      ? 'https://api-testnet.bybit.com'
-      : 'https://api.bybit.com';
-
-    console.log(`Bybit ${isTestnet ? 'TESTNET' : 'MAINNET'} - Action: ${action}`);
-
-    // Get synchronized server time for this request
-    const serverTime = await getBybitServerTime(baseUrl);
-
-    // Route to appropriate handler
     let result;
+
     switch (action) {
       case 'get_balance':
-        result = await getBalance(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await getBalance();
         break;
       case 'get_positions':
-        result = await getPositions(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await getPositions();
         break;
       case 'place_order':
-        result = await placeOrder(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await placeOrder(params);
         break;
-      case 'set_trading_stop':
-        result = await setTradingStop(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
-        break;
-      case 'get_ticker':
-        result = await getTicker(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
-        break;
-      case 'get_tickers':
-        result = await getTickers(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+      case 'close_position':
+        result = await closePosition(params);
         break;
       case 'get_instruments':
-        result = await getInstruments(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await getInstruments(params.symbol);
+        break;
+      case 'get_tickers':
+        result = await getTickers();
         break;
       case 'set_leverage':
-        result = await setLeverage(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await setLeverage(params);
         break;
       case 'get_closed_pnl':
-        result = await getClosedPnL(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await getClosedPnL(params);
         break;
       case 'get_order_history':
-        result = await getOrderHistory(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await getOrderHistory(params);
         break;
       case 'get_execution_list':
-        result = await getExecutionList(baseUrl, BYBIT_API_KEY, BYBIT_API_SECRET, params, serverTime);
+        result = await getExecutionList(params);
         break;
       default:
         throw new Error(`Unknown action: ${action}`);
@@ -105,300 +64,242 @@ serve(async (req) => {
     return new Response(JSON.stringify({ success: true, data: result }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
   } catch (error) {
     console.error('Bybit trading error:', error);
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
 
-function generateSignature(timestamp: number, apiKey: string, apiSecret: string, recvWindow: string, params: string): string {
-  const signaturePayload = `${timestamp}${apiKey}${recvWindow}${params}`;
-  return createHmac('sha256', apiSecret).update(signaturePayload).digest('hex');
+// Get fresh Bybit server timestamp - ALWAYS returns integer milliseconds
+async function getBybitServerTime(): Promise<number> {
+  try {
+    const response = await fetch(`${BASE_URL}/v5/market/time`);
+    const data = await response.json();
+    
+    if (data.retCode === 0 && data.result?.timeSecond) {
+      // timeSecond is in seconds, convert to ms and ensure integer
+      const serverTime = Math.floor(Number(data.result.timeSecond) * 1000);
+      console.log(`Bybit server time: ${serverTime}`);
+      return serverTime;
+    }
+    
+    if (data.retCode === 0 && data.result?.timeNano) {
+      // timeNano is in nanoseconds, convert to ms
+      const serverTime = Math.floor(Number(data.result.timeNano) / 1000000);
+      console.log(`Bybit server time (nano): ${serverTime}`);
+      return serverTime;
+    }
+    
+    throw new Error('Invalid server time response');
+  } catch (error) {
+    console.error('Server time fetch error:', error);
+    // Fallback: use local time minus 1 second for safety
+    return Math.floor(Date.now() - 1000);
+  }
+}
+
+async function generateSignature(params: string, timestamp: number): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = encoder.encode(BYBIT_API_SECRET);
+  const message = encoder.encode(`${timestamp}${BYBIT_API_KEY}${RECV_WINDOW}${params}`);
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, message);
+  return Array.from(new Uint8Array(signature))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 async function makeBybitRequest(
-  baseUrl: string,
+  method: string,
   endpoint: string,
-  apiKey: string,
-  apiSecret: string,
-  method: string = 'GET',
-  params: any = {},
-  serverTime: number
-) {
-  // Use the pre-fetched server time
-  const timestamp = serverTime;
-  const recvWindow = '30000'; // 30 seconds window
+  params: Record<string, any> = {},
+  requiresAuth: boolean = true
+): Promise<any> {
+  // CRITICAL: Get fresh server time for authenticated requests - ensures integer timestamp
+  const timestamp = requiresAuth ? await getBybitServerTime() : Math.floor(Date.now());
   
-  let queryString = '';
-  let queryStringForSignature = '';
-  
-  if (method === 'GET' && Object.keys(params).length > 0) {
-    // Filter out undefined/null values and sort parameters
-    const sortedParams = Object.keys(params)
-      .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
-      .sort()
-      .reduce((acc, key) => {
-        acc[key] = params[key];
-        return acc;
-      }, {} as any);
-    
-    // For signature: no encoding
-    queryStringForSignature = Object.keys(sortedParams)
-      .map(key => `${key}=${sortedParams[key]}`)
-      .join('&');
-    
-    // For URL: with encoding
-    queryString = Object.keys(sortedParams)
-      .map(key => `${key}=${encodeURIComponent(sortedParams[key])}`)
-      .join('&');
-  }
-  
-  const paramsStr = method === 'POST' ? JSON.stringify(params) : queryStringForSignature;
-  const signature = generateSignature(timestamp, apiKey, apiSecret, recvWindow, paramsStr);
-  
-  console.log('Request details:', {
-    method,
-    endpoint,
-    timestamp,
-    recvWindow,
-    paramsStr: paramsStr.substring(0, 100),
-    signature: signature.substring(0, 20) + '...'
-  });
+  let url = `${BASE_URL}${endpoint}`;
+  let body = '';
+  let paramsStr = '';
 
-  const headers = {
-    'X-BAPI-API-KEY': apiKey,
-    'X-BAPI-SIGN': signature,
-    'X-BAPI-TIMESTAMP': timestamp.toString(),
-    'X-BAPI-RECV-WINDOW': recvWindow,
+  if (method === 'GET') {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, String(value));
+      }
+    });
+    paramsStr = searchParams.toString();
+    if (paramsStr) url += `?${paramsStr}`;
+  } else {
+    body = JSON.stringify(params);
+    paramsStr = body;
+  }
+
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  let url = `${baseUrl}${endpoint}`;
-  if (method === 'GET' && queryString) {
-    url += `?${queryString}`;
+  if (requiresAuth) {
+    const signature = await generateSignature(paramsStr, timestamp);
+    headers['X-BAPI-API-KEY'] = BYBIT_API_KEY;
+    headers['X-BAPI-SIGN'] = signature;
+    headers['X-BAPI-SIGN-TYPE'] = '2';
+    headers['X-BAPI-TIMESTAMP'] = String(timestamp);
+    headers['X-BAPI-RECV-WINDOW'] = RECV_WINDOW;
+    
+    console.log(`Request: ${method} ${endpoint}, timestamp: ${timestamp}`);
   }
 
-  const options: any = {
+  const response = await fetch(url, {
     method,
     headers,
-  };
+    body: method !== 'GET' ? body : undefined,
+  });
 
-  if (method === 'POST' && paramsStr) {
-    options.body = paramsStr;
-  }
-
-  console.log('Making request to:', url);
-  const response = await fetch(url, options);
+  const data = await response.json();
   
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Bybit API HTTP Error:', response.status, errorText);
-    console.error('Request headers:', headers);
-    throw new Error(`Bybit API HTTP ${response.status}: ${errorText || 'Unknown error'}`);
-  }
-
-  const text = await response.text();
-  if (!text) {
-    throw new Error('Empty response from Bybit API');
-  }
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    console.error('Failed to parse Bybit response:', text);
-    throw new Error('Invalid JSON response from Bybit API');
-  }
-
-  // Handle "not modified" as success - these are not real errors:
-  // 10005 = stop loss not modified
-  // 110043 = leverage not modified
-  // 110044 = available balance not enough (for leverage change)
-  const nonErrorCodes = [0, 10005, 110043];
-  if (!nonErrorCodes.includes(data.retCode)) {
-    throw new Error(`Bybit API Error: ${data.retMsg || 'Unknown error'}`);
+  if (data.retCode !== 0) {
+    console.error(`Bybit API Error:`, JSON.stringify(data));
+    throw new Error(`Bybit API Error: ${data.retMsg}`);
   }
 
   return data.result;
 }
 
-async function getBalance(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/account/wallet-balance',
-    apiKey,
-    apiSecret,
-    'GET',
-    { accountType: params?.accountType || 'UNIFIED' },
-    serverTime
-  );
+async function getBalance() {
+  const result = await makeBybitRequest('GET', '/v5/account/wallet-balance', { accountType: 'UNIFIED' });
+  const usdtCoin = result?.list?.[0]?.coin?.find((c: any) => c.coin === 'USDT');
+  
+  return {
+    totalEquity: result?.list?.[0]?.totalEquity || '0',
+    totalWalletBalance: result?.list?.[0]?.totalWalletBalance || '0',
+    totalAvailableBalance: result?.list?.[0]?.totalAvailableBalance || '0',
+    usdtBalance: usdtCoin?.walletBalance || '0',
+    usdtAvailable: usdtCoin?.availableToWithdraw || '0',
+  };
 }
 
-async function getPositions(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  // Bybit requires either 'symbol' OR 'settleCoin' to list positions
-  const positionParams: any = { 
-    category: params?.category || 'linear'
-  };
+async function getPositions() {
+  const result = await makeBybitRequest('GET', '/v5/position/list', { category: 'linear', settleCoin: 'USDT' });
+  return result?.list || [];
+}
+
+async function placeOrder(params: any) {
+  const { symbol, side, qty, orderType = 'Market', stopLoss, takeProfit, leverage } = params;
   
-  // Add symbol if provided, otherwise use settleCoin
-  if (params?.symbol) {
-    positionParams.symbol = params.symbol;
-  } else if (params?.settleCoin) {
-    positionParams.settleCoin = params.settleCoin;
+  if (leverage) {
+    try {
+      await setLeverage({ symbol, leverage });
+    } catch (e) {
+      console.log('Leverage warning:', e.message);
+    }
+  }
+
+  const orderParams: Record<string, any> = {
+    category: 'linear',
+    symbol,
+    side,
+    orderType,
+    qty: String(qty),
+    timeInForce: 'GTC',
+    positionIdx: 0,
+  };
+
+  if (stopLoss) {
+    orderParams.stopLoss = String(stopLoss);
+    orderParams.slTriggerBy = 'LastPrice';
   }
   
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/position/list',
-    apiKey,
-    apiSecret,
-    'GET',
-    positionParams,
-    serverTime
-  );
+  if (takeProfit) {
+    orderParams.takeProfit = String(takeProfit);
+    orderParams.tpTriggerBy = 'LastPrice';
+  }
+
+  console.log('Order params:', JSON.stringify(orderParams));
+  return await makeBybitRequest('POST', '/v5/order/create', orderParams);
 }
 
-async function placeOrder(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/order/create',
-    apiKey,
-    apiSecret,
-    'POST',
-    params,
-    serverTime
-  );
+async function closePosition(params: any) {
+  const { symbol, side, qty } = params;
+  const closeSide = side === 'Buy' ? 'Sell' : 'Buy';
+  
+  const orderParams = {
+    category: 'linear',
+    symbol,
+    side: closeSide,
+    orderType: 'Market',
+    qty: String(qty),
+    timeInForce: 'GTC',
+    positionIdx: 0,
+    reduceOnly: true,
+  };
+
+  console.log('Close params:', JSON.stringify(orderParams));
+  return await makeBybitRequest('POST', '/v5/order/create', orderParams);
 }
 
-async function getTicker(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/market/tickers',
-    apiKey,
-    apiSecret,
-    'GET',
-    { category: params?.category || 'linear', symbol: params?.symbol },
-    serverTime
-  );
+async function getInstruments(symbol?: string) {
+  const params: Record<string, any> = { category: 'linear' };
+  if (symbol) params.symbol = symbol;
+  const result = await makeBybitRequest('GET', '/v5/market/instruments-info', params, false);
+  return result?.list || [];
 }
 
-async function getTickers(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/market/tickers',
-    apiKey,
-    apiSecret,
-    'GET',
-    { category: params?.category || 'linear' },
-    serverTime
-  );
+async function getTickers() {
+  const result = await makeBybitRequest('GET', '/v5/market/tickers', { category: 'linear' }, false);
+  return result?.list || [];
 }
 
-async function getInstruments(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/market/instruments-info',
-    apiKey,
-    apiSecret,
-    'GET',
-    { 
-      category: params?.category || 'linear',
-      limit: params?.limit || 1000,
-      status: 'Trading'
-    },
-    serverTime
-  );
+async function setLeverage(params: any) {
+  const { symbol, leverage } = params;
+  return await makeBybitRequest('POST', '/v5/position/set-leverage', {
+    category: 'linear',
+    symbol,
+    buyLeverage: String(leverage),
+    sellLeverage: String(leverage),
+  });
 }
 
-async function setTradingStop(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/position/trading-stop',
-    apiKey,
-    apiSecret,
-    'POST',
-    params,
-    serverTime
-  );
+async function getClosedPnL(params: any) {
+  const { symbol, startTime, endTime, limit = 100, cursor } = params;
+  const queryParams: Record<string, any> = { category: 'linear', limit };
+  if (symbol) queryParams.symbol = symbol;
+  if (startTime) queryParams.startTime = startTime;
+  if (endTime) queryParams.endTime = endTime;
+  if (cursor) queryParams.cursor = cursor;
+  
+  const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', queryParams);
+  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
 }
 
-async function setLeverage(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/position/set-leverage',
-    apiKey,
-    apiSecret,
-    'POST',
-    params,
-    serverTime
-  );
+async function getOrderHistory(params: any) {
+  const { symbol, startTime, endTime, limit = 50, cursor } = params;
+  const queryParams: Record<string, any> = { category: 'linear', limit };
+  if (symbol) queryParams.symbol = symbol;
+  if (startTime) queryParams.startTime = startTime;
+  if (endTime) queryParams.endTime = endTime;
+  if (cursor) queryParams.cursor = cursor;
+  
+  const result = await makeBybitRequest('GET', '/v5/order/history', queryParams);
+  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
 }
 
-async function getClosedPnL(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/position/closed-pnl',
-    apiKey,
-    apiSecret,
-    'GET',
-    {
-      category: params?.category || 'linear',
-      symbol: params?.symbol,
-      startTime: params?.startTime,
-      endTime: params?.endTime,
-      limit: params?.limit || 100,
-      cursor: params?.cursor
-    },
-    serverTime
-  );
-}
-
-async function getOrderHistory(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/order/history',
-    apiKey,
-    apiSecret,
-    'GET',
-    {
-      category: params?.category || 'linear',
-      symbol: params?.symbol,
-      baseCoin: params?.baseCoin,
-      settleCoin: params?.settleCoin,
-      orderId: params?.orderId,
-      orderLinkId: params?.orderLinkId,
-      orderFilter: params?.orderFilter,
-      orderStatus: params?.orderStatus,
-      startTime: params?.startTime,
-      endTime: params?.endTime,
-      limit: params?.limit || 50,
-      cursor: params?.cursor
-    },
-    serverTime
-  );
-}
-
-async function getExecutionList(baseUrl: string, apiKey: string, apiSecret: string, params: any, serverTime: number) {
-  return await makeBybitRequest(
-    baseUrl,
-    '/v5/execution/list',
-    apiKey,
-    apiSecret,
-    'GET',
-    {
-      category: params?.category || 'linear',
-      symbol: params?.symbol,
-      baseCoin: params?.baseCoin,
-      startTime: params?.startTime,
-      endTime: params?.endTime,
-      execType: params?.execType,
-      limit: params?.limit || 100,
-      cursor: params?.cursor
-    },
-    serverTime
-  );
+async function getExecutionList(params: any) {
+  const { symbol, startTime, endTime, limit = 100, cursor } = params;
+  const queryParams: Record<string, any> = { category: 'linear', limit };
+  if (symbol) queryParams.symbol = symbol;
+  if (startTime) queryParams.startTime = startTime;
+  if (endTime) queryParams.endTime = endTime;
+  if (cursor) queryParams.cursor = cursor;
+  
+  const result = await makeBybitRequest('GET', '/v5/execution/list', queryParams);
+  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
 }
