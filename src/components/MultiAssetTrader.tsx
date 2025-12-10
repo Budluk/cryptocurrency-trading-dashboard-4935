@@ -424,17 +424,24 @@ export const MultiAssetTrader = () => {
           let finalLeverage = leverage;
           let leverageSuccess = false;
           
+          if (!symbol || symbol.trim() === '') {
+            console.error('Invalid symbol for leverage setting:', symbol);
+            continue;
+          }
+          
           for (let attempts = 0; attempts < 3 && !leverageSuccess; attempts++) {
-            const { error } = await supabase.functions.invoke('bybit-trading', {
+            const { data: leverageData, error } = await supabase.functions.invoke('bybit-trading', {
               body: {
                 action: 'set_leverage', isTestnet: false,
-                params: { category: 'linear', symbol, buyLeverage: finalLeverage.toString(), sellLeverage: finalLeverage.toString() }
+                params: { category: 'linear', symbol: symbol.trim(), buyLeverage: finalLeverage.toString(), sellLeverage: finalLeverage.toString() }
               }
             });
             
-            if (!error) {
+            // Success if no error OR if response indicates leverage already set
+            if (!error || leverageData?.data?.success || leverageData?.data?.retCode === 110043) {
               leverageSuccess = true;
             } else {
+              console.log(`Leverage attempt ${attempts + 1} failed for ${symbol}, reducing from ${finalLeverage}`);
               finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10);
             }
           }
