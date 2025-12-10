@@ -172,7 +172,14 @@ async function makeBybitRequest(
 
   const data = await response.json();
   
+  // Handle non-critical Bybit errors that are actually success cases
+  const nonCriticalErrors = [110043]; // 110043 = leverage not modified (already set)
+  
   if (data.retCode !== 0) {
+    if (nonCriticalErrors.includes(data.retCode)) {
+      console.log(`Bybit non-critical response (${data.retCode}): ${data.retMsg}`);
+      return { success: true, message: data.retMsg, retCode: data.retCode };
+    }
     console.error(`Bybit API Error:`, JSON.stringify(data));
     throw new Error(`Bybit API Error: ${data.retMsg}`);
   }
