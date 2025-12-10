@@ -16,9 +16,14 @@ serve(async (req) => {
   }
 
   try {
-    const { action, ...params } = await req.json();
+    const body = await req.json();
+    const { action, params: nestedParams, ...restParams } = body;
+    
+    // Handle both nested params: { action, params: {...} } and flat params: { action, symbol, leverage, ... }
+    const params = nestedParams || restParams;
     
     console.log(`Bybit MAINNET - Action: ${action}`);
+    console.log(`Params received:`, JSON.stringify(params));
     console.log(`API Key configured: ${BYBIT_API_KEY ? 'YES' : 'NO'}`);
     console.log(`API Secret configured: ${BYBIT_API_SECRET ? 'YES' : 'NO'}`);
     console.log(`API Key length: ${BYBIT_API_KEY.length}`);
@@ -262,12 +267,21 @@ async function getTickers(symbol?: string) {
 }
 
 async function setLeverage(params: any) {
-  const { symbol, leverage } = params;
+  const { symbol, leverage, buyLeverage, sellLeverage } = params;
+  
+  if (!symbol) {
+    console.error('setLeverage: symbol is required but was:', symbol);
+    throw new Error('Symbol is required for setLeverage');
+  }
+  
+  const leverageValue = leverage || buyLeverage || '10';
+  console.log(`Setting leverage for ${symbol}: ${leverageValue}x`);
+  
   return await makeBybitRequest('POST', '/v5/position/set-leverage', {
     category: 'linear',
     symbol,
-    buyLeverage: String(leverage),
-    sellLeverage: String(leverage),
+    buyLeverage: String(leverageValue),
+    sellLeverage: String(sellLeverage || leverageValue),
   });
 }
 
