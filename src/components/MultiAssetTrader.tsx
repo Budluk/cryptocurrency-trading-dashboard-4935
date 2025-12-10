@@ -132,6 +132,12 @@ export const MultiAssetTrader = () => {
     }
   }, [closedPositions, addTradeToBuffer]);
 
+  // Carregar saldo inicial
+  useEffect(() => {
+    syncBybitBalance();
+    syncOpenPositions();
+  }, []);
+
   // Restaurar estado
   useEffect(() => {
     const restoreTraderState = async () => {
@@ -140,7 +146,7 @@ export const MultiAssetTrader = () => {
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (mlData?.is_enabled) {
         setMlConfig(mlData);
@@ -151,7 +157,7 @@ export const MultiAssetTrader = () => {
         .from('auto_trader_config')
         .select('trader_is_running, last_activity_at')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (config?.trader_is_running) {
         const lastActivity = new Date(config.last_activity_at || Date.now()).getTime();
