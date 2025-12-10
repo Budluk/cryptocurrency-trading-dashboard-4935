@@ -43,7 +43,8 @@ serve(async (req) => {
         result = await getInstruments(params.symbol);
         break;
       case 'get_tickers':
-        result = await getTickers();
+      case 'get_ticker':
+        result = await getTickers(params.symbol);
         break;
       case 'set_leverage':
         result = await setLeverage(params);
@@ -96,7 +97,6 @@ async function getBybitServerTime(): Promise<number> {
     throw new Error('Invalid server time response');
   } catch (error) {
     console.error('Server time fetch error:', error);
-    // Fallback: use local time minus 1 second for safety
     const fallback = Math.floor(Date.now() - 1000);
     console.log(`Bybit server time (fallback): ${fallback}`);
     return fallback;
@@ -124,7 +124,6 @@ async function makeBybitRequest(
   params: Record<string, any> = {},
   requiresAuth: boolean = true
 ): Promise<any> {
-  // Get fresh server time for authenticated requests
   const timestamp = requiresAuth ? await getBybitServerTime() : Math.floor(Date.now());
   
   let url = `${BASE_URL}${endpoint}`;
@@ -255,8 +254,10 @@ async function getInstruments(symbol?: string) {
   return result?.list || [];
 }
 
-async function getTickers() {
-  const result = await makeBybitRequest('GET', '/v5/market/tickers', { category: 'linear' }, false);
+async function getTickers(symbol?: string) {
+  const params: Record<string, any> = { category: 'linear' };
+  if (symbol) params.symbol = symbol;
+  const result = await makeBybitRequest('GET', '/v5/market/tickers', params, false);
   return result?.list || [];
 }
 
