@@ -134,14 +134,23 @@ export const MultiAssetTrader = () => {
 
   // Carregar saldo inicial
   useEffect(() => {
-    syncBybitBalance();
-    syncOpenPositions();
+    const init = async () => {
+      console.log('🔄 Inicializando trader...');
+      await syncBybitBalance();
+      await syncOpenPositions();
+      await fetchTop10VolatileAssets();
+      console.log('✅ Inicialização completa');
+    };
+    init();
   }, []);
 
-  // Restaurar estado
+  // Restaurar estado e garantir config existe
   useEffect(() => {
     const restoreTraderState = async () => {
       const userId = await getUserId();
+      console.log('👤 User ID:', userId);
+      
+      // Carregar ML config
       const { data: mlData } = await supabase
         .from('ml_adaptive_config')
         .select('*')
@@ -153,21 +162,41 @@ export const MultiAssetTrader = () => {
         console.log('🧠 ML Adaptativo ATIVADO');
       }
 
-      const { data: config } = await supabase
+      // Verificar/criar config do trader
+      let { data: config } = await supabase
         .from('auto_trader_config')
-        .select('trader_is_running, last_activity_at')
+        .select('*')
         .eq('user_id', userId)
         .maybeSingle();
 
+      // Se não existe config, criar uma
+      if (!config) {
+        console.log('📝 Criando config para usuário...');
+        const { data: newConfig, error } = await supabase.from('auto_trader_config').insert({
+          user_id: userId,
+          trader_is_running: false,
+          is_active: false,
+          min_confidence: 50,
+          leverage_max: 25
+        }).select().single();
+        
+        if (!error && newConfig) {
+          config = newConfig;
+          console.log('✅ Config criada');
+        }
+      }
+
       if (config?.trader_is_running) {
         const lastActivity = new Date(config.last_activity_at || Date.now()).getTime();
-        if (Date.now() - lastActivity < 5 * 60 * 1000) {
+        if (Date.now() - lastActivity < 10 * 60 * 1000) { // 10 min tolerance
           setIsRunning(true);
           toast({ title: "🔄 Trader Restaurado", description: "Operações continuam automaticamente" });
         } else {
           await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
         }
       }
+      
+      console.log('📊 Estado trader:', config?.trader_is_running ? 'ATIVO' : 'PARADO');
     };
     restoreTraderState();
   }, []);
@@ -183,8 +212,9 @@ export const MultiAssetTrader = () => {
 
       if (error || !data?.success) return;
 
-      const positions = data.data?.list || [];
-      const openPositionsData = positions.filter((p: any) => parseFloat(p.size) > 0);
+      // positions data is array directly
+      const positionsList = Array.isArray(data.data) ? data.data : (data.data?.list || []);
+      const openPositionsData = positionsList.filter((p: any) => parseFloat(p.size) > 0);
       const volatilityMap = (window as any).assetVolatility || new Map();
 
       if (smartExitEnabled && mlConfig?.is_enabled) {
@@ -244,16 +274,28 @@ export const MultiAssetTrader = () => {
         body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', limit: 1000, status: 'Trading' } }
       });
 
-      if (instrumentsError || !instrumentsData?.success) return;
+      if (instrumentsError || !instrumentsData?.success) {
+        console.log('❌ Erro ao buscar instruments:', instrumentsError);
+        return;
+      }
 
-      const instruments = instrumentsData.data.list || [];
+      // instruments data is array directly in data field
+      const instruments = Array.isArray(instrumentsData.data) ? instrumentsData.data : (instrumentsData.data?.list || []);
       const tradableAssets = instruments.filter((inst: any) => inst.status === 'Trading' && inst.quoteCoin === 'USDT');
+      console.log(`📊 ${tradableAssets.length} ativos tradáveis`);
 
-      const { data: tickerData } = await supabase.functions.invoke('bybit-trading', {
+      const { data: tickerData, error: tickerError } = await supabase.functions.invoke('bybit-trading', {
         body: { action: 'get_ticker', isTestnet: false, params: { category: 'linear' } }
       });
 
-      const tickers = tickerData?.data?.list || [];
+      if (tickerError || !tickerData?.success) {
+        console.log('❌ Erro ao buscar tickers:', tickerError);
+        return;
+      }
+
+      // tickers data is array directly in data field
+      const tickers = Array.isArray(tickerData.data) ? tickerData.data : (tickerData.data?.list || []);
+      console.log(`📈 ${tickers.length} tickers recebidos`);
       
       // Filtrar e ordenar por volatilidade
       const assetsWithVolatility = tradableAssets.map((instrument: any) => {
@@ -263,11 +305,11 @@ export const MultiAssetTrader = () => {
         return { instrument, ticker, volatility: Math.abs(priceChange), priceChange, volume24h };
       }).filter(a => {
         const isInTop10 = top10VolatileAssets.includes(a.instrument.symbol);
-        // Priorizar ativos com alta volatilidade
         return isInTop10 ? (a.volatility > 1.5 && a.volume24h > 100000) : (a.volatility > 2.5 && a.volume24h > 300000);
       });
       
       const topVolatileAssets = assetsWithVolatility.sort((a, b) => b.volatility - a.volatility).slice(0, 50);
+      console.log(`🔥 ${topVolatileAssets.length} ativos após filtro volatilidade`);
 
       let shouldStopTrading = false;
       
@@ -335,7 +377,13 @@ export const MultiAssetTrader = () => {
             body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
           });
           
-          const freshBalance = parseFloat(balanceCheck?.data?.list?.[0]?.totalAvailableBalance || '0');
+          // Balance data is object directly in data field
+          const balanceData = balanceCheck?.data;
+          const freshBalance = parseFloat(
+            balanceData?.totalAvailableBalance || 
+            balanceData?.list?.[0]?.totalAvailableBalance || 
+            '0'
+          );
           if (freshBalance < 2) {
             console.log(`⚠️ Saldo muito baixo: $${freshBalance.toFixed(2)}`);
             continue;

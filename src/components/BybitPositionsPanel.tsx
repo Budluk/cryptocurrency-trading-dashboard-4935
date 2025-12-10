@@ -47,7 +47,8 @@ export const BybitPositionsPanel = () => {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Erro ao buscar posições');
 
-      const positions = data.data?.list || [];
+      // data.data is array directly, not data.data.list
+      const positions = Array.isArray(data.data) ? data.data : (data.data?.list || []);
       return positions.filter((p: any) => parseFloat(p.size || 0) > 0);
     },
     refetchInterval: 10000,
@@ -71,7 +72,9 @@ export const BybitPositionsPanel = () => {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Erro ao buscar saldo');
 
-      return data.data?.list?.[0] || null;
+      // Balance returns object directly in data, not data.list[0]
+      const balanceData = data.data;
+      return balanceData?.list?.[0] || balanceData || null;
     },
     refetchInterval: 15000,
     staleTime: 10000,
