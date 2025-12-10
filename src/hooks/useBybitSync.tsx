@@ -44,8 +44,9 @@ export function useBybitSync() {
 
       if (error) throw error;
 
-      // FIX: API returns data as object directly, not array
-      const balanceData = data?.data;
+      // Bybit API returns list array with account data
+      const balanceList = data?.data?.list || [];
+      const balanceData = balanceList[0] || {};
       const balance = balanceData?.totalWalletBalance 
         ? parseFloat(balanceData.totalWalletBalance) 
         : 0;
@@ -81,8 +82,10 @@ export function useBybitSync() {
 
       if (error) throw error;
 
-      const positions = data?.data || [];
-      const activePositions = positions.filter((p: any) => parseFloat(p.size || '0') > 0);
+      const positions = data?.data?.list || data?.data || [];
+      const activePositions = Array.isArray(positions) 
+        ? positions.filter((p: any) => parseFloat(p.size || '0') > 0)
+        : [];
       const count = activePositions.length;
 
       syncCache.positions = { data: count, timestamp: Date.now() };
@@ -116,7 +119,7 @@ export function useBybitSync() {
 
       if (error) throw error;
 
-      const tickers = data?.data || [];
+      const tickers = data?.data?.list || data?.data || [];
       
       const scored = tickers
         .filter((t: any) => t.symbol?.endsWith('USDT'))
