@@ -44,9 +44,9 @@ export function useBybitSync() {
 
       if (error) throw error;
 
-      // Bybit API returns list array with account data
-      const balanceList = data?.data?.list || [];
-      const balanceData = balanceList[0] || {};
+      // Handle both formats: data.list[0] or data directly
+      const responseData = data?.data;
+      const balanceData = responseData?.list?.[0] || responseData || {};
       const balance = balanceData?.totalWalletBalance 
         ? parseFloat(balanceData.totalWalletBalance) 
         : 0;
