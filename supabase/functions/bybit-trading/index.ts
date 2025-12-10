@@ -73,23 +73,23 @@ serve(async (req) => {
   }
 });
 
-// Get fresh Bybit server timestamp - ALWAYS returns integer milliseconds
+// Get fresh Bybit server timestamp - uses the 'time' field directly from response
 async function getBybitServerTime(): Promise<number> {
   try {
     const response = await fetch(`${BASE_URL}/v5/market/time`);
     const data = await response.json();
     
-    if (data.retCode === 0 && data.result?.timeSecond) {
-      // timeSecond is in seconds, convert to ms and ensure integer
-      const serverTime = Math.floor(Number(data.result.timeSecond) * 1000);
-      console.log(`Bybit server time: ${serverTime}`);
+    // Use the 'time' field directly - it's already in milliseconds as integer
+    if (data.retCode === 0 && data.time) {
+      const serverTime = Math.floor(Number(data.time));
+      console.log(`Bybit server time (direct): ${serverTime}`);
       return serverTime;
     }
     
-    if (data.retCode === 0 && data.result?.timeNano) {
-      // timeNano is in nanoseconds, convert to ms
-      const serverTime = Math.floor(Number(data.result.timeNano) / 1000000);
-      console.log(`Bybit server time (nano): ${serverTime}`);
+    // Fallback: use timeSecond and convert
+    if (data.retCode === 0 && data.result?.timeSecond) {
+      const serverTime = Math.floor(Number(data.result.timeSecond)) * 1000;
+      console.log(`Bybit server time (calculated): ${serverTime}`);
       return serverTime;
     }
     
@@ -97,7 +97,9 @@ async function getBybitServerTime(): Promise<number> {
   } catch (error) {
     console.error('Server time fetch error:', error);
     // Fallback: use local time minus 1 second for safety
-    return Math.floor(Date.now() - 1000);
+    const fallback = Math.floor(Date.now() - 1000);
+    console.log(`Bybit server time (fallback): ${fallback}`);
+    return fallback;
   }
 }
 
@@ -122,7 +124,7 @@ async function makeBybitRequest(
   params: Record<string, any> = {},
   requiresAuth: boolean = true
 ): Promise<any> {
-  // CRITICAL: Get fresh server time for authenticated requests - ensures integer timestamp
+  // Get fresh server time for authenticated requests
   const timestamp = requiresAuth ? await getBybitServerTime() : Math.floor(Date.now());
   
   let url = `${BASE_URL}${endpoint}`;
