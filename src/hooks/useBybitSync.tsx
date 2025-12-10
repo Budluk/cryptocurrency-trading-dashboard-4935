@@ -42,31 +42,39 @@ export function useBybitSync() {
         body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Erro API balance:', error);
+        throw error;
+      }
       
       // Check for API errors
-      if (data?.code || data?.error || data?.success === false) {
-        console.warn('Bybit API error:', data?.message || data?.error);
+      if (!data?.success) {
+        console.warn('⚠️ Bybit API error:', data?.error || data?.message);
         return currentBalance;
       }
 
-      // Response format: { success: true, data: { totalWalletBalance: "14.88" } }
+      // Response: { success: true, data: { totalWalletBalance: "14.88", ... } }
       const balanceData = data?.data;
       let balance = 0;
       
-      if (balanceData?.totalWalletBalance) {
-        balance = parseFloat(balanceData.totalWalletBalance);
+      // Multiple fallback parsing strategies
+      if (typeof balanceData?.totalWalletBalance === 'string' || typeof balanceData?.totalWalletBalance === 'number') {
+        balance = parseFloat(String(balanceData.totalWalletBalance));
       } else if (balanceData?.list?.[0]?.totalWalletBalance) {
         balance = parseFloat(balanceData.list[0].totalWalletBalance);
+      } else if (balanceData?.totalEquity) {
+        balance = parseFloat(String(balanceData.totalEquity));
       }
+
+      if (isNaN(balance)) balance = 0;
 
       syncCache.balance = { data: balance, timestamp: Date.now() };
       setCurrentBalance(balance);
       setLastSyncTime(new Date());
-      if (balance > 0) console.log('💰 Saldo sincronizado: $' + balance.toFixed(2));
+      console.log(`💰 Saldo: $${balance.toFixed(2)}`);
       return balance;
     } catch (error) {
-      console.error('Erro ao sincronizar saldo:', error);
+      console.error('❌ Erro sync saldo:', error);
       return currentBalance;
     } finally {
       pendingRequests.current.delete('balance');
