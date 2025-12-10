@@ -47,7 +47,7 @@ export const MultiAssetTrader = () => {
     calculateDynamicTrailingStop, calculateValidQuantity, calculateStopTakeProfit
   } = useTradingCalculations();
   const {
-    currentBalance, setCurrentBalance, openPositionsCount, setOpenPositionsCount,
+    currentBalance, openPositionsCount,
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
   const { analyzeSignal } = useSignalAnalysis();
@@ -256,7 +256,7 @@ export const MultiAssetTrader = () => {
         const volume24h = parseFloat(ticker?.turnover24h || '0');
         return { instrument, ticker, volatility: Math.abs(priceChange), priceChange, volume24h };
       }).filter(a => {
-        const isInTop10 = top10VolatileAssets.has(a.instrument.symbol);
+        const isInTop10 = top10VolatileAssets.includes(a.instrument.symbol);
         // Priorizar ativos com alta volatilidade
         return isInTop10 ? (a.volatility > 1.5 && a.volume24h > 100000) : (a.volatility > 2.5 && a.volume24h > 300000);
       });
@@ -270,7 +270,7 @@ export const MultiAssetTrader = () => {
 
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
-        const isScalpAsset = top10VolatileAssets.has(symbol);
+        const isScalpAsset = top10VolatileAssets.includes(symbol);
         
         try {
           const currentPrice = parseFloat(ticker.lastPrice);
@@ -443,7 +443,7 @@ export const MultiAssetTrader = () => {
               symbol, action: analysisResult.action!, confidence: analysisResult.signalScore,
               leverage: finalLeverage, usdSize, timestamp: new Date().toISOString()
             }]);
-            setOpenPositionsCount(prev => prev + 1);
+            // Position count will be updated on next sync
             
             toast({ title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`, description: `${analysisResult.action} ${finalLeverage}x | $${usdSize.toFixed(0)}` });
           } else {
