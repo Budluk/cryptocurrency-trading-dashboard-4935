@@ -993,7 +993,6 @@ export const MultiAssetTrader = () => {
           getBlockedStats={getBlockedStats} 
           blockedCount={blockedCount}
           forceUnblock={forceUnblock}
-          onForceSyncPnL={syncClosedPositionsPnL}
         />
 
         {/* Gestão de Saídas */}

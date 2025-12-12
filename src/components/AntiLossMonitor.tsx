@@ -30,15 +30,70 @@ interface Props {
   };
   blockedCount: number;
   forceUnblock?: (key: string) => void;
-  onForceSyncPnL?: () => Promise<void>;
 }
 
-export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock, onForceSyncPnL }: Props) => {
+export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }: Props) => {
   const [stats, setStats] = useState<AntiLossStats | null>(null);
   const [dbStats, setDbStats] = useState<{ losses: number; wins: number; pending: number }>({ losses: 0, wins: 0, pending: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
+
+  // Sincronizar PnL diretamente do Bybit
+  const syncPnLFromBybit = async () => {
+    try {
+      const userId = await getUserId();
+      
+      // Buscar posições sem PnL
+      const { data: pendingPositions } = await supabase
+        .from('auto_trader_positions')
+        .select('id, symbol, side, leverage, closed_at')
+        .eq('user_id', userId)
+        .eq('status', 'CLOSED')
+        .is('realized_pnl', null)
+        .limit(30);
+
+      if (!pendingPositions?.length) {
+        console.log('✅ Sem posições pendentes de PnL');
+        return 0;
+      }
+
+      console.log(`🔄 Sincronizando ${pendingPositions.length} posições...`);
+
+      // Buscar PnL do Bybit
+      const { data: bybitData, error } = await supabase.functions.invoke('bybit-trading', {
+        body: { action: 'get_closed_pnl', params: { category: 'linear', limit: 100 } }
+      });
+
+      if (error || !bybitData?.success) {
+        console.error('❌ Erro Bybit:', error || bybitData?.error);
+        return 0;
+      }
+
+      const pnlList = bybitData.data?.list || [];
+      console.log(`📊 Bybit: ${pnlList.length} registros de PnL`);
+
+      let syncedCount = 0;
+      for (const pos of pendingPositions) {
+        const match = pnlList.find((p: any) => p.symbol === pos.symbol);
+        if (match) {
+          const pnl = parseFloat(match.closedPnl);
+          await supabase
+            .from('auto_trader_positions')
+            .update({ realized_pnl: pnl })
+            .eq('id', pos.id);
+          syncedCount++;
+          console.log(`${pnl >= 0 ? '🟢' : '🔴'} ${pos.symbol}: $${pnl.toFixed(4)}`);
+        }
+      }
+      
+      console.log(`✅ Sincronizados: ${syncedCount}/${pendingPositions.length}`);
+      return syncedCount;
+    } catch (e) {
+      console.error('❌ Erro sync:', e);
+      return 0;
+    }
+  };
 
   const fetchStats = async () => {
     setIsLoading(true);
@@ -83,8 +138,18 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock, o
     setIsLoading(false);
   };
 
+  // Auto-sync ao carregar se houver pendentes
   useEffect(() => {
-    fetchStats();
+    const autoSync = async () => {
+      await fetchStats();
+      // Se houver pendentes, sincronizar automaticamente
+      if (dbStats.pending > 0) {
+        await syncPnLFromBybit();
+        await fetchStats();
+      }
+    };
+    autoSync();
+    
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
   }, [blockedCount]);
@@ -157,28 +222,30 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock, o
             <span className="text-xs text-yellow-400">
               ⚠️ {dbStats.pending} posições sem PnL
             </span>
-            {onForceSyncPnL && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  setIsSyncing(true);
-                  try {
-                    await onForceSyncPnL();
-                    toast({ title: "✅ Sincronização iniciada" });
-                    setTimeout(fetchStats, 2000);
-                  } catch (e) {
-                    toast({ title: "❌ Erro na sincronização", variant: "destructive" });
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setIsSyncing(true);
+                try {
+                  const synced = await syncPnLFromBybit();
+                  if (synced > 0) {
+                    toast({ title: `✅ ${synced} PnLs sincronizados` });
+                  } else {
+                    toast({ title: "⚠️ Nenhum PnL encontrado no Bybit", variant: "destructive" });
                   }
-                  setIsSyncing(false);
-                }}
-                disabled={isSyncing}
-                className="h-6 text-xs px-2 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
-              >
-                {isSyncing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
-                Sincronizar
-              </Button>
-            )}
+                  await fetchStats();
+                } catch (e) {
+                  toast({ title: "❌ Erro na sincronização", variant: "destructive" });
+                }
+                setIsSyncing(false);
+              }}
+              disabled={isSyncing}
+              className="h-6 text-xs px-2 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+            >
+              {isSyncing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
+              Sincronizar
+            </Button>
           </div>
         )}
 
