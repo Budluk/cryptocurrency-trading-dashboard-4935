@@ -55,26 +55,30 @@ export const useLosingPatternBlocker = () => {
   // Carregar padrões históricos do banco
   const loadHistoricalPatterns = useCallback(async () => {
     try {
-      // Buscar trades perdedores recentes (últimas 24h) COM realized_pnl
-      // Ignorar user_id para compatibilidade com dados existentes
+      // Buscar trades perdedores recentes (últimas 24h) - usar pnl OU realized_pnl
       const { data: recentLosses, error } = await supabase
         .from('auto_trader_positions')
-        .select('symbol, side, leverage, opened_at, realized_pnl')
+        .select('symbol, side, leverage, opened_at, realized_pnl, pnl')
         .eq('status', 'CLOSED')
-        .not('realized_pnl', 'is', null)
-        .lt('realized_pnl', 0)
         .gte('opened_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
         .order('opened_at', { ascending: false });
 
       if (error || !recentLosses) {
-        console.log('🔍 Nenhum trade perdedor encontrado para análise');
+        console.log('🔍 Nenhum trade encontrado para análise');
         return;
       }
 
-      console.log(`🔍 Analisando ${recentLosses.length} trades perdedores...`);
+      // Filtrar trades com PnL negativo (usar pnl se realized_pnl estiver null)
+      const losingTrades = recentLosses.filter(t => {
+        const actualPnl = t.realized_pnl ?? t.pnl ?? 0;
+        return actualPnl < 0;
+      });
 
-      // Analisar padrões
-      for (const trade of recentLosses) {
+      console.log(`🔍 Analisando ${losingTrades.length} trades perdedores de ${recentLosses.length} totais...`);
+
+      // Analisar padrões usando losingTrades filtrados
+      for (const trade of losingTrades) {
+        const actualPnl = trade.realized_pnl ?? trade.pnl ?? 0;
         const hour = new Date(trade.opened_at).getUTCHours();
         const leverageRange = getLeverageRange(trade.leverage || 10);
         const key = getPatternKey(trade.symbol, trade.side, hour, leverageRange);
@@ -92,7 +96,7 @@ export const useLosingPatternBlocker = () => {
         };
 
         existing.losses++;
-        existing.totalPnL += trade.realized_pnl || 0;
+        existing.totalPnL += actualPnl;
         existing.lastLoss = trade.opened_at;
         existing.streak++;
         
@@ -114,12 +118,12 @@ export const useLosingPatternBlocker = () => {
         }
       }
 
-      // Atualizar contadores de símbolo
-      const symbolGroups = recentLosses.reduce((acc, t) => {
+      // Atualizar contadores de símbolo - usar losingTrades
+      const symbolGroups = losingTrades.reduce((acc, t) => {
         if (!acc[t.symbol]) acc[t.symbol] = [];
         acc[t.symbol].push(t);
         return acc;
-      }, {} as Record<string, typeof recentLosses>);
+      }, {} as Record<string, typeof losingTrades>);
 
       for (const [symbol, trades] of Object.entries(symbolGroups)) {
         const consecutiveLosses = countConsecutiveLosses(trades);
@@ -142,7 +146,8 @@ export const useLosingPatternBlocker = () => {
   const countConsecutiveLosses = (trades: any[]) => {
     let count = 0;
     for (const trade of trades) {
-      if ((trade.realized_pnl || 0) < 0) count++;
+      const actualPnl = trade.realized_pnl ?? trade.pnl ?? 0;
+      if (actualPnl < 0) count++;
       else break;
     }
     return count;
