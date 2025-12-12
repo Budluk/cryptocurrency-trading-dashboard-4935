@@ -149,14 +149,30 @@ serve(async (req) => {
     let cursor: string | undefined = undefined;
     let hasMore = true;
     // Bybit só permite consultar até 2 anos, mas na prática funciona melhor com 180 dias
-    const sixMonthsAgo = Date.now() - (180 * 24 * 60 * 60 * 1000);
+    // Buscar últimos 2 anos (730 dias)
+    const twoYearsAgo = Date.now() - (730 * 24 * 60 * 60 * 1000);
     
-    console.log('📊 Buscando histórico da Bybit (últimos 180 dias)...');
+    console.log('📊 Buscando histórico da Bybit (últimos 2 anos)...');
+    console.log(`📅 StartTime: ${twoYearsAgo} (${new Date(twoYearsAgo).toISOString()})`);
+
+    // Primeiro, tentar sem startTime para ver se há dados recentes
+    try {
+      const testResult = await makeBybitRequest('GET', '/v5/position/closed-pnl', { 
+        category: 'linear', 
+        limit: 10 
+      });
+      console.log(`🧪 Teste sem startTime: ${testResult?.list?.length || 0} trades`);
+      if (testResult?.list?.length > 0) {
+        console.log(`📝 Primeiro trade: ${JSON.stringify(testResult.list[0])}`);
+      }
+    } catch (testError: any) {
+      console.error(`❌ Erro teste: ${testError.message}`);
+    }
 
     // Paginar através de todo o histórico
     while (hasMore) {
       try {
-        const result = await fetchBybitClosedPnL(sixMonthsAgo, 100, cursor);
+        const result = await fetchBybitClosedPnL(twoYearsAgo, 100, cursor);
         console.log(`📥 Resposta Bybit: ${result.list.length} trades, cursor: ${result.nextPageCursor ? 'sim' : 'não'}`);
 
         if (result.list && result.list.length > 0) {
