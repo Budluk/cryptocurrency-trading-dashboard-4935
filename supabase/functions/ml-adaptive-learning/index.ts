@@ -101,15 +101,28 @@ async function makeBybitRequest(
 }
 
 async function fetchBybitClosedPnL(startTime: number, limit: number = 100, cursor?: string): Promise<{ list: BybitTrade[], nextPageCursor: string | null }> {
+  // Bybit closed-pnl endpoint precisa de startTime em ms
   const params: Record<string, any> = { 
     category: 'linear', 
     limit,
-    startTime: String(startTime),
   };
+  
+  // Se não tiver cursor, buscar por tempo
+  if (!cursor) {
+    params.startTime = String(startTime);
+  }
   if (cursor) params.cursor = cursor;
   
-  const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', params);
-  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+  console.log(`🔍 Chamando closed-pnl com params:`, JSON.stringify(params));
+  
+  try {
+    const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', params);
+    console.log(`📤 Resultado closed-pnl: list=${result?.list?.length || 0}, cursor=${result?.nextPageCursor ? 'sim' : 'não'}`);
+    return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+  } catch (error: any) {
+    console.error(`❌ Erro closed-pnl:`, error.message);
+    return { list: [], nextPageCursor: null };
+  }
 }
 
 serve(async (req) => {
