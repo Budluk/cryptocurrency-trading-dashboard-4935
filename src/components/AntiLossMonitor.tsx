@@ -39,54 +39,110 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
 
-  // Sincronizar PnL diretamente do Bybit
-  const syncPnLFromBybit = async () => {
+  // Sincronizar PnL diretamente do Bybit - busca histórico completo
+  const syncPnLFromBybit = async (): Promise<number> => {
     try {
       const userId = await getUserId();
+      console.log('🔄 Iniciando sync do histórico Bybit...');
       
-      // Buscar posições sem PnL
-      const { data: pendingPositions } = await supabase
+      // Buscar TODAS posições fechadas sem PnL
+      const { data: pendingPositions, error: dbError } = await supabase
         .from('auto_trader_positions')
-        .select('id, symbol, side, leverage, closed_at')
+        .select('id, symbol, side, leverage, closed_at, entry_price, qty')
         .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .is('realized_pnl', null)
-        .limit(30);
+        .order('closed_at', { ascending: false })
+        .limit(50);
 
-      if (!pendingPositions?.length) {
-        console.log('✅ Sem posições pendentes de PnL');
+      if (dbError) {
+        console.error('❌ Erro DB:', dbError);
         return 0;
       }
 
-      console.log(`🔄 Sincronizando ${pendingPositions.length} posições...`);
+      console.log(`📋 Posições pendentes: ${pendingPositions?.length || 0}`);
+      
+      if (!pendingPositions?.length) {
+        console.log('✅ Todas as posições já têm PnL');
+        return 0;
+      }
 
-      // Buscar PnL do Bybit
-      const { data: bybitData, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_closed_pnl', params: { category: 'linear', limit: 100 } }
+      // Buscar histórico COMPLETO do Bybit (últimos 7 dias)
+      const { data: bybitData, error: bybitError } = await supabase.functions.invoke('bybit-trading', {
+        body: { 
+          action: 'get_closed_pnl', 
+          params: { 
+            category: 'linear', 
+            limit: 200  // Máximo permitido
+          } 
+        }
       });
 
-      if (error || !bybitData?.success) {
-        console.error('❌ Erro Bybit:', error || bybitData?.error);
+      if (bybitError) {
+        console.error('❌ Erro chamando Bybit:', bybitError);
+        return 0;
+      }
+
+      if (!bybitData?.success) {
+        console.error('❌ Bybit retornou erro:', bybitData?.error || bybitData?.message);
         return 0;
       }
 
       const pnlList = bybitData.data?.list || [];
-      console.log(`📊 Bybit: ${pnlList.length} registros de PnL`);
+      console.log(`📊 Bybit retornou ${pnlList.length} registros de PnL`);
+      
+      if (pnlList.length === 0) {
+        console.log('⚠️ Nenhum PnL encontrado no Bybit');
+        return 0;
+      }
+
+      // Log dos primeiros registros para debug
+      console.log('📋 Primeiros 3 PnLs do Bybit:', pnlList.slice(0, 3).map((p: any) => ({
+        symbol: p.symbol,
+        pnl: p.closedPnl,
+        time: new Date(parseInt(p.updatedTime)).toISOString()
+      })));
 
       let syncedCount = 0;
+      const updatePromises: Promise<any>[] = [];
+
       for (const pos of pendingPositions) {
-        const match = pnlList.find((p: any) => p.symbol === pos.symbol);
-        if (match) {
-          const pnl = parseFloat(match.closedPnl);
+        // Encontrar PnL correspondente - primeiro por símbolo
+        const symbolMatches = pnlList.filter((p: any) => p.symbol === pos.symbol);
+        
+        if (symbolMatches.length === 0) {
+          console.log(`⚠️ ${pos.symbol}: Nenhum match no Bybit`);
+          continue;
+        }
+
+        // Se tem closed_at, tentar match por tempo (tolerância 5min)
+        let bestMatch = symbolMatches[0];
+        if (pos.closed_at) {
+          const posClosedTime = new Date(pos.closed_at).getTime();
+          for (const match of symbolMatches) {
+            const bybitTime = parseInt(match.updatedTime);
+            if (Math.abs(bybitTime - posClosedTime) < 300000) { // 5 min
+              bestMatch = match;
+              break;
+            }
+          }
+        }
+
+        const pnl = parseFloat(bestMatch.closedPnl);
+        
+        // Atualizar no banco
+        const updatePromise = (async () => {
           await supabase
             .from('auto_trader_positions')
             .update({ realized_pnl: pnl })
             .eq('id', pos.id);
-          syncedCount++;
           console.log(`${pnl >= 0 ? '🟢' : '🔴'} ${pos.symbol}: $${pnl.toFixed(4)}`);
-        }
+        })();
+        updatePromises.push(updatePromise);
+        syncedCount++;
       }
       
+      await Promise.all(updatePromises);
       console.log(`✅ Sincronizados: ${syncedCount}/${pendingPositions.length}`);
       return syncedCount;
     } catch (e) {
@@ -138,21 +194,40 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
     setIsLoading(false);
   };
 
-  // Auto-sync ao carregar se houver pendentes
+  // Auto-sync ao carregar - sempre tenta sincronizar primeiro
   useEffect(() => {
     const autoSync = async () => {
-      await fetchStats();
-      // Se houver pendentes, sincronizar automaticamente
-      if (dbStats.pending > 0) {
-        await syncPnLFromBybit();
-        await fetchStats();
+      console.log('🚀 AntiLoss: Iniciando auto-sync...');
+      
+      // Primeiro buscar stats para saber quantos pendentes
+      const userId = await getUserId();
+      const { data: pendingCount } = await supabase
+        .from('auto_trader_positions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'CLOSED')
+        .is('realized_pnl', null);
+      
+      const pending = pendingCount?.length || 0;
+      console.log(`📊 Pendentes encontrados: ${pending}`);
+      
+      if (pending > 0) {
+        setIsSyncing(true);
+        const synced = await syncPnLFromBybit();
+        setIsSyncing(false);
+        if (synced > 0) {
+          toast({ title: `✅ ${synced} PnLs sincronizados automaticamente` });
+        }
       }
+      
+      await fetchStats();
     };
+    
     autoSync();
     
-    const interval = setInterval(fetchStats, 30000);
+    const interval = setInterval(fetchStats, 60000); // 1 min
     return () => clearInterval(interval);
-  }, [blockedCount]);
+  }, []);
 
   const getStatusColor = () => {
     if (blockedCount > 2) return 'text-red-500';
