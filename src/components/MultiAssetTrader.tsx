@@ -208,59 +208,107 @@ export const MultiAssetTrader = () => {
       const userId = await getUserId();
       
       // Buscar posições fechadas sem PnL
-      const { data: closedWithoutPnl } = await supabase
+      const { data: closedWithoutPnl, error: fetchError } = await supabase
         .from('auto_trader_positions')
-        .select('id, symbol, side, leverage, closed_at')
+        .select('id, symbol, side, leverage, closed_at, entry_price, qty')
         .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .is('realized_pnl', null)
         .order('closed_at', { ascending: false })
-        .limit(20);
+        .limit(30);
 
-      if (!closedWithoutPnl?.length) return;
+      if (fetchError) {
+        console.error('❌ Erro ao buscar posições:', fetchError);
+        return;
+      }
 
-      // Buscar PnL real do Bybit
-      const { data: bybitPnL } = await supabase.functions.invoke('bybit-trading', {
+      if (!closedWithoutPnl?.length) {
+        console.log('✅ Todas posições têm PnL sincronizado');
+        return;
+      }
+
+      console.log(`🔄 Sincronizando PnL de ${closedWithoutPnl.length} posições...`);
+
+      // Buscar PnL real do Bybit (últimos 100 registros)
+      const { data: bybitPnL, error: apiError } = await supabase.functions.invoke('bybit-trading', {
         body: { 
           action: 'get_closed_pnl', 
           isTestnet: false, 
-          params: { category: 'linear', limit: 50 } 
+          params: { category: 'linear', limit: 100 } 
         }
       });
 
-      if (!bybitPnL?.success) return;
+      if (apiError || !bybitPnL?.success) {
+        console.error('❌ Erro ao buscar PnL do Bybit:', apiError || bybitPnL?.error);
+        return;
+      }
 
       const pnlList = bybitPnL.data?.list || [];
+      console.log(`📊 Bybit retornou ${pnlList.length} registros de PnL`);
+
+      if (pnlList.length === 0) {
+        console.log('⚠️ Nenhum PnL encontrado no Bybit');
+        return;
+      }
+
+      let syncedCount = 0;
       
       for (const pos of closedWithoutPnl) {
-        // Encontrar PnL correspondente no Bybit
-        const matchingPnl = pnlList.find((p: any) => 
-          p.symbol === pos.symbol && 
-          Math.abs(new Date(p.updatedTime).getTime() - new Date(pos.closed_at || 0).getTime()) < 60000
+        // Tentar encontrar correspondência por símbolo (Bybit pode ter múltiplos trades por símbolo)
+        const symbolMatches = pnlList.filter((p: any) => p.symbol === pos.symbol);
+        
+        if (symbolMatches.length === 0) {
+          console.log(`⚠️ Nenhum PnL encontrado para ${pos.symbol}`);
+          continue;
+        }
+
+        // Pegar o mais recente para o símbolo, ou tentar match por tempo
+        let matchingPnl = symbolMatches[0]; // Mais recente por padrão
+        
+        // Se temos closed_at, tentar match mais preciso
+        if (pos.closed_at) {
+          const posCloseTime = new Date(pos.closed_at).getTime();
+          
+          // Encontrar o match mais próximo no tempo (tolerance de 5 minutos)
+          for (const pnl of symbolMatches) {
+            const pnlTime = parseInt(pnl.updatedTime);
+            if (Math.abs(pnlTime - posCloseTime) < 300000) { // 5 min tolerance
+              matchingPnl = pnl;
+              break;
+            }
+          }
+        }
+
+        const realizedPnl = parseFloat(matchingPnl.closedPnl);
+        
+        // Atualizar no banco
+        const { error: updateError } = await supabase
+          .from('auto_trader_positions')
+          .update({ realized_pnl: realizedPnl })
+          .eq('id', pos.id);
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar PnL de ${pos.symbol}:`, updateError);
+          continue;
+        }
+
+        // 🚫 REGISTRAR NO SISTEMA ANTI-LOSS
+        recordTradeResult(
+          pos.symbol,
+          pos.side,
+          pos.leverage || 10,
+          realizedPnl
         );
 
-        if (matchingPnl) {
-          const realizedPnl = parseFloat(matchingPnl.closedPnl);
-          
-          // Atualizar no banco
-          await supabase
-            .from('auto_trader_positions')
-            .update({ realized_pnl: realizedPnl })
-            .eq('id', pos.id);
-
-          // 🚫 REGISTRAR NO SISTEMA ANTI-LOSS
-          recordTradeResult(
-            pos.symbol,
-            pos.side,
-            pos.leverage || 10,
-            realizedPnl
-          );
-
-          console.log(`📊 PnL atualizado: ${pos.symbol} ${pos.side} = $${realizedPnl.toFixed(2)}`);
-        }
+        syncedCount++;
+        const emoji = realizedPnl >= 0 ? '🟢' : '🔴';
+        console.log(`${emoji} PnL sincronizado: ${pos.symbol} ${pos.side} = $${realizedPnl.toFixed(4)}`);
       }
+
+      console.log(`✅ Sincronizados ${syncedCount}/${closedWithoutPnl.length} PnLs`);
+      
     } catch (error) {
-      console.error('Erro ao sincronizar PnL:', error);
+      console.error('❌ Erro ao sincronizar PnL:', error);
     }
   }, [recordTradeResult]);
 
@@ -945,6 +993,7 @@ export const MultiAssetTrader = () => {
           getBlockedStats={getBlockedStats} 
           blockedCount={blockedCount}
           forceUnblock={forceUnblock}
+          onForceSyncPnL={syncClosedPositionsPnL}
         />
 
         {/* Gestão de Saídas */}

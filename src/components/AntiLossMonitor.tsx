@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Shield, ShieldAlert, ShieldCheck, TrendingDown, Clock, Activity, RefreshCw } from "lucide-react";
+import { Shield, ShieldAlert, ShieldCheck, TrendingDown, Clock, Activity, RefreshCw, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getUserId } from "@/lib/anonymousUser";
+import { useToast } from "@/hooks/use-toast";
 
 interface AntiLossStats {
   blockedPatterns: Array<{
@@ -29,12 +30,15 @@ interface Props {
   };
   blockedCount: number;
   forceUnblock?: (key: string) => void;
+  onForceSyncPnL?: () => Promise<void>;
 }
 
-export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }: Props) => {
+export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock, onForceSyncPnL }: Props) => {
   const [stats, setStats] = useState<AntiLossStats | null>(null);
   const [dbStats, setDbStats] = useState<{ losses: number; wins: number; pending: number }>({ losses: 0, wins: 0, pending: 0 });
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const { toast } = useToast();
 
   const fetchStats = async () => {
     setIsLoading(true);
@@ -149,8 +153,32 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
 
         {/* PnL Sync Status */}
         {dbStats.pending > 0 && (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2 text-xs text-yellow-400">
-            ⚠️ {dbStats.pending} posições aguardando sincronização de PnL do Bybit
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2 flex items-center justify-between">
+            <span className="text-xs text-yellow-400">
+              ⚠️ {dbStats.pending} posições sem PnL
+            </span>
+            {onForceSyncPnL && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setIsSyncing(true);
+                  try {
+                    await onForceSyncPnL();
+                    toast({ title: "✅ Sincronização iniciada" });
+                    setTimeout(fetchStats, 2000);
+                  } catch (e) {
+                    toast({ title: "❌ Erro na sincronização", variant: "destructive" });
+                  }
+                  setIsSyncing(false);
+                }}
+                disabled={isSyncing}
+                className="h-6 text-xs px-2 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+              >
+                {isSyncing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
+                Sincronizar
+              </Button>
+            )}
           </div>
         )}
 
