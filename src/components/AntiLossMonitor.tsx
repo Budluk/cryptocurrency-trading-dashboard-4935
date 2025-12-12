@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Shield, ShieldAlert, ShieldCheck, TrendingDown, Clock, Activity, RefreshCw, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { getUserId } from "@/lib/anonymousUser";
 import { useToast } from "@/hooks/use-toast";
 
 interface AntiLossStats {
@@ -42,14 +41,12 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
   // Sincronizar PnL diretamente do Bybit - busca histórico completo
   const syncPnLFromBybit = async (): Promise<number> => {
     try {
-      const userId = await getUserId();
       console.log('🔄 Iniciando sync do histórico Bybit...');
       
-      // Buscar TODAS posições fechadas sem PnL
+      // Buscar TODAS posições fechadas sem PnL (ignorar user_id para compatibilidade)
       const { data: pendingPositions, error: dbError } = await supabase
         .from('auto_trader_positions')
         .select('id, symbol, side, leverage, closed_at, entry_price, qty')
-        .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .is('realized_pnl', null)
         .order('closed_at', { ascending: false })
@@ -154,14 +151,12 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
   const fetchStats = async () => {
     setIsLoading(true);
     try {
-      const userId = await getUserId();
       const blockedStats = getBlockedStats();
 
-      // Buscar trades das últimas 24h
+      // Buscar trades das últimas 24h (ignorar user_id para compatibilidade)
       const { data: recentTrades } = await supabase
         .from('auto_trader_positions')
         .select('realized_pnl, status, closed_at')
-        .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .gte('closed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
@@ -169,7 +164,6 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
       const { data: pendingPnl } = await supabase
         .from('auto_trader_positions')
         .select('id')
-        .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .is('realized_pnl', null);
 
@@ -199,12 +193,10 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
     const autoSync = async () => {
       console.log('🚀 AntiLoss: Iniciando auto-sync...');
       
-      // Primeiro buscar stats para saber quantos pendentes
-      const userId = await getUserId();
+      // Buscar stats para saber quantos pendentes (sem filtro de user_id)
       const { data: pendingCount } = await supabase
         .from('auto_trader_positions')
         .select('id')
-        .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .is('realized_pnl', null);
       
