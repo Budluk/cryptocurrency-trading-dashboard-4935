@@ -6,6 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Bybit API Config
+const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
+const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
+const RECV_WINDOW = "30000";
+const BASE_URL = "https://api.bybit.com";
+
 interface BybitTrade {
   symbol: string;
   orderId: string;
@@ -24,6 +30,88 @@ interface BybitTrade {
   updatedTime: string;
 }
 
+// Bybit API Helper Functions
+async function getBybitServerTime(): Promise<number> {
+  try {
+    const response = await fetch(`${BASE_URL}/v5/market/time`);
+    const data = await response.json();
+    if (data.retCode === 0 && data.time) {
+      return Math.floor(Number(data.time));
+    }
+    throw new Error('Invalid server time response');
+  } catch (error) {
+    console.error('Server time fetch error:', error);
+    return Math.floor(Date.now() - 1000);
+  }
+}
+
+async function generateSignature(params: string, timestamp: number): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = encoder.encode(BYBIT_API_SECRET);
+  const message = encoder.encode(`${timestamp}${BYBIT_API_KEY}${RECV_WINDOW}${params}`);
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, message);
+  return Array.from(new Uint8Array(signature))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function makeBybitRequest(
+  method: string,
+  endpoint: string,
+  params: Record<string, any> = {}
+): Promise<any> {
+  const timestamp = await getBybitServerTime();
+  
+  let url = `${BASE_URL}${endpoint}`;
+  let paramsStr = '';
+
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      searchParams.append(key, String(value));
+    }
+  });
+  paramsStr = searchParams.toString();
+  if (paramsStr) url += `?${paramsStr}`;
+
+  const signature = await generateSignature(paramsStr, timestamp);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-BAPI-API-KEY': BYBIT_API_KEY,
+    'X-BAPI-SIGN': signature,
+    'X-BAPI-SIGN-TYPE': '2',
+    'X-BAPI-TIMESTAMP': String(timestamp),
+    'X-BAPI-RECV-WINDOW': RECV_WINDOW,
+  };
+
+  const response = await fetch(url, { method, headers });
+  const data = await response.json();
+  
+  if (data.retCode !== 0) {
+    console.error(`Bybit API Error:`, JSON.stringify(data));
+    throw new Error(`Bybit API Error: ${data.retMsg}`);
+  }
+
+  return data.result;
+}
+
+async function fetchBybitClosedPnL(startTime: number, limit: number = 100, cursor?: string): Promise<{ list: BybitTrade[], nextPageCursor: string | null }> {
+  const params: Record<string, any> = { 
+    category: 'linear', 
+    limit,
+    startTime: String(startTime),
+  };
+  if (cursor) params.cursor = cursor;
+  
+  const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', params);
+  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -38,51 +126,35 @@ serve(async (req) => {
     const { userId, minTrades = 10 } = await req.json();
 
     console.log(`🧠 Iniciando análise ML com dados BYBIT REAL para user ${userId}`);
+    console.log(`🔑 API Key configurada: ${BYBIT_API_KEY ? 'SIM' : 'NÃO'}`);
+    console.log(`🔑 API Secret configurada: ${BYBIT_API_SECRET ? 'SIM' : 'NÃO'}`);
 
     // ========================
     // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 2 anos)
     // ========================
     let bybitTrades: BybitTrade[] = [];
-    let cursor = '';
+    let cursor: string | undefined = undefined;
     let hasMore = true;
     const twoYearsAgo = Date.now() - (2 * 365 * 24 * 60 * 60 * 1000);
     
-    console.log('📊 Buscando histórico completo da Bybit...');
+    console.log('📊 Buscando histórico completo da Bybit (direto)...');
 
     // Paginar através de todo o histórico
     while (hasMore) {
       try {
-        const { data: bybitResponse, error: bybitError } = await supabase.functions.invoke('bybit-trading', {
-          body: {
-            action: 'get_closed_pnl',
-            params: {
-              category: 'linear',
-              limit: 100,
-              cursor: cursor || undefined,
-              startTime: twoYearsAgo.toString(),
-            }
-          }
-        });
+        const result = await fetchBybitClosedPnL(twoYearsAgo, 100, cursor);
+        console.log(`📥 Resposta Bybit: ${result.list.length} trades, cursor: ${result.nextPageCursor ? 'sim' : 'não'}`);
 
-        if (bybitError) {
-          console.log('⚠️ Erro Bybit invoke:', bybitError.message);
-          break;
-        }
-
-        // A resposta vem em bybitResponse.data (resultado da função bybit-trading)
-        const result = bybitResponse?.data;
-        console.log('📥 Bybit response:', JSON.stringify(bybitResponse).substring(0, 200));
-
-        if (result?.list && result.list.length > 0) {
+        if (result.list && result.list.length > 0) {
           bybitTrades = [...bybitTrades, ...result.list];
-          cursor = result.nextPageCursor || '';
+          cursor = result.nextPageCursor || undefined;
           hasMore = !!cursor && bybitTrades.length < 2000;
           console.log(`📥 Carregados ${bybitTrades.length} trades da Bybit...`);
         } else {
           console.log('📭 Sem mais trades da Bybit');
           hasMore = false;
         }
-      } catch (fetchError) {
+      } catch (fetchError: any) {
         console.log('⚠️ Erro fetch Bybit:', fetchError.message);
         break;
       }
