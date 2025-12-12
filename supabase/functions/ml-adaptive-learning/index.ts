@@ -152,28 +152,29 @@ serve(async (req) => {
     // Buscar últimos 2 anos (730 dias)
     const twoYearsAgo = Date.now() - (730 * 24 * 60 * 60 * 1000);
     
-    console.log('📊 Buscando histórico da Bybit (sem startTime para evitar erro de 2 anos)...');
+    console.log('📊 Buscando histórico da Bybit (últimos 200 trades)...');
 
-    // Paginar através de todo o histórico SEM startTime
-    while (hasMore) {
+    // Buscar apenas uma página de trades para evitar timeout (máximo 200 trades)
+    const maxPages = 2;
+    let pageCount = 0;
+    
+    while (hasMore && pageCount < maxPages) {
       try {
-        // Buscar sem startTime - Bybit retorna os trades mais recentes primeiro
         const params: any = { category: 'linear', limit: 100 };
         if (cursor) {
           params.cursor = cursor;
         }
         
-        console.log(`🔍 Chamando closed-pnl com params: ${JSON.stringify(params)}`);
+        console.log(`🔍 Página ${pageCount + 1}: chamando closed-pnl`);
         const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', params);
-        console.log(`📥 Resposta Bybit: ${result.list.length} trades, cursor: ${result.nextPageCursor ? 'sim' : 'não'}`);
+        console.log(`📥 Resposta: ${result.list?.length || 0} trades`);
 
         if (result.list && result.list.length > 0) {
           bybitTrades = [...bybitTrades, ...result.list];
           cursor = result.nextPageCursor || undefined;
-          hasMore = !!cursor && bybitTrades.length < 2000;
-          console.log(`📥 Carregados ${bybitTrades.length} trades da Bybit...`);
+          hasMore = !!cursor;
+          pageCount++;
         } else {
-          console.log('📭 Sem mais trades da Bybit');
           hasMore = false;
         }
       } catch (fetchError: any) {
@@ -181,6 +182,8 @@ serve(async (req) => {
         break;
       }
     }
+    
+    console.log(`✅ Carregados ${bybitTrades.length} trades da Bybit`);
 
     console.log(`✅ Total de trades Bybit: ${bybitTrades.length}`);
 
