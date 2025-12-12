@@ -533,11 +533,12 @@ export const MultiAssetTrader = () => {
 
           if (parseFloat(orderValueUSD) < 5) continue;
 
-          // Calcular SL/TP
+          // Calcular SL/TP baseado em TOPOS e FUNDOS (estrutural)
           const priceRange = highPrice - lowPrice;
           const atrPercent = (priceRange / currentPrice) * 100;
           const { stopLoss, takeProfit } = calculateStopTakeProfit(
-            currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig
+            currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig,
+            highPrice, lowPrice // Passar high/low para stops estruturais
           );
 
           // Configurar alavancagem
