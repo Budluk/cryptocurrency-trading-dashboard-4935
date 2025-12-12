@@ -130,19 +130,20 @@ serve(async (req) => {
     console.log(`🔑 API Secret configurada: ${BYBIT_API_SECRET ? 'SIM' : 'NÃO'}`);
 
     // ========================
-    // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 2 anos)
+    // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 180 dias - limite Bybit)
     // ========================
     let bybitTrades: BybitTrade[] = [];
     let cursor: string | undefined = undefined;
     let hasMore = true;
-    const twoYearsAgo = Date.now() - (2 * 365 * 24 * 60 * 60 * 1000);
+    // Bybit só permite consultar até 2 anos, mas na prática funciona melhor com 180 dias
+    const sixMonthsAgo = Date.now() - (180 * 24 * 60 * 60 * 1000);
     
-    console.log('📊 Buscando histórico completo da Bybit (direto)...');
+    console.log('📊 Buscando histórico da Bybit (últimos 180 dias)...');
 
     // Paginar através de todo o histórico
     while (hasMore) {
       try {
-        const result = await fetchBybitClosedPnL(twoYearsAgo, 100, cursor);
+        const result = await fetchBybitClosedPnL(sixMonthsAgo, 100, cursor);
         console.log(`📥 Resposta Bybit: ${result.list.length} trades, cursor: ${result.nextPageCursor ? 'sim' : 'não'}`);
 
         if (result.list && result.list.length > 0) {
