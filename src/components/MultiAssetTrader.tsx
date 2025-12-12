@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
 import { getUserId } from "@/lib/anonymousUser";
+import { AntiLossMonitor } from "./AntiLossMonitor";
 
 interface Trade {
   symbol: string;
@@ -51,7 +52,7 @@ export const MultiAssetTrader = () => {
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
   const { analyzeSignal } = useSignalAnalysis();
-  const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount } = useLosingPatternBlocker();
+  const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock } = useLosingPatternBlocker();
   
   const lastMLCheck = useRef<number>(0);
   const lastClosedPositionsRef = useRef<string[]>([]);
@@ -939,51 +940,12 @@ export const MultiAssetTrader = () => {
           )}
         </Card>
 
-        {/* 🚫 Bloqueio de Padrões Perdedores */}
-        <Card className="p-4 bg-gradient-to-br from-red-500/10 to-orange-500/10 border-red-500/20 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-red-400" />
-              <span className="text-sm font-medium">Bloqueio de Padrões</span>
-            </div>
-            {blockedCount > 0 && (
-              <Badge variant="destructive" className="text-xs">
-                {blockedCount} bloqueados
-              </Badge>
-            )}
-          </div>
-          
-          <p className="text-xs text-muted-foreground mb-3">
-            Bloqueia automaticamente símbolos, horários e alavancagens que geram perdas consecutivas.
-          </p>
-
-          {(() => {
-            const stats = getBlockedStats();
-            return (
-              <div className="space-y-2 text-xs">
-                {stats.blockedSymbols.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-muted-foreground">Símbolos:</span>
-                    {stats.blockedSymbols.map(s => (
-                      <Badge key={s} variant="outline" className="text-red-400 border-red-500/30">{s}</Badge>
-                    ))}
-                  </div>
-                )}
-                {stats.blockedHours.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-muted-foreground">Horários:</span>
-                    {stats.blockedHours.map(h => (
-                      <Badge key={h} variant="outline" className="text-orange-400 border-orange-500/30">{h}:00 UTC</Badge>
-                    ))}
-                  </div>
-                )}
-                {stats.totalBlocked === 0 && (
-                  <p className="text-green-400">✓ Nenhum padrão bloqueado</p>
-                )}
-              </div>
-            );
-          })()}
-        </Card>
+        {/* 🚫 Monitor Anti-Perdas */}
+        <AntiLossMonitor 
+          getBlockedStats={getBlockedStats} 
+          blockedCount={blockedCount}
+          forceUnblock={forceUnblock}
+        />
 
         {/* Gestão de Saídas */}
         <Card className="p-4 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20 mb-4">
