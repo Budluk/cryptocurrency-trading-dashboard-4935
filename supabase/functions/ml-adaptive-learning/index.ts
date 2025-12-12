@@ -152,27 +152,19 @@ serve(async (req) => {
     // Buscar últimos 2 anos (730 dias)
     const twoYearsAgo = Date.now() - (730 * 24 * 60 * 60 * 1000);
     
-    console.log('📊 Buscando histórico da Bybit (últimos 2 anos)...');
-    console.log(`📅 StartTime: ${twoYearsAgo} (${new Date(twoYearsAgo).toISOString()})`);
+    console.log('📊 Buscando histórico da Bybit (sem startTime para evitar erro de 2 anos)...');
 
-    // Primeiro, tentar sem startTime para ver se há dados recentes
-    try {
-      const testResult = await makeBybitRequest('GET', '/v5/position/closed-pnl', { 
-        category: 'linear', 
-        limit: 10 
-      });
-      console.log(`🧪 Teste sem startTime: ${testResult?.list?.length || 0} trades`);
-      if (testResult?.list?.length > 0) {
-        console.log(`📝 Primeiro trade: ${JSON.stringify(testResult.list[0])}`);
-      }
-    } catch (testError: any) {
-      console.error(`❌ Erro teste: ${testError.message}`);
-    }
-
-    // Paginar através de todo o histórico
+    // Paginar através de todo o histórico SEM startTime
     while (hasMore) {
       try {
-        const result = await fetchBybitClosedPnL(twoYearsAgo, 100, cursor);
+        // Buscar sem startTime - Bybit retorna os trades mais recentes primeiro
+        const params: any = { category: 'linear', limit: 100 };
+        if (cursor) {
+          params.cursor = cursor;
+        }
+        
+        console.log(`🔍 Chamando closed-pnl com params: ${JSON.stringify(params)}`);
+        const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', params);
         console.log(`📥 Resposta Bybit: ${result.list.length} trades, cursor: ${result.nextPageCursor ? 'sim' : 'não'}`);
 
         if (result.list && result.list.length > 0) {
