@@ -58,17 +58,23 @@ export const useLosingPatternBlocker = () => {
     try {
       const userId = await getUserId();
       
-      // Buscar trades perdedores recentes (últimas 24h)
+      // Buscar trades perdedores recentes (últimas 24h) COM realized_pnl
       const { data: recentLosses, error } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side, leverage, opened_at, realized_pnl')
         .eq('user_id', userId)
         .eq('status', 'CLOSED')
+        .not('realized_pnl', 'is', null)
         .lt('realized_pnl', 0)
         .gte('opened_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
         .order('opened_at', { ascending: false });
 
-      if (error || !recentLosses) return;
+      if (error || !recentLosses) {
+        console.log('🔍 Nenhum trade perdedor encontrado para análise');
+        return;
+      }
+
+      console.log(`🔍 Analisando ${recentLosses.length} trades perdedores...`);
 
       // Analisar padrões
       for (const trade of recentLosses) {
@@ -97,6 +103,7 @@ export const useLosingPatternBlocker = () => {
 
         // Verificar se deve bloquear
         if (existing.losses >= MAX_SYMBOL_LOSSES) {
+          console.log(`🚫 Padrão bloqueado: ${trade.symbol} ${trade.side} ${hour}h ${leverageRange} (${existing.losses} perdas)`);
           setBlockedPatterns(prev => {
             const newMap = new Map(prev);
             newMap.set(key, {
@@ -120,6 +127,7 @@ export const useLosingPatternBlocker = () => {
       for (const [symbol, trades] of Object.entries(symbolGroups)) {
         const consecutiveLosses = countConsecutiveLosses(trades);
         if (consecutiveLosses >= MAX_SYMBOL_LOSSES) {
+          console.log(`🚫 Símbolo bloqueado: ${symbol} (${consecutiveLosses} perdas consecutivas)`);
           symbolLosses.current.set(symbol, {
             count: consecutiveLosses,
             lastLoss: Date.now(),

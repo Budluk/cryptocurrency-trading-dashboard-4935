@@ -201,6 +201,68 @@ export const MultiAssetTrader = () => {
     restoreTraderState();
   }, []);
 
+  // Sincronizar PnL de posições fechadas com Bybit e registrar no anti-loss
+  const syncClosedPositionsPnL = useCallback(async () => {
+    try {
+      const userId = await getUserId();
+      
+      // Buscar posições fechadas sem PnL
+      const { data: closedWithoutPnl } = await supabase
+        .from('auto_trader_positions')
+        .select('id, symbol, side, leverage, closed_at')
+        .eq('user_id', userId)
+        .eq('status', 'CLOSED')
+        .is('realized_pnl', null)
+        .order('closed_at', { ascending: false })
+        .limit(20);
+
+      if (!closedWithoutPnl?.length) return;
+
+      // Buscar PnL real do Bybit
+      const { data: bybitPnL } = await supabase.functions.invoke('bybit-trading', {
+        body: { 
+          action: 'get_closed_pnl', 
+          isTestnet: false, 
+          params: { category: 'linear', limit: 50 } 
+        }
+      });
+
+      if (!bybitPnL?.success) return;
+
+      const pnlList = bybitPnL.data?.list || [];
+      
+      for (const pos of closedWithoutPnl) {
+        // Encontrar PnL correspondente no Bybit
+        const matchingPnl = pnlList.find((p: any) => 
+          p.symbol === pos.symbol && 
+          Math.abs(new Date(p.updatedTime).getTime() - new Date(pos.closed_at || 0).getTime()) < 60000
+        );
+
+        if (matchingPnl) {
+          const realizedPnl = parseFloat(matchingPnl.closedPnl);
+          
+          // Atualizar no banco
+          await supabase
+            .from('auto_trader_positions')
+            .update({ realized_pnl: realizedPnl })
+            .eq('id', pos.id);
+
+          // 🚫 REGISTRAR NO SISTEMA ANTI-LOSS
+          recordTradeResult(
+            pos.symbol,
+            pos.side,
+            pos.leverage || 10,
+            realizedPnl
+          );
+
+          console.log(`📊 PnL atualizado: ${pos.symbol} ${pos.side} = $${realizedPnl.toFixed(2)}`);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar PnL:', error);
+    }
+  }, [recordTradeResult]);
+
   // Smart exits
   const updateSmartExits = async () => {
     if (!smartExitEnabled && !trailingStopEnabled) return;
@@ -230,8 +292,17 @@ export const MultiAssetTrader = () => {
         await processOpenPositions(positionsData, mlConfig, volatilityMap);
       }
 
-      // Limpar tracking de posições fechadas
+      // Detectar posições que fecharam e sincronizar PnL
       const openSymbols = new Set(openPositionsData.map((p: any) => p.symbol));
+      const previousSymbols = Array.from(positionTracking.keys());
+      const closedSymbols = previousSymbols.filter(s => !openSymbols.has(s));
+      
+      if (closedSymbols.length > 0) {
+        console.log(`🔄 Detectadas ${closedSymbols.length} posições fechadas, sincronizando PnL...`);
+        await syncClosedPositionsPnL();
+      }
+
+      // Limpar tracking de posições fechadas
       setPositionTracking(prev => {
         const newMap = new Map(prev);
         for (const [symbol] of newMap) {
@@ -546,11 +617,18 @@ export const MultiAssetTrader = () => {
     // Smart exits: 30s (era 15s)
     const exitInterval = setInterval(updateSmartExits, 30000);
     
+    // Sincronizar PnL a cada 60s para alimentar sistema anti-loss
+    const pnlSyncInterval = setInterval(syncClosedPositionsPnL, 60000);
+    
+    // Sincronizar imediatamente ao iniciar
+    syncClosedPositionsPnL();
+    
     return () => {
       clearInterval(interval);
       clearInterval(exitInterval);
+      clearInterval(pnlSyncInterval);
     };
-  }, [isRunning]);
+  }, [isRunning, syncClosedPositionsPnL]);
 
   // Pyramiding
   useEffect(() => {
