@@ -1,6 +1,5 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { supabase } from "@/integrations/supabase/client";
-import { getUserId } from "@/lib/anonymousUser";
 
 interface PatternStats {
   symbol: string;
@@ -56,13 +55,11 @@ export const useLosingPatternBlocker = () => {
   // Carregar padrões históricos do banco
   const loadHistoricalPatterns = useCallback(async () => {
     try {
-      const userId = await getUserId();
-      
       // Buscar trades perdedores recentes (últimas 24h) COM realized_pnl
+      // Ignorar user_id para compatibilidade com dados existentes
       const { data: recentLosses, error } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side, leverage, opened_at, realized_pnl')
-        .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .not('realized_pnl', 'is', null)
         .lt('realized_pnl', 0)
