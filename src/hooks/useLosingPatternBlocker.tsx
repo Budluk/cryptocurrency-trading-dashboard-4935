@@ -28,15 +28,15 @@ interface LosingPatternResult {
 
 export const useLosingPatternBlocker = () => {
   const [blockedPatterns, setBlockedPatterns] = useState<Map<string, BlockedPattern>>(new Map());
+  const [symbolLossesState, setSymbolLossesState] = useState<Map<string, { count: number; lastLoss: number }>>(new Map());
   const patternStats = useRef<Map<string, PatternStats>>(new Map());
-  const symbolLosses = useRef<Map<string, { count: number; lastLoss: number }>>(new Map());
   const hourLosses = useRef<Map<number, { count: number; lastLoss: number }>>(new Map());
   const leverageLosses = useRef<Map<string, { count: number; lastLoss: number }>>(new Map());
   
-  // Configurações
-  const MAX_SYMBOL_LOSSES = 3; // Bloquear símbolo após 3 perdas consecutivas
-  const MAX_HOUR_LOSSES = 5; // Bloquear hora após 5 perdas
-  const MAX_LEVERAGE_LOSSES = 4; // Bloquear faixa de alavancagem após 4 perdas
+  // Configurações - mais agressivas para testar
+  const MAX_SYMBOL_LOSSES = 2; // Bloquear símbolo após 2 perdas consecutivas
+  const MAX_HOUR_LOSSES = 4; // Bloquear hora após 4 perdas
+  const MAX_LEVERAGE_LOSSES = 3; // Bloquear faixa de alavancagem após 3 perdas
   const BLOCK_DURATION = 30 * 60 * 1000; // 30 minutos de bloqueio
   const COOL_DOWN_DURATION = 60 * 60 * 1000; // 1 hora para resetar contador
 
@@ -125,18 +125,25 @@ export const useLosingPatternBlocker = () => {
         return acc;
       }, {} as Record<string, typeof losingTrades>);
 
+      const newSymbolLosses = new Map<string, { count: number; lastLoss: number }>();
+      
       for (const [symbol, trades] of Object.entries(symbolGroups)) {
         const consecutiveLosses = countConsecutiveLosses(trades);
+        console.log(`📊 ${symbol}: ${consecutiveLosses} perdas consecutivas (limite: ${MAX_SYMBOL_LOSSES})`);
+        
         if (consecutiveLosses >= MAX_SYMBOL_LOSSES) {
-          console.log(`🚫 Símbolo bloqueado: ${symbol} (${consecutiveLosses} perdas consecutivas)`);
-          symbolLosses.current.set(symbol, {
+          console.log(`🚫 BLOQUEANDO símbolo: ${symbol} (${consecutiveLosses} perdas consecutivas)`);
+          newSymbolLosses.set(symbol, {
             count: consecutiveLosses,
             lastLoss: Date.now(),
           });
         }
       }
+      
+      // Atualizar state para persistir bloqueios
+      setSymbolLossesState(newSymbolLosses);
 
-      console.log(`🔍 Carregados ${patternStats.current.size} padrões, ${blockedPatterns.size} bloqueados`);
+      console.log(`🔍 Carregados ${patternStats.current.size} padrões, ${newSymbolLosses.size} símbolos bloqueados`);
 
     } catch (error) {
       console.error('Erro ao carregar padrões:', error);
@@ -185,16 +192,21 @@ export const useLosingPatternBlocker = () => {
       };
     }
 
-    // Verificar símbolo
-    const symbolData = symbolLosses.current.get(symbol);
+    // Verificar símbolo (usar state para persistência)
+    const symbolData = symbolLossesState.get(symbol);
     if (symbolData) {
       if (now - symbolData.lastLoss < COOL_DOWN_DURATION && symbolData.count >= MAX_SYMBOL_LOSSES) {
+        console.log(`🚫 BLOQUEADO: ${symbol} com ${symbolData.count} perdas consecutivas`);
         return {
           blocked: true,
           reason: `${symbol} bloqueado: ${symbolData.count} perdas consecutivas`,
         };
       } else if (now - symbolData.lastLoss >= COOL_DOWN_DURATION) {
-        symbolLosses.current.delete(symbol);
+        setSymbolLossesState(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(symbol);
+          return newMap;
+        });
       }
     }
 
@@ -225,7 +237,7 @@ export const useLosingPatternBlocker = () => {
     }
 
     return { blocked: false, reason: '' };
-  }, [blockedPatterns]);
+  }, [blockedPatterns, symbolLossesState]);
 
   // Registrar resultado de trade
   const recordTradeResult = useCallback((
@@ -251,11 +263,22 @@ export const useLosingPatternBlocker = () => {
       existing.streak++;
       existing.lastLoss = new Date().toISOString();
       
-      // Atualizar contador de símbolo
-      const symbolData = symbolLosses.current.get(symbol) || { count: 0, lastLoss: now };
-      symbolData.count++;
-      symbolData.lastLoss = now;
-      symbolLosses.current.set(symbol, symbolData);
+      console.log(`🔴 PERDA registrada: ${symbol} | Streak: ${existing.streak}`);
+      
+      // Atualizar contador de símbolo (usar state para persistência)
+      setSymbolLossesState(prev => {
+        const newMap = new Map(prev);
+        const current = newMap.get(symbol) || { count: 0, lastLoss: now };
+        current.count++;
+        current.lastLoss = now;
+        newMap.set(symbol, current);
+        
+        if (current.count >= MAX_SYMBOL_LOSSES) {
+          console.log(`🚫 BLOQUEANDO ${symbol}: ${current.count} perdas consecutivas`);
+        }
+        
+        return newMap;
+      });
 
       // Atualizar contador de hora
       const hourData = hourLosses.current.get(hour) || { count: 0, lastLoss: now };
@@ -287,8 +310,14 @@ export const useLosingPatternBlocker = () => {
       existing.wins++;
       existing.streak = 0; // Reset streak em vitória
       
+      console.log(`🟢 VITÓRIA registrada: ${symbol} | Streak resetado`);
+      
       // Resetar contadores em vitória
-      symbolLosses.current.delete(symbol);
+      setSymbolLossesState(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(symbol);
+        return newMap;
+      });
     }
 
     existing.totalPnL += pnl;
@@ -299,17 +328,21 @@ export const useLosingPatternBlocker = () => {
 
   // Obter estatísticas de bloqueio
   const getBlockedStats = useCallback(() => {
+    const blockedSymbols = Array.from(symbolLossesState.entries())
+      .filter(([_, d]) => d.count >= MAX_SYMBOL_LOSSES)
+      .map(([s]) => s);
+      
+    console.log(`📊 Stats: ${blockedSymbols.length} símbolos bloqueados, ${blockedPatterns.size} padrões`);
+    
     return {
       blockedPatterns: Array.from(blockedPatterns.values()),
-      totalBlocked: blockedPatterns.size,
-      blockedSymbols: Array.from(symbolLosses.current.entries())
-        .filter(([_, d]) => d.count >= MAX_SYMBOL_LOSSES)
-        .map(([s]) => s),
+      totalBlocked: blockedPatterns.size + blockedSymbols.length,
+      blockedSymbols,
       blockedHours: Array.from(hourLosses.current.entries())
         .filter(([_, d]) => d.count >= MAX_HOUR_LOSSES)
         .map(([h]) => h),
     };
-  }, [blockedPatterns]);
+  }, [blockedPatterns, symbolLossesState]);
 
   // Forçar desbloqueio
   const forceUnblock = useCallback((key: string) => {
