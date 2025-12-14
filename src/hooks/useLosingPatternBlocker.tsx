@@ -33,6 +33,7 @@ const globalHourLosses = new Map<number, { count: number; lastLoss: number }>();
 const globalLeverageLosses = new Map<string, { count: number; lastLoss: number }>();
 const globalPatternStats = new Map<string, PatternStats>();
 let globalInitialized = false;
+let lastLoadTime = 0;
 
 // Configurações
 const MAX_SYMBOL_LOSSES = 2;
@@ -56,8 +57,16 @@ export const useLosingPatternBlocker = () => {
     return 'extreme';
   };
 
-  const loadHistoricalPatterns = useCallback(async () => {
+  const loadHistoricalPatterns = useCallback(async (force = false) => {
+    // Evitar recarregar se já carregou nos últimos 30 segundos
+    const now = Date.now();
+    if (!force && globalInitialized && now - lastLoadTime < 30000) {
+      console.log(`⏭️ Usando cache de bloqueios (${globalBlockedSymbols.size} símbolos)`);
+      return;
+    }
+    
     try {
+      lastLoadTime = now;
       const { data: recentTrades, error } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side, leverage, opened_at, closed_at, realized_pnl, pnl')
@@ -271,10 +280,10 @@ export const useLosingPatternBlocker = () => {
     console.log(`✅ Padrão desbloqueado: ${key}`);
   }, [triggerUpdate]);
 
-  // Carregar apenas uma vez globalmente
+  // Carregar ao iniciar - forçar se nunca foi inicializado
   useEffect(() => {
     if (!globalInitialized) {
-      loadHistoricalPatterns();
+      loadHistoricalPatterns(true);
     }
   }, [loadHistoricalPatterns]);
 
