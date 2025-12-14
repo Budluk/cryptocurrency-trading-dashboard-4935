@@ -40,6 +40,7 @@ export const MultiAssetTrader = () => {
   const { toast } = useToast();
   
   // Hooks customizados
+  const { refetch } = usePositions();
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
   const { processOpenPositions, clearPositionState, getAdaptiveTrailingConfig } = useSmartExitManager();
   const { addTradeToBuffer, triggerFullTraining, getMLRecommendations } = useContinuousMLTraining();
@@ -749,7 +750,52 @@ export const MultiAssetTrader = () => {
   }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
 
   const startTrading = async () => {
-    // FORÇAR recarga do sistema anti-perdas ANTES de iniciar
+    // 🧹 LIMPAR POSIÇÕES ÓRFÃS - Sincronizar banco com Bybit
+    console.log('🧹 Sincronizando posições...');
+    try {
+      // Buscar posições reais do Bybit
+      const { data: bybitData } = await supabase.functions.invoke('bybit-trading', {
+        body: { action: 'get_positions', isTestnet: false, params: { category: 'linear', settleCoin: 'USDT' } }
+      });
+      
+      const realPositions = (bybitData?.data || []).filter((p: any) => parseFloat(p.size || '0') > 0);
+      const realSymbols = new Set(realPositions.map((p: any) => `${p.symbol}-${p.side}`));
+      console.log(`📊 ${realPositions.length} posições reais no Bybit`);
+      
+      // Buscar posições "OPEN" no banco
+      const { data: dbOpenPositions } = await supabase
+        .from('auto_trader_positions')
+        .select('id, symbol, side')
+        .eq('status', 'OPEN');
+      
+      const orphanIds: string[] = [];
+      for (const dbPos of (dbOpenPositions || [])) {
+        const key = `${dbPos.symbol}-${dbPos.side}`;
+        if (!realSymbols.has(key)) {
+          orphanIds.push(dbPos.id);
+        }
+      }
+      
+      if (orphanIds.length > 0) {
+        console.log(`🗑️ Fechando ${orphanIds.length} posições órfãs...`);
+        // Fechar em lotes de 100
+        for (let i = 0; i < orphanIds.length; i += 100) {
+          const batch = orphanIds.slice(i, i + 100);
+          await supabase
+            .from('auto_trader_positions')
+            .update({ status: 'CLOSED', close_reason: 'orphan_cleanup', closed_at: new Date().toISOString() })
+            .in('id', batch);
+        }
+        console.log(`✅ ${orphanIds.length} posições órfãs limpas`);
+      }
+      
+      // Recarregar contexto de posições
+      await refetch();
+    } catch (err) {
+      console.log('⚠️ Erro na sincronização:', err);
+    }
+    
+    // FORÇAR recarga do sistema anti-perdas
     console.log('🔄 Recarregando sistema anti-perdas...');
     await loadHistoricalPatterns(true);
     const stats = getBlockedStats();
