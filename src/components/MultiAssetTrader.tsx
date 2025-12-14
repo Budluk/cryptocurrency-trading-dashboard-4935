@@ -52,7 +52,7 @@ export const MultiAssetTrader = () => {
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
   const { analyzeSignal } = useSignalAnalysis();
-  const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock } = useLosingPatternBlocker();
+  const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
   
   const lastMLCheck = useRef<number>(0);
   const lastClosedPositionsRef = useRef<string[]>([]);
@@ -749,6 +749,12 @@ export const MultiAssetTrader = () => {
   }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
 
   const startTrading = async () => {
+    // FORÇAR recarga do sistema anti-perdas ANTES de iniciar
+    console.log('🔄 Recarregando sistema anti-perdas...');
+    await loadHistoricalPatterns(true);
+    const stats = getBlockedStats();
+    console.log(`🔒 Símbolos bloqueados: ${stats.blockedSymbols.join(', ') || 'nenhum'}`);
+    
     setIsRunning(true);
     setConsecutiveLosses(0);
     
@@ -767,7 +773,7 @@ export const MultiAssetTrader = () => {
         .insert({ user_id: userId, trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() });
     }
 
-    toast({ title: "🚀 Trader iniciado", description: "Buscando oportunidades..." });
+    toast({ title: "🚀 Trader iniciado", description: `${stats.blockedSymbols.length} símbolos bloqueados` });
   };
 
   const stopTrading = async () => {
