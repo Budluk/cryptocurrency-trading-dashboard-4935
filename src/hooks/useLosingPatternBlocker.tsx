@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from "@/integrations/supabase/client";
 
 interface PatternStats {
@@ -26,21 +26,25 @@ interface LosingPatternResult {
   pattern?: BlockedPattern;
 }
 
-export const useLosingPatternBlocker = () => {
-  const [blockedPatterns, setBlockedPatterns] = useState<Map<string, BlockedPattern>>(new Map());
-  const [symbolLossesState, setSymbolLossesState] = useState<Map<string, { count: number; lastLoss: number }>>(new Map());
-  const patternStats = useRef<Map<string, PatternStats>>(new Map());
-  const hourLosses = useRef<Map<number, { count: number; lastLoss: number }>>(new Map());
-  const leverageLosses = useRef<Map<string, { count: number; lastLoss: number }>>(new Map());
-  
-  // Configurações - mais agressivas para testar
-  const MAX_SYMBOL_LOSSES = 2; // Bloquear símbolo após 2 perdas consecutivas
-  const MAX_HOUR_LOSSES = 4; // Bloquear hora após 4 perdas
-  const MAX_LEVERAGE_LOSSES = 3; // Bloquear faixa de alavancagem após 3 perdas
-  const BLOCK_DURATION = 30 * 60 * 1000; // 30 minutos de bloqueio
-  const COOL_DOWN_DURATION = 60 * 60 * 1000; // 1 hora para resetar contador
+// DADOS GLOBAIS - persistem entre re-renders e remounts do componente
+const globalBlockedSymbols = new Map<string, { count: number; lastLoss: number }>();
+const globalBlockedPatterns = new Map<string, BlockedPattern>();
+const globalHourLosses = new Map<number, { count: number; lastLoss: number }>();
+const globalLeverageLosses = new Map<string, { count: number; lastLoss: number }>();
+const globalPatternStats = new Map<string, PatternStats>();
+let globalInitialized = false;
 
-  // Gerar chave do padrão
+// Configurações
+const MAX_SYMBOL_LOSSES = 2;
+const MAX_HOUR_LOSSES = 4;
+const MAX_LEVERAGE_LOSSES = 3;
+const BLOCK_DURATION = 30 * 60 * 1000;
+const COOL_DOWN_DURATION = 60 * 60 * 1000;
+
+export const useLosingPatternBlocker = () => {
+  const [, forceUpdate] = useState(0);
+  const triggerUpdate = useCallback(() => forceUpdate(n => n + 1), []);
+
   const getPatternKey = (symbol: string, side: string, hour: number, leverageRange: string) => {
     return `${symbol}:${side}:${hour}:${leverageRange}`;
   };
@@ -52,10 +56,8 @@ export const useLosingPatternBlocker = () => {
     return 'extreme';
   };
 
-  // Carregar padrões históricos do banco
   const loadHistoricalPatterns = useCallback(async () => {
     try {
-      // Buscar TODOS trades fechados recentes (últimas 24h) ordenados por tempo
       const { data: recentTrades, error } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side, leverage, opened_at, closed_at, realized_pnl, pnl')
@@ -70,7 +72,7 @@ export const useLosingPatternBlocker = () => {
 
       console.log(`🔍 Analisando ${recentTrades.length} trades fechados...`);
 
-      // Agrupar por símbolo para contar perdas consecutivas
+      // Agrupar por símbolo
       const symbolGroups: Record<string, typeof recentTrades> = {};
       for (const t of recentTrades) {
         const sym = t.symbol;
@@ -78,17 +80,14 @@ export const useLosingPatternBlocker = () => {
         symbolGroups[sym].push(t);
       }
 
-      const newSymbolLosses = new Map<string, { count: number; lastLoss: number }>();
-      
       for (const [symbol, trades] of Object.entries(symbolGroups)) {
-        // Trades já vêm ordenados do mais recente ao mais antigo
         let consecutiveLosses = 0;
         for (const trade of trades) {
           const actualPnl = trade.realized_pnl ?? trade.pnl ?? 0;
           if (actualPnl < 0) {
             consecutiveLosses++;
           } else {
-            break; // Encontrou uma vitória, para de contar
+            break;
           }
         }
         
@@ -96,31 +95,22 @@ export const useLosingPatternBlocker = () => {
         
         if (consecutiveLosses >= MAX_SYMBOL_LOSSES) {
           console.log(`🚫 BLOQUEANDO símbolo: ${symbol} (${consecutiveLosses} perdas consecutivas)`);
-          newSymbolLosses.set(symbol, {
+          globalBlockedSymbols.set(symbol, {
             count: consecutiveLosses,
             lastLoss: Date.now(),
           });
         }
       }
-      
-      // Atualizar state para persistir bloqueios
-      setSymbolLossesState(prev => {
-        // Manter bloqueios existentes e adicionar novos
-        const merged = new Map(prev);
-        for (const [sym, data] of newSymbolLosses) {
-          merged.set(sym, data);
-        }
-        return merged;
-      });
 
-      console.log(`🔒 ${newSymbolLosses.size} símbolos bloqueados após análise histórica`);
+      globalInitialized = true;
+      console.log(`🔒 ${globalBlockedSymbols.size} símbolos bloqueados após análise histórica`);
+      triggerUpdate();
 
     } catch (error) {
       console.error('Erro ao carregar padrões:', error);
     }
-  }, []);
+  }, [triggerUpdate]);
 
-  // Verificar se padrão está bloqueado
   const isPatternBlocked = useCallback((
     symbol: string,
     side: string,
@@ -128,8 +118,8 @@ export const useLosingPatternBlocker = () => {
   ): LosingPatternResult => {
     const now = Date.now();
 
-    // PRIORIDADE 1: Verificar símbolo bloqueado (independente de side/hour/leverage)
-    const symbolData = symbolLossesState.get(symbol);
+    // PRIORIDADE 1: Símbolo bloqueado
+    const symbolData = globalBlockedSymbols.get(symbol);
     if (symbolData && symbolData.count >= MAX_SYMBOL_LOSSES) {
       if (now - symbolData.lastLoss < COOL_DOWN_DURATION) {
         console.log(`🚫 BLOQUEADO: ${symbol} (${symbolData.count} perdas consecutivas)`);
@@ -138,18 +128,14 @@ export const useLosingPatternBlocker = () => {
           reason: `${symbol} bloqueado: ${symbolData.count} perdas consecutivas`,
         };
       } else {
-        // Cooldown expirado, remover bloqueio
-        setSymbolLossesState(prev => {
-          const newMap = new Map(prev);
-          newMap.delete(symbol);
-          return newMap;
-        });
+        globalBlockedSymbols.delete(symbol);
+        triggerUpdate();
       }
     }
 
-    // PRIORIDADE 2: Verificar hora
+    // PRIORIDADE 2: Hora bloqueada
     const hour = new Date().getUTCHours();
-    const hourData = hourLosses.current.get(hour);
+    const hourData = globalHourLosses.get(hour);
     if (hourData && hourData.count >= MAX_HOUR_LOSSES) {
       if (now - hourData.lastLoss < COOL_DOWN_DURATION) {
         return {
@@ -157,13 +143,13 @@ export const useLosingPatternBlocker = () => {
           reason: `Hora ${hour}:00 UTC bloqueada: ${hourData.count} perdas`,
         };
       } else {
-        hourLosses.current.delete(hour);
+        globalHourLosses.delete(hour);
       }
     }
 
-    // PRIORIDADE 3: Verificar faixa de alavancagem
+    // PRIORIDADE 3: Leverage bloqueado
     const leverageRange = getLeverageRange(leverage);
-    const leverageData = leverageLosses.current.get(leverageRange);
+    const leverageData = globalLeverageLosses.get(leverageRange);
     if (leverageData && leverageData.count >= MAX_LEVERAGE_LOSSES) {
       if (now - leverageData.lastLoss < COOL_DOWN_DURATION) {
         return {
@@ -171,13 +157,13 @@ export const useLosingPatternBlocker = () => {
           reason: `Leverage ${leverageRange} bloqueado: ${leverageData.count} perdas`,
         };
       } else {
-        leverageLosses.current.delete(leverageRange);
+        globalLeverageLosses.delete(leverageRange);
       }
     }
 
-    // PRIORIDADE 4: Verificar padrões específicos bloqueados
+    // PRIORIDADE 4: Padrão específico
     const key = getPatternKey(symbol, side, hour, leverageRange);
-    const blocked = blockedPatterns.get(key);
+    const blocked = globalBlockedPatterns.get(key);
     if (blocked && blocked.blockedUntil > now) {
       return {
         blocked: true,
@@ -187,9 +173,8 @@ export const useLosingPatternBlocker = () => {
     }
 
     return { blocked: false, reason: '' };
-  }, [blockedPatterns, symbolLossesState]);
+  }, [triggerUpdate]);
 
-  // Registrar resultado de trade
   const recordTradeResult = useCallback((
     symbol: string,
     side: string,
@@ -202,8 +187,7 @@ export const useLosingPatternBlocker = () => {
     const key = getPatternKey(symbol, side, hour, leverageRange);
     const isLoss = pnl < 0;
 
-    // Atualizar estatísticas do padrão
-    const existing = patternStats.current.get(key) || {
+    const existing = globalPatternStats.get(key) || {
       symbol, side, hour, leverage,
       losses: 0, wins: 0, totalPnL: 0, lastLoss: '', streak: 0,
     };
@@ -215,98 +199,83 @@ export const useLosingPatternBlocker = () => {
       
       console.log(`🔴 PERDA registrada: ${symbol} | Streak: ${existing.streak}`);
       
-      // Atualizar contador de símbolo (usar state para persistência)
-      setSymbolLossesState(prev => {
-        const newMap = new Map(prev);
-        const current = newMap.get(symbol) || { count: 0, lastLoss: now };
-        current.count++;
-        current.lastLoss = now;
-        newMap.set(symbol, current);
-        
-        if (current.count >= MAX_SYMBOL_LOSSES) {
-          console.log(`🚫 BLOQUEANDO ${symbol}: ${current.count} perdas consecutivas`);
-        }
-        
-        return newMap;
-      });
+      // Atualizar símbolo
+      const current = globalBlockedSymbols.get(symbol) || { count: 0, lastLoss: now };
+      current.count++;
+      current.lastLoss = now;
+      globalBlockedSymbols.set(symbol, current);
+      
+      if (current.count >= MAX_SYMBOL_LOSSES) {
+        console.log(`🚫 BLOQUEANDO ${symbol}: ${current.count} perdas consecutivas`);
+      }
 
-      // Atualizar contador de hora
-      const hourData = hourLosses.current.get(hour) || { count: 0, lastLoss: now };
+      // Atualizar hora
+      const hourData = globalHourLosses.get(hour) || { count: 0, lastLoss: now };
       hourData.count++;
       hourData.lastLoss = now;
-      hourLosses.current.set(hour, hourData);
+      globalHourLosses.set(hour, hourData);
 
-      // Atualizar contador de leverage
-      const leverageData = leverageLosses.current.get(leverageRange) || { count: 0, lastLoss: now };
+      // Atualizar leverage
+      const leverageData = globalLeverageLosses.get(leverageRange) || { count: 0, lastLoss: now };
       leverageData.count++;
       leverageData.lastLoss = now;
-      leverageLosses.current.set(leverageRange, leverageData);
+      globalLeverageLosses.set(leverageRange, leverageData);
 
-      // Bloquear se atingiu limite
+      // Bloquear padrão se limite atingido
       if (existing.streak >= MAX_SYMBOL_LOSSES) {
         console.log(`🚫 Bloqueando padrão: ${key} após ${existing.streak} perdas consecutivas`);
-        setBlockedPatterns(prev => {
-          const newMap = new Map(prev);
-          newMap.set(key, {
-            key,
-            reason: `Padrão bloqueado: ${symbol} ${side} às ${hour}h (${existing.streak} perdas seguidas)`,
-            blockedUntil: now + BLOCK_DURATION,
-            stats: existing,
-          });
-          return newMap;
+        globalBlockedPatterns.set(key, {
+          key,
+          reason: `Padrão bloqueado: ${symbol} ${side} às ${hour}h (${existing.streak} perdas seguidas)`,
+          blockedUntil: now + BLOCK_DURATION,
+          stats: existing,
         });
       }
     } else {
       existing.wins++;
-      existing.streak = 0; // Reset streak em vitória
+      existing.streak = 0;
       
       console.log(`🟢 VITÓRIA registrada: ${symbol} | Streak resetado`);
       
-      // Resetar contadores em vitória
-      setSymbolLossesState(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(symbol);
-        return newMap;
-      });
+      // Resetar símbolo em vitória
+      globalBlockedSymbols.delete(symbol);
     }
 
     existing.totalPnL += pnl;
-    patternStats.current.set(key, existing);
+    globalPatternStats.set(key, existing);
+    triggerUpdate();
 
     console.log(`📊 Padrão ${key}: W${existing.wins}/L${existing.losses} | Streak: ${existing.streak}`);
-  }, []);
+  }, [triggerUpdate]);
 
-  // Obter estatísticas de bloqueio
   const getBlockedStats = useCallback(() => {
-    const blockedSymbols = Array.from(symbolLossesState.entries())
+    const blockedSymbols = Array.from(globalBlockedSymbols.entries())
       .filter(([_, d]) => d.count >= MAX_SYMBOL_LOSSES)
       .map(([s]) => s);
       
-    console.log(`📊 Stats: ${blockedSymbols.length} símbolos bloqueados, ${blockedPatterns.size} padrões`);
+    console.log(`📊 Stats: ${blockedSymbols.length} símbolos bloqueados, ${globalBlockedPatterns.size} padrões`);
     
     return {
-      blockedPatterns: Array.from(blockedPatterns.values()),
-      totalBlocked: blockedPatterns.size + blockedSymbols.length,
+      blockedPatterns: Array.from(globalBlockedPatterns.values()),
+      totalBlocked: globalBlockedPatterns.size + blockedSymbols.length,
       blockedSymbols,
-      blockedHours: Array.from(hourLosses.current.entries())
+      blockedHours: Array.from(globalHourLosses.entries())
         .filter(([_, d]) => d.count >= MAX_HOUR_LOSSES)
         .map(([h]) => h),
     };
-  }, [blockedPatterns, symbolLossesState]);
-
-  // Forçar desbloqueio
-  const forceUnblock = useCallback((key: string) => {
-    setBlockedPatterns(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(key);
-      return newMap;
-    });
-    console.log(`✅ Padrão desbloqueado: ${key}`);
   }, []);
 
-  // Carregar padrões ao iniciar
+  const forceUnblock = useCallback((key: string) => {
+    globalBlockedPatterns.delete(key);
+    triggerUpdate();
+    console.log(`✅ Padrão desbloqueado: ${key}`);
+  }, [triggerUpdate]);
+
+  // Carregar apenas uma vez globalmente
   useEffect(() => {
-    loadHistoricalPatterns();
+    if (!globalInitialized) {
+      loadHistoricalPatterns();
+    }
   }, [loadHistoricalPatterns]);
 
   return {
@@ -315,6 +284,6 @@ export const useLosingPatternBlocker = () => {
     getBlockedStats,
     forceUnblock,
     loadHistoricalPatterns,
-    blockedCount: blockedPatterns.size,
+    blockedCount: globalBlockedPatterns.size + globalBlockedSymbols.size,
   };
 };
