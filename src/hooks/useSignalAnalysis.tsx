@@ -8,6 +8,8 @@ export interface SignalAnalysisResult {
   confirmations: string[];
   shouldTrade: boolean;
   skipReason: string;
+  signalQuality: 'low' | 'medium' | 'high' | 'premium';
+  momentumScore: number;
 }
 
 interface AnalysisParams {
@@ -177,33 +179,51 @@ export const useSignalAnalysis = () => {
       signalScore = sellScore;
     }
     
-    // Critérios MELHORADOS para reduzir perdas
+    // === CRITÉRIOS DE QUALIDADE MELHORADOS ===
     const volumeCheck = volume24h > 100000; // Mínimo $100k volume
-    const volatilityCheck = volatility > 2.0 && volatility < 20; // Alta volatilidade (mínimo 2%)
-    const atrMinCheck = atrPercent > 0.5 && atrPercent < 10; // ATR maior
-    const priceMovementOk = Math.abs(priceChange) > 1.0 && Math.abs(priceChange) < 15; // Movimento forte
-    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 10; // Mínimo 10 pontos diferença
+    const volatilityCheck = volatility > 1.5 && volatility < 18; // Faixa otimizada
+    const atrMinCheck = atrPercent > 0.4 && atrPercent < 12; // ATR maior
+    const priceMovementOk = Math.abs(priceChange) > 0.8 && Math.abs(priceChange) < 15;
+    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 12; // Maior diferença
+    
+    // 🆕 Momentum Score - confirmação adicional
+    const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2 : hasStrongVolume ? 1.5 : 1);
+    const momentumConfirmed = momentumScore > 2.0;
+    
+    // 🆕 Volume confirmando direção
+    const volumeDirectionOk = (action === 'BUY' && priceChange > 0) || 
+                              (action === 'SELL' && priceChange < 0);
+    
+    // 🆕 Classificar qualidade do sinal
+    let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
+    if (signalScore >= 80 && hasVolumeSpike && momentumConfirmed) signalQuality = 'premium';
+    else if (signalScore >= 65 && hasStrongVolume && momentumConfirmed) signalQuality = 'high';
+    else if (signalScore >= 50 && hasGoodVolume) signalQuality = 'medium';
     
     const shouldTrade = (
       signalScore >= scoreThreshold &&
       action !== null &&
-      currentBalance > 2 && // Mínimo $2
+      currentBalance > 2 &&
       confirmations.length >= minConfirmations &&
       volumeCheck &&
       volatilityCheck &&
       hasStrongSignal &&
-      priceMovementOk
+      priceMovementOk &&
+      (signalQuality !== 'low' || signalScore >= 70) && // Low quality precisa score alto
+      volumeDirectionOk // Volume deve confirmar direção
     );
 
     // Determinar razão do skip
     let skipReason = '';
     if (!shouldTrade) {
       if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
-      else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/10`;
+      else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/12`;
+      else if (!volumeDirectionOk) skipReason = 'Volume contra direção';
+      else if (signalQuality === 'low' && signalScore < 70) skipReason = `Qualidade baixa: ${signalQuality}`;
       else if (!volumeCheck) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.1M`;
-      else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 0.5-15%`;
-      else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.3-8%`;
-      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.5-12%`;
+      else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 1.5-18%`;
+      else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.4-12%`;
+      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.8-15%`;
       else if (action === null) skipReason = 'Sem ação definida';
       else if (currentBalance <= 2) skipReason = `Saldo $${currentBalance.toFixed(2)} < $2`;
       else if (confirmations.length < minConfirmations) skipReason = `Conf ${confirmations.length}/${minConfirmations}`;
@@ -218,6 +238,8 @@ export const useSignalAnalysis = () => {
       confirmations,
       shouldTrade,
       skipReason,
+      signalQuality,
+      momentumScore,
     };
   }, []);
 

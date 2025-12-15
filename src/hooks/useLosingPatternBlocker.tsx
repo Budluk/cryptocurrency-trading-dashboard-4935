@@ -35,12 +35,17 @@ const globalPatternStats = new Map<string, PatternStats>();
 let globalInitialized = false;
 let lastLoadTime = 0;
 
-// Configurações
-const MAX_SYMBOL_LOSSES = 2;
-const MAX_HOUR_LOSSES = 4;
-const MAX_LEVERAGE_LOSSES = 3;
-const BLOCK_DURATION = 30 * 60 * 1000;
-const COOL_DOWN_DURATION = 60 * 60 * 1000;
+// Configurações - MELHORADO
+const MAX_SYMBOL_LOSSES = 2; // Bloquear após 2 perdas consecutivas
+const MAX_HOUR_LOSSES = 5;   // Bloquear hora após 5 perdas
+const MAX_LEVERAGE_LOSSES = 4; // Bloquear range de leverage após 4 perdas
+const BLOCK_DURATION = 30 * 60 * 1000; // 30 min bloqueio
+const COOL_DOWN_DURATION = 45 * 60 * 1000; // 45 min cooldown
+const ADAPTIVE_COOLDOWN_MULTIPLIER = 1.5; // Aumenta cooldown após múltiplos bloqueios
+
+// Cache de volatilidade perdedora
+const volatilityLossPatterns = new Map<string, { losses: number; avgVolatility: number }>();
+const symbolBlockHistory = new Map<string, number>(); // Quantas vezes foi bloqueado
 
 export const useLosingPatternBlocker = () => {
   const [, forceUpdate] = useState(0);
@@ -222,7 +227,8 @@ export const useLosingPatternBlocker = () => {
     symbol: string,
     side: string,
     leverage: number,
-    pnl: number
+    pnl: number,
+    volatility?: number // NOVO: volatilidade opcional
   ) => {
     const now = Date.now();
     const hour = new Date().getUTCHours();
@@ -240,16 +246,33 @@ export const useLosingPatternBlocker = () => {
       existing.streak++;
       existing.lastLoss = new Date().toISOString();
       
-      console.log(`🔴 PERDA registrada: ${symbol} | Streak: ${existing.streak}`);
+      console.log(`🔴 PERDA registrada: ${symbol} | Streak: ${existing.streak} | PnL: ${pnl.toFixed(4)}`);
       
-      // Atualizar símbolo
+      // 🆕 Rastrear padrões de volatilidade perdedora
+      if (volatility) {
+        const volPattern = volatilityLossPatterns.get(symbol) || { losses: 0, avgVolatility: 0 };
+        volPattern.avgVolatility = (volPattern.avgVolatility * volPattern.losses + volatility) / (volPattern.losses + 1);
+        volPattern.losses++;
+        volatilityLossPatterns.set(symbol, volPattern);
+        
+        if (volPattern.losses >= 3 && volPattern.avgVolatility > 8) {
+          console.log(`⚠️ ${symbol}: ${volPattern.losses} perdas com volatilidade média ${volPattern.avgVolatility.toFixed(1)}%`);
+        }
+      }
+      
+      // Atualizar símbolo com histórico de bloqueios
       const current = globalBlockedSymbols.get(symbol) || { count: 0, lastLoss: now };
       current.count++;
       current.lastLoss = now;
       globalBlockedSymbols.set(symbol, current);
       
       if (current.count >= MAX_SYMBOL_LOSSES) {
-        console.log(`🚫 BLOQUEANDO ${symbol}: ${current.count} perdas consecutivas`);
+        // 🆕 Cooldown adaptativo: aumenta se já foi bloqueado antes
+        const previousBlocks = symbolBlockHistory.get(symbol) || 0;
+        symbolBlockHistory.set(symbol, previousBlocks + 1);
+        const adaptiveCooldown = COOL_DOWN_DURATION * Math.pow(ADAPTIVE_COOLDOWN_MULTIPLIER, Math.min(previousBlocks, 3));
+        
+        console.log(`🚫 BLOQUEANDO ${symbol}: ${current.count} perdas (cooldown: ${(adaptiveCooldown/60000).toFixed(0)}min)`);
       }
 
       // Atualizar hora
@@ -266,22 +289,28 @@ export const useLosingPatternBlocker = () => {
 
       // Bloquear padrão se limite atingido
       if (existing.streak >= MAX_SYMBOL_LOSSES) {
-        console.log(`🚫 Bloqueando padrão: ${key} após ${existing.streak} perdas consecutivas`);
+        const previousBlocks = symbolBlockHistory.get(symbol) || 0;
+        const adaptiveBlockDuration = BLOCK_DURATION * Math.pow(ADAPTIVE_COOLDOWN_MULTIPLIER, Math.min(previousBlocks, 3));
+        
+        console.log(`🚫 Bloqueando padrão: ${key} após ${existing.streak} perdas (${(adaptiveBlockDuration/60000).toFixed(0)}min)`);
         globalBlockedPatterns.set(key, {
           key,
-          reason: `Padrão bloqueado: ${symbol} ${side} às ${hour}h (${existing.streak} perdas seguidas)`,
-          blockedUntil: now + BLOCK_DURATION,
+          reason: `${symbol} ${side} às ${hour}h (${existing.streak} perdas seguidas)`,
+          blockedUntil: now + adaptiveBlockDuration,
           stats: existing,
         });
       }
     } else {
       existing.wins++;
-      existing.streak = 0;
       
-      console.log(`🟢 VITÓRIA registrada: ${symbol} | Streak resetado`);
-      
-      // Resetar símbolo em vitória
-      globalBlockedSymbols.delete(symbol);
+      // 🆕 Só resetar streak após 2 vitórias consecutivas para evitar falsos positivos
+      if (existing.wins >= 2) {
+        existing.streak = 0;
+        globalBlockedSymbols.delete(symbol);
+        console.log(`🟢 VITÓRIA x2: ${symbol} | Streak resetado`);
+      } else {
+        console.log(`🟢 VITÓRIA: ${symbol} | Aguardando confirmação (${existing.wins}/2)`);
+      }
     }
 
     existing.totalPnL += pnl;
@@ -292,11 +321,22 @@ export const useLosingPatternBlocker = () => {
   }, [triggerUpdate]);
 
   const getBlockedStats = useCallback(() => {
+    const now = Date.now();
     const blockedSymbols = Array.from(globalBlockedSymbols.entries())
       .filter(([_, d]) => d.count >= MAX_SYMBOL_LOSSES)
       .map(([s]) => s);
+    
+    // 🆕 Estatísticas de volatilidade perdedora
+    const highVolatilityLosers = Array.from(volatilityLossPatterns.entries())
+      .filter(([_, d]) => d.losses >= 3 && d.avgVolatility > 8)
+      .map(([s, d]) => ({ symbol: s, losses: d.losses, avgVol: d.avgVolatility.toFixed(1) }));
+    
+    // 🆕 Símbolos com múltiplos bloqueios históricos
+    const repeatOffenders = Array.from(symbolBlockHistory.entries())
+      .filter(([_, count]) => count >= 2)
+      .map(([s, count]) => ({ symbol: s, blockCount: count }));
       
-    console.log(`📊 Stats: ${blockedSymbols.length} símbolos bloqueados, ${globalBlockedPatterns.size} padrões`);
+    console.log(`📊 Stats: ${blockedSymbols.length} símbolos, ${globalBlockedPatterns.size} padrões, ${highVolatilityLosers.length} vol-losers`);
     
     return {
       blockedPatterns: Array.from(globalBlockedPatterns.values()),
@@ -305,6 +345,8 @@ export const useLosingPatternBlocker = () => {
       blockedHours: Array.from(globalHourLosses.entries())
         .filter(([_, d]) => d.count >= MAX_HOUR_LOSSES)
         .map(([h]) => h),
+      highVolatilityLosers,
+      repeatOffenders,
     };
   }, []);
 

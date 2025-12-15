@@ -18,6 +18,8 @@ interface AntiLossStats {
   recentLosses: number;
   recentWins: number;
   lastSync: string | null;
+  highVolatilityLosers?: Array<{ symbol: string; losses: number; avgVol: string }>;
+  repeatOffenders?: Array<{ symbol: string; blockCount: number }>;
 }
 
 interface Props {
@@ -26,6 +28,8 @@ interface Props {
     totalBlocked: number;
     blockedSymbols: string[];
     blockedHours: number[];
+    highVolatilityLosers?: Array<{ symbol: string; losses: number; avgVol: string }>;
+    repeatOffenders?: Array<{ symbol: string; blockCount: number }>;
   };
   blockedCount: number;
   forceUnblock?: (key: string) => void;
@@ -355,6 +359,47 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
           </div>
         )}
 
+        {/* 🆕 High Volatility Losers */}
+        {stats?.highVolatilityLosers && stats.highVolatilityLosers.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground flex items-center gap-1">
+              <Activity className="h-3 w-3" />
+              Perdas em Alta Volatilidade:
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {stats.highVolatilityLosers.slice(0, 5).map(item => (
+                <Badge 
+                  key={item.symbol} 
+                  variant="outline" 
+                  className="text-purple-400 border-purple-500/30 text-xs"
+                >
+                  {item.symbol}: {item.losses}L @{item.avgVol}%
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 🆕 Repeat Offenders */}
+        {stats?.repeatOffenders && stats.repeatOffenders.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground flex items-center gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              Símbolos Problemáticos:
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {stats.repeatOffenders.slice(0, 5).map(item => (
+                <Badge 
+                  key={item.symbol} 
+                  variant="outline" 
+                  className="text-amber-400 border-amber-500/30 text-xs"
+                >
+                  {item.symbol}: {item.blockCount}x bloqueado
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Blocked Patterns Detail */}
         {stats?.blockedPatterns && stats.blockedPatterns.length > 0 && (
           <div className="space-y-2">
