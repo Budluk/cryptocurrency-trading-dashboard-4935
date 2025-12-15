@@ -373,9 +373,9 @@ export const MultiAssetTrader = () => {
 
   const analyzeAndTrade = async () => {
     try {
-      await syncBybitBalance();
+      const balanceNow = await syncBybitBalance();
       await syncOpenPositions();
-      await fetchTop10VolatileAssets();
+      const topVolNow = await fetchTop10VolatileAssets();
 
       // Verificar proteções
       if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
@@ -428,7 +428,7 @@ export const MultiAssetTrader = () => {
         const volume24h = parseFloat(ticker?.turnover24h || '0');
         return { instrument, ticker, volatility: Math.abs(priceChange), priceChange, volume24h };
       }).filter(a => {
-        const isInTop10 = top10VolatileAssets.includes(a.instrument.symbol);
+        const isInTop10 = topVolNow.includes(a.instrument.symbol);
         return isInTop10 ? (a.volatility > 1.5 && a.volume24h > 100000) : (a.volatility > 2.5 && a.volume24h > 300000);
       });
       
@@ -436,13 +436,16 @@ export const MultiAssetTrader = () => {
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro volatilidade`);
 
       let shouldStopTrading = false;
+      let openedThisCycle = 0;
+      const skipCounts = new Map<string, number>();
+      const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
 
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
-        const isScalpAsset = top10VolatileAssets.includes(symbol);
+        const isScalpAsset = topVolNow.includes(symbol);
         
         try {
           const currentPrice = parseFloat(ticker.lastPrice);
@@ -465,16 +468,20 @@ export const MultiAssetTrader = () => {
           
           const analysisResult = analyzeSignal({
             currentPrice, highPrice, lowPrice, priceChange, volume24h, volatility,
-            scoreThreshold, minConfirmations, currentBalance
+            scoreThreshold, minConfirmations, currentBalance: balanceNow
           });
 
-          if (!analysisResult.shouldTrade || !analysisResult.action) continue;
+          if (!analysisResult.shouldTrade || !analysisResult.action) {
+            const reason = analysisResult.skipReason || 'Sem motivo';
+            skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+            continue;
+          }
 
           // Calcular alavancagem antes de verificar padrão
           const maxLeverageInstrument = parseFloat(instrument.leverageFilter?.maxLeverage || '25');
           let dynamicLeverage = isScalpAsset
             ? Math.min(getLeverageForScalping(volatility), maxLeverageInstrument)
-            : Math.min(getLeverageForBalance(currentBalance, historicalWinRate), maxLeverageInstrument);
+            : Math.min(getLeverageForBalance(balanceNow, historicalWinRate), maxLeverageInstrument);
           
           if (mlConfig?.is_enabled && mlConfig?.recommended_leverage) {
             dynamicLeverage = Math.min(mlConfig.recommended_leverage, maxLeverageInstrument);
@@ -492,7 +499,7 @@ export const MultiAssetTrader = () => {
           // 🆕 Verificar correlação AVANÇADA
           const advancedCorrelation = checkAssetCorrelation(
             symbol,
-            openPositions.map(p => ({ symbol: p.symbol, side: p.side })),
+            openPositionsLite,
             analysisResult.action === 'BUY' ? 'Buy' : 'Sell'
           );
           if (!advancedCorrelation.allowed) {
@@ -508,24 +515,13 @@ export const MultiAssetTrader = () => {
           }
           
           // 🆕 Verificar risco de volatilidade
-          const volRisk = classifyVolatilityRisk(symbol, volatility, currentBalance);
-          if (volRisk.riskLevel === 'extreme' && !top10VolatileAssets.includes(symbol)) {
+          const volRisk = classifyVolatilityRisk(symbol, volatility, balanceNow);
+          if (volRisk.riskLevel === 'extreme' && !topVolNow.includes(symbol)) {
             console.log(`⚠️ ${symbol}: Volatilidade extrema ${volatility.toFixed(1)}% - pulando`);
             continue;
           }
 
-          // VERIFICAR SALDO PRIMEIRO antes de calcular posição
-          const { data: balanceCheck } = await supabase.functions.invoke('bybit-trading', {
-            body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
-          });
-          
-          // Balance data is object directly in data field
-          const balanceData = balanceCheck?.data;
-          const freshBalance = parseFloat(
-            balanceData?.totalAvailableBalance || 
-            balanceData?.list?.[0]?.totalAvailableBalance || 
-            '0'
-          );
+          const freshBalance = balanceNow;
           if (freshBalance < 2) {
             console.log(`⚠️ Saldo muito baixo: $${freshBalance.toFixed(2)}`);
             continue;
@@ -614,7 +610,7 @@ export const MultiAssetTrader = () => {
           });
 
           if (!orderError && orderData?.success) {
-            // 🆕 Log estruturado de performance
+            openedThisCycle++;
             const tradeLog = {
               timestamp: new Date().toISOString(),
               symbol, side: analysisResult.action, leverage: finalLeverage,
@@ -684,6 +680,16 @@ export const MultiAssetTrader = () => {
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
+      }
+
+      // Log resumido quando não abre nada no ciclo
+      if (openedThisCycle === 0 && skipCounts.size > 0) {
+        const topReasons = Array.from(skipCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([reason, count]) => `${reason} (${count})`)
+          .join(' | ');
+        console.log(`🧾 Sem operações no ciclo. Top motivos: ${topReasons}`);
       }
 
       setCycleCount(prev => prev + 1);
