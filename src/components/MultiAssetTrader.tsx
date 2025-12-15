@@ -16,6 +16,7 @@ import { useLosingPatternBlocker } from "@/hooks/useLosingPatternBlocker";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
+import { useAdvancedRiskManager } from "@/hooks/useAdvancedRiskManager";
 import { getUserId } from "@/lib/anonymousUser";
 import { AntiLossMonitor } from "./AntiLossMonitor";
 
@@ -54,6 +55,7 @@ export const MultiAssetTrader = () => {
   } = useBybitSync();
   const { analyzeSignal } = useSignalAnalysis();
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
+  const { calculateExposure, classifyVolatilityRisk, getAdaptiveTrailingConfig: getAdvancedTrailing, checkAssetCorrelation, getProtectProfitLevel } = useAdvancedRiskManager();
   
   const lastMLCheck = useRef<number>(0);
   const lastClosedPositionsRef = useRef<string[]>([]);
@@ -117,12 +119,13 @@ export const MultiAssetTrader = () => {
             closed_at: trade.closed_at || new Date().toISOString(),
           });
           
-          // 🚫 Registrar resultado para bloqueio de padrão perdedor
+          // 🚫 Registrar resultado para bloqueio de padrão perdedor (com volatilidade)
           recordTradeResult(
             trade.symbol,
             trade.side,
             trade.leverage || 10,
-            trade.realized_pnl || 0
+            trade.realized_pnl || 0,
+            trade.volatility || undefined // Passar volatilidade para análise
           );
         }
       }
@@ -486,10 +489,28 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // Verificar correlação
+          // 🆕 Verificar correlação AVANÇADA
+          const advancedCorrelation = checkAssetCorrelation(
+            symbol,
+            openPositions.map(p => ({ symbol: p.symbol, side: p.side })),
+            analysisResult.action === 'BUY' ? 'Buy' : 'Sell'
+          );
+          if (!advancedCorrelation.allowed) {
+            console.log(`🚫 ${symbol}: ${advancedCorrelation.reason}`);
+            continue;
+          }
+
+          // Verificar correlação básica
           const correlationCheck = checkNewPosition(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell');
           if (!correlationCheck.allowed) {
             console.log(`🚫 ${symbol}: ${correlationCheck.reason}`);
+            continue;
+          }
+          
+          // 🆕 Verificar risco de volatilidade
+          const volRisk = classifyVolatilityRisk(symbol, volatility, currentBalance);
+          if (volRisk.riskLevel === 'extreme' && !top10VolatileAssets.includes(symbol)) {
+            console.log(`⚠️ ${symbol}: Volatilidade extrema ${volatility.toFixed(1)}% - pulando`);
             continue;
           }
 
@@ -509,9 +530,17 @@ export const MultiAssetTrader = () => {
             console.log(`⚠️ Saldo muito baixo: $${freshBalance.toFixed(2)}`);
             continue;
           }
+          
+          // 🆕 Verificar exposição máxima do portfolio
+          const exposureData = calculateExposure(openPositions, freshBalance);
+          if (exposureData.isOverExposed) {
+            console.log(`⚠️ Exposição máxima atingida: ${exposureData.exposurePercent.toFixed(1)}% > 80%`);
+            continue;
+          }
 
-          // Calcular tamanho ULTRA CONSERVADOR
-          const maxMarginPerTrade = freshBalance * 0.15; // Só 15% do saldo por trade
+          // 🆕 Usar limite de tamanho baseado em volatilidade
+          const maxPositionForVol = volRisk.maxPositionSize;
+          const maxMarginPerTrade = Math.min(freshBalance * 0.15, maxPositionForVol);
           const positionValue = maxMarginPerTrade * leverage;
           let usdSize = Math.min(positionValue, 50); // Máximo $50 por trade
 
@@ -585,7 +614,17 @@ export const MultiAssetTrader = () => {
           });
 
           if (!orderError && orderData?.success) {
-            console.log(`✅ TRADE: ${symbol} ${analysisResult.action} | ${finalLeverage}x | $${usdSize.toFixed(2)}`);
+            // 🆕 Log estruturado de performance
+            const tradeLog = {
+              timestamp: new Date().toISOString(),
+              symbol, side: analysisResult.action, leverage: finalLeverage,
+              size: usdSize.toFixed(2), volatility: volatility.toFixed(2),
+              signalScore: analysisResult.signalScore,
+              signalQuality: analysisResult.signalQuality,
+              exposure: exposureData.exposurePercent.toFixed(1),
+              volRisk: volRisk.riskLevel
+            };
+            console.log(`✅ TRADE:`, JSON.stringify(tradeLog));
             
             const saveUserId = await getUserId();
             await supabase.from('auto_trader_positions').insert({
