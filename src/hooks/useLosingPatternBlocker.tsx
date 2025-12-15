@@ -58,8 +58,20 @@ export const useLosingPatternBlocker = () => {
   };
 
   const loadHistoricalPatterns = useCallback(async (force = false) => {
-    // Evitar recarregar se já carregou nos últimos 30 segundos
     const now = Date.now();
+    
+    // Se forçado, limpar tudo primeiro
+    if (force) {
+      console.log('🧹 Limpando cache de bloqueios...');
+      globalBlockedSymbols.clear();
+      globalBlockedPatterns.clear();
+      globalHourLosses.clear();
+      globalLeverageLosses.clear();
+      globalPatternStats.clear();
+      globalInitialized = false;
+    }
+    
+    // Evitar recarregar se já carregou nos últimos 30 segundos
     if (!force && globalInitialized && now - lastLoadTime < 30000) {
       console.log(`⏭️ Usando cache de bloqueios (${globalBlockedSymbols.size} símbolos)`);
       return;
@@ -67,21 +79,30 @@ export const useLosingPatternBlocker = () => {
     
     try {
       lastLoadTime = now;
+      
+      // Buscar mais trades para análise mais completa
       const { data: recentTrades, error } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side, leverage, opened_at, closed_at, realized_pnl, pnl')
         .eq('status', 'CLOSED')
-        .gte('opened_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-        .order('closed_at', { ascending: false });
+        .gte('closed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .order('closed_at', { ascending: false })
+        .limit(500);
 
-      if (error || !recentTrades?.length) {
+      if (error) {
+        console.error('❌ Erro ao buscar trades:', error);
+        return;
+      }
+      
+      if (!recentTrades?.length) {
         console.log('🔍 Nenhum trade encontrado para análise');
+        globalInitialized = true;
         return;
       }
 
       console.log(`🔍 Analisando ${recentTrades.length} trades fechados...`);
 
-      // Agrupar por símbolo
+      // Agrupar por símbolo - ordenar por closed_at DESC
       const symbolGroups: Record<string, typeof recentTrades> = {};
       for (const t of recentTrades) {
         const sym = t.symbol;
@@ -89,30 +110,36 @@ export const useLosingPatternBlocker = () => {
         symbolGroups[sym].push(t);
       }
 
+      let totalBlocked = 0;
       for (const [symbol, trades] of Object.entries(symbolGroups)) {
+        // Ordenar por closed_at DESC para pegar os mais recentes primeiro
+        trades.sort((a, b) => new Date(b.closed_at || 0).getTime() - new Date(a.closed_at || 0).getTime());
+        
         let consecutiveLosses = 0;
         for (const trade of trades) {
-          const actualPnl = trade.realized_pnl ?? trade.pnl ?? 0;
+          // Usar pnl se realized_pnl não existir
+          const actualPnl = typeof trade.realized_pnl === 'number' ? trade.realized_pnl : (trade.pnl ?? 0);
           if (actualPnl < 0) {
             consecutiveLosses++;
           } else {
-            break;
+            break; // Parar no primeiro lucro
           }
         }
         
-        console.log(`📊 ${symbol}: ${consecutiveLosses} perdas consecutivas (limite: ${MAX_SYMBOL_LOSSES})`);
-        
         if (consecutiveLosses >= MAX_SYMBOL_LOSSES) {
-          console.log(`🚫 BLOQUEANDO símbolo: ${symbol} (${consecutiveLosses} perdas consecutivas)`);
+          console.log(`🚫 BLOQUEANDO ${symbol}: ${consecutiveLosses} perdas consecutivas`);
           globalBlockedSymbols.set(symbol, {
             count: consecutiveLosses,
             lastLoss: Date.now(),
           });
+          totalBlocked++;
+        } else if (consecutiveLosses > 0) {
+          console.log(`⚠️ ${symbol}: ${consecutiveLosses}/${MAX_SYMBOL_LOSSES} perdas`);
         }
       }
 
       globalInitialized = true;
-      console.log(`🔒 ${globalBlockedSymbols.size} símbolos bloqueados após análise histórica`);
+      console.log(`🔒 ${totalBlocked} símbolos bloqueados após análise histórica`);
       triggerUpdate();
 
     } catch (error) {
