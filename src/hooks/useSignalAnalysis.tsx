@@ -189,10 +189,16 @@ export const useSignalAnalysis = () => {
     // 🆕 Momentum Score - confirmação adicional
     const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2 : hasStrongVolume ? 1.5 : 1);
     const momentumConfirmed = momentumScore > 2.0;
-    
-    // 🆕 Volume confirmando direção
-    const volumeDirectionOk = (action === 'BUY' && priceChange > 0) || 
-                              (action === 'SELL' && priceChange < 0);
+
+    // 🆕 Volume confirmando direção (permite reversão em suporte/resistência)
+    const reversalOk = (
+      (action === 'BUY' && (isOversold || isMildOversold) && nearSupport) ||
+      (action === 'SELL' && (isOverbought || isMildOverbought) && nearResistance)
+    );
+
+    const volumeDirectionOk = reversalOk ||
+      (action === 'BUY' && priceChange > 0) ||
+      (action === 'SELL' && priceChange < 0);
     
     // 🆕 Classificar qualidade do sinal
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
