@@ -23,3 +23,6 @@ verify_jwt = true
 
 [functions.order-flow-analysis]
 verify_jwt = true
+
+[functions.ai-comprehensive-analysis]
+verify_jwt = false
