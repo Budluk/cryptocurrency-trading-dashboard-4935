@@ -53,8 +53,11 @@ export const MultiAssetTrader = () => {
     currentBalance, openPositionsCount,
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
-  const { analyzeSignal } = useSignalAnalysis();
+  const { analyzeSignal, fetchComprehensiveAI } = useSignalAnalysis();
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
+  
+  // AI cache for comprehensive analysis
+  const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
   const { calculateExposure, classifyVolatilityRisk, getAdaptiveTrailingConfig: getAdvancedTrailing, checkAssetCorrelation, getProtectProfitLevel } = useAdvancedRiskManager();
   
   const lastMLCheck = useRef<number>(0);
