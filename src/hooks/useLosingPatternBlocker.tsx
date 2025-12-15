@@ -80,13 +80,16 @@ export const useLosingPatternBlocker = () => {
     try {
       lastLoadTime = now;
       
-      // Buscar mais trades para análise mais completa
+      // Buscar trades fechados dos últimos 7 dias para análise mais completa
+      // Usar opened_at como fallback se closed_at estiver NULL
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      
       const { data: recentTrades, error } = await supabase
         .from('auto_trader_positions')
         .select('symbol, side, leverage, opened_at, closed_at, realized_pnl, pnl')
         .eq('status', 'CLOSED')
-        .gte('closed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-        .order('closed_at', { ascending: false })
+        .gte('opened_at', sevenDaysAgo)
+        .order('opened_at', { ascending: false })
         .limit(500);
 
       if (error) {
@@ -95,14 +98,14 @@ export const useLosingPatternBlocker = () => {
       }
       
       if (!recentTrades?.length) {
-        console.log('🔍 Nenhum trade encontrado para análise');
+        console.log('🔍 Nenhum trade fechado encontrado nos últimos 7 dias');
         globalInitialized = true;
         return;
       }
 
-      console.log(`🔍 Analisando ${recentTrades.length} trades fechados...`);
+      console.log(`🔍 Analisando ${recentTrades.length} trades fechados (últimos 7 dias)...`);
 
-      // Agrupar por símbolo - ordenar por closed_at DESC
+      // Agrupar por símbolo
       const symbolGroups: Record<string, typeof recentTrades> = {};
       for (const t of recentTrades) {
         const sym = t.symbol;
@@ -112,8 +115,12 @@ export const useLosingPatternBlocker = () => {
 
       let totalBlocked = 0;
       for (const [symbol, trades] of Object.entries(symbolGroups)) {
-        // Ordenar por closed_at DESC para pegar os mais recentes primeiro
-        trades.sort((a, b) => new Date(b.closed_at || 0).getTime() - new Date(a.closed_at || 0).getTime());
+        // Ordenar por closed_at DESC (usar opened_at como fallback)
+        trades.sort((a, b) => {
+          const dateA = new Date(a.closed_at || a.opened_at || 0).getTime();
+          const dateB = new Date(b.closed_at || b.opened_at || 0).getTime();
+          return dateB - dateA;
+        });
         
         let consecutiveLosses = 0;
         for (const trade of trades) {
@@ -139,7 +146,7 @@ export const useLosingPatternBlocker = () => {
       }
 
       globalInitialized = true;
-      console.log(`🔒 ${totalBlocked} símbolos bloqueados após análise histórica`);
+      console.log(`🔒 ${totalBlocked} símbolos bloqueados de ${Object.keys(symbolGroups).length} analisados`);
       triggerUpdate();
 
     } catch (error) {
