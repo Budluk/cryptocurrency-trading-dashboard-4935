@@ -23,6 +23,40 @@ interface SymbolStats {
   pnl: number;
 }
 
+interface MarketRegime {
+  current: 'trending' | 'ranging' | 'volatile' | 'calm';
+  recentWinRate: number;
+  recentVolatility: number;
+  adaptations?: {
+    recommendedLeverage?: number;
+    recommendedRiskPercent?: number;
+    shouldBeAggressive?: boolean;
+  };
+}
+
+interface LossPatterns {
+  consecutiveLosses: number[];
+  maxLossStreak: number;
+  winStreaks: number[];
+  commonLossHours: number[];
+  commonLossSymbols: string[];
+  highLeverageLosses: number;
+  mitigation?: {
+    avoidHighLeverage?: boolean;
+    avoidLowVolatility?: boolean;
+    dangerousHours?: number[];
+    dangerousSymbols?: string[];
+    maxConsecutiveLosses?: number;
+  };
+}
+
+interface PositionSizing {
+  basePercent: number;
+  afterWinStreak: number;
+  afterLossStreak: number;
+  highConfidence: number;
+}
+
 interface MLPatterns {
   symbolPerformance?: Record<string, SymbolStats>;
   hourlyPerformance?: Record<string, SymbolStats>;
@@ -30,6 +64,13 @@ interface MLPatterns {
   bestHours?: number[];
   incrementalUpdates?: number;
   lastIncrementalUpdate?: string;
+  marketRegime?: MarketRegime;
+  lossPatterns?: LossPatterns;
+  positionSizing?: PositionSizing;
+  dynamicStops?: Record<string, number>;
+  dynamicTP?: Record<string, number>;
+  insights?: string[];
+  criticalWarnings?: string[];
 }
 
 export const useContinuousMLTraining = () => {
@@ -240,7 +281,7 @@ export const useContinuousMLTraining = () => {
     }
   }, [toast]);
 
-  // 🎯 Obter recomendações ML atualizadas
+  // 🎯 Obter recomendações ML atualizadas COM NOVOS DADOS
   const getMLRecommendations = useCallback(async () => {
     try {
       const userId = await getUserId();
@@ -258,16 +299,30 @@ export const useContinuousMLTraining = () => {
       const patterns = (mlConfig.optimal_patterns as MLPatterns) || {};
       
       return {
+        // Símbolos e horários
         bestSymbols: patterns.bestSymbols || [],
         bestHours: patterns.bestHours || [],
         symbolPerformance: patterns.symbolPerformance || {},
         hourlyPerformance: patterns.hourlyPerformance || {},
+        // Parâmetros recomendados
         recommendedStopLoss: mlConfig.recommended_stop_loss_pct,
         recommendedTakeProfit: mlConfig.recommended_take_profit_pct,
         recommendedLeverage: mlConfig.recommended_leverage,
         confidenceScore: mlConfig.confidence_score,
         tradesAnalyzed: mlConfig.trades_analyzed,
         lastUpdate: mlConfig.last_analysis_at,
+        // NOVOS: Regime de mercado
+        marketRegime: patterns.marketRegime || null,
+        // NOVOS: Padrões de perda
+        lossPatterns: patterns.lossPatterns || null,
+        // NOVOS: Position sizing dinâmico
+        positionSizing: patterns.positionSizing || null,
+        // NOVOS: Stops dinâmicos por volatilidade
+        dynamicStops: patterns.dynamicStops || null,
+        dynamicTP: patterns.dynamicTP || null,
+        // NOVOS: Insights e avisos
+        insights: patterns.insights || [],
+        criticalWarnings: patterns.criticalWarnings || [],
       };
 
     } catch (error) {
@@ -275,6 +330,73 @@ export const useContinuousMLTraining = () => {
       return null;
     }
   }, []);
+
+  // 🚫 Verificar se deve bloquear trade baseado em padrões de perda
+  const shouldBlockTrade = useCallback(async (symbol: string, hour: number, leverage: number): Promise<{ blocked: boolean; reason: string }> => {
+    try {
+      const recommendations = await getMLRecommendations();
+      if (!recommendations?.lossPatterns?.mitigation) {
+        return { blocked: false, reason: '' };
+      }
+
+      const mitigation = recommendations.lossPatterns.mitigation;
+      
+      // Verificar símbolos perigosos
+      if (mitigation.dangerousSymbols?.includes(symbol)) {
+        return { blocked: true, reason: `ML: ${symbol} identificado como problemático` };
+      }
+      
+      // Verificar horários perigosos
+      if (mitigation.dangerousHours?.includes(hour)) {
+        return { blocked: true, reason: `ML: Horário ${hour}h identificado como problemático` };
+      }
+      
+      // Verificar alavancagem
+      if (mitigation.avoidHighLeverage && leverage > 50) {
+        return { blocked: true, reason: `ML: Alavancagem ${leverage}x muito alta para padrão atual` };
+      }
+
+      return { blocked: false, reason: '' };
+    } catch {
+      return { blocked: false, reason: '' };
+    }
+  }, [getMLRecommendations]);
+
+  // 📊 Obter position sizing recomendado
+  const getRecommendedPositionSize = useCallback(async (
+    balance: number,
+    consecutiveWins: number,
+    consecutiveLosses: number,
+    signalConfidence: number
+  ): Promise<number> => {
+    try {
+      const recommendations = await getMLRecommendations();
+      const sizing = recommendations?.positionSizing || {
+        basePercent: 10,
+        afterWinStreak: 15,
+        afterLossStreak: 5,
+        highConfidence: 20,
+      };
+
+      let percent = sizing.basePercent;
+      
+      // Ajustar por sequências
+      if (consecutiveWins >= 3) {
+        percent = sizing.afterWinStreak;
+      } else if (consecutiveLosses >= 2) {
+        percent = sizing.afterLossStreak;
+      }
+      
+      // Ajustar por confiança do sinal
+      if (signalConfidence >= 80) {
+        percent = Math.max(percent, sizing.highConfidence);
+      }
+
+      return (balance * percent) / 100;
+    } catch {
+      return (balance * 10) / 100; // Fallback 10%
+    }
+  }, [getMLRecommendations]);
 
   // 🔄 Verificar se é bom momento para treinar (baseado em trades fechados)
   useEffect(() => {
@@ -296,6 +418,8 @@ export const useContinuousMLTraining = () => {
     triggerIncrementalTraining,
     triggerFullTraining,
     getMLRecommendations,
+    shouldBlockTrade,
+    getRecommendedPositionSize,
     tradesBufferCount: tradesBuffer.current.length,
   };
 };

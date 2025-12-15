@@ -261,7 +261,7 @@ serve(async (req) => {
     }
 
     // ========================
-    // 4. ANÁLISE PROFUNDA DE STOPS
+    // 4. ANÁLISE PROFUNDA DE STOPS E PADRÕES DE PERDA
     // ========================
     const stopAnalysis = {
       stoppedOutTrades: [] as any[],
@@ -271,7 +271,16 @@ serve(async (req) => {
       avgVolatility: 0,
       stopTooTight: 0,
       stopTooLoose: 0,
+      // Novos campos de análise
+      consecutiveLosses: [] as number[],
+      lossPatterns: [] as { symbol: string; hour: number; leverage: number; volatility: number }[],
+      winStreaks: [] as number[],
+      avgTimeInTrade: 0,
     };
+
+    let currentLossStreak = 0;
+    let currentWinStreak = 0;
+    let totalTradeTime = 0;
 
     for (const trade of allTrades) {
       const entryPrice = trade.entry_price || 0;
@@ -282,6 +291,12 @@ serve(async (req) => {
       if (entryPrice === 0) continue;
 
       const priceMove = Math.abs((exitPrice - entryPrice) / entryPrice) * 100;
+
+      // Calcular tempo no trade
+      if (trade.opened_at && trade.closed_at) {
+        const duration = new Date(trade.closed_at).getTime() - new Date(trade.opened_at).getTime();
+        totalTradeTime += duration;
+      }
 
       if (pnl < 0) {
         stopAnalysis.stoppedOutTrades.push({ 
@@ -294,9 +309,34 @@ serve(async (req) => {
         if (priceMove < 1.0) {
           stopAnalysis.stopTooTight++;
         }
+        
+        // Rastrear padrões de perda
+        currentLossStreak++;
+        currentWinStreak = 0;
+        
+        if (currentLossStreak >= 2) {
+          stopAnalysis.consecutiveLosses.push(currentLossStreak);
+          stopAnalysis.lossPatterns.push({
+            symbol: trade.symbol,
+            hour: new Date(trade.opened_at || trade.closed_at).getUTCHours(),
+            leverage: trade.leverage || 10,
+            volatility: volatility,
+          });
+        }
       } else if (pnl > 0) {
         stopAnalysis.tpHitTrades.push({ trade, priceMove });
         stopAnalysis.optimalTPs.push(priceMove);
+        
+        // Rastrear sequências de vitórias
+        currentWinStreak++;
+        if (currentLossStreak > 0) {
+          stopAnalysis.consecutiveLosses.push(currentLossStreak);
+        }
+        currentLossStreak = 0;
+        
+        if (currentWinStreak >= 3) {
+          stopAnalysis.winStreaks.push(currentWinStreak);
+        }
       }
 
       if (volatility > 0) {
@@ -305,41 +345,31 @@ serve(async (req) => {
     }
 
     stopAnalysis.avgVolatility = stopAnalysis.avgVolatility / allTrades.length || 2;
+    stopAnalysis.avgTimeInTrade = allTrades.length > 0 ? totalTradeTime / allTrades.length / 60000 : 0; // em minutos
 
     // ========================
-    // 5. CALCULAR MÉTRICAS PRINCIPAIS
+    // 4.5 DETECTAR REGIME DE MERCADO
     // ========================
-    const winningTrades = allTrades.filter(t => (t.realized_pnl || 0) > 0);
-    const losingTrades = allTrades.filter(t => (t.realized_pnl || 0) <= 0);
-    const winRate = (winningTrades.length / allTrades.length) * 100;
-
-    // Análise de movimentos antes de lucro
-    const winMoves = winningTrades.map(t => {
-      const entry = t.entry_price || 0;
-      const exit = t.exit_price || entry;
-      return Math.abs((exit - entry) / entry) * 100;
-    });
-    const avgWinMove = winMoves.length > 0 ? winMoves.reduce((a, b) => a + b, 0) / winMoves.length : 2;
-
-    // Análise de movimentos antes de loss
-    const lossMoves = losingTrades.map(t => {
-      const entry = t.entry_price || 0;
-      const exit = t.exit_price || entry;
-      return Math.abs((exit - entry) / entry) * 100;
-    });
-    const avgLossMove = lossMoves.length > 0 ? lossMoves.reduce((a, b) => a + b, 0) / lossMoves.length : 1;
+    const recentTrades = allTrades.slice(0, 20);
+    const recentWinRate = recentTrades.filter(t => (t.realized_pnl || 0) > 0).length / recentTrades.length * 100;
+    const recentAvgVol = recentTrades.reduce((sum, t) => sum + (t.volatility || 2), 0) / recentTrades.length;
+    
+    let marketRegime: 'trending' | 'ranging' | 'volatile' | 'calm' = 'ranging';
+    if (recentAvgVol > 5) marketRegime = 'volatile';
+    else if (recentAvgVol < 1.5) marketRegime = 'calm';
+    else if (recentWinRate > 60) marketRegime = 'trending';
 
     // ========================
-    // 6. ANÁLISE POR VOLATILIDADE
+    // 5. ANÁLISE POR VOLATILIDADE
     // ========================
-    const volatilityBuckets = new Map<string, { trades: number, wins: number, losses: number, totalPnl: number, avgMove: number }>();
+    const volatilityBuckets = new Map<string, { trades: number, wins: number, losses: number, totalPnl: number, avgMove: number, avgDuration: number }>();
     
     for (const trade of allTrades) {
       const vol = trade.volatility || stopAnalysis.avgVolatility;
       const bucket = vol < 1 ? 'very_low' : vol < 2 ? 'low' : vol < 3 ? 'medium' : vol < 5 ? 'high' : 'very_high';
       
       if (!volatilityBuckets.has(bucket)) {
-        volatilityBuckets.set(bucket, { trades: 0, wins: 0, losses: 0, totalPnl: 0, avgMove: 0 });
+        volatilityBuckets.set(bucket, { trades: 0, wins: 0, losses: 0, totalPnl: 0, avgMove: 0, avgDuration: 0 });
       }
       
       const stats = volatilityBuckets.get(bucket)!;
@@ -353,14 +383,20 @@ serve(async (req) => {
       }
     }
 
-    // Calcular stop ideal por volatilidade
+    // Calcular stop ideal por volatilidade com ajustes dinâmicos
     const stopByVolatility: Record<string, number> = {};
     for (const [bucket, stats] of volatilityBuckets.entries()) {
       const avgMov = stats.avgMove / stats.trades;
       const winRateBucket = stats.wins / stats.trades;
       
-      // Stop deve ser ~60-80% do movimento médio, ajustado pelo win rate
-      stopByVolatility[bucket] = Math.max(avgMov * (winRateBucket > 0.5 ? 0.6 : 0.8), 0.5);
+      // Stop adaptativo: mais apertado em alta volatilidade com bom win rate
+      let multiplier = winRateBucket > 0.55 ? 0.5 : winRateBucket > 0.45 ? 0.7 : 0.9;
+      
+      // Ajuste baseado no regime de mercado
+      if (marketRegime === 'volatile') multiplier *= 1.2;
+      if (marketRegime === 'calm') multiplier *= 0.8;
+      
+      stopByVolatility[bucket] = Math.max(avgMov * multiplier, 0.3);
     }
 
     // ========================
@@ -485,42 +521,99 @@ serve(async (req) => {
     // ========================
     // 10. CONSULTAR IA PARA INSIGHTS
     // ========================
-    const aiPrompt = `Analise este histórico REAL de ${allTrades.length} trades da Bybit e forneça recomendações:
+    // ========================
+    // ANÁLISE DE PADRÕES DE PERDA
+    // ========================
+    const lossPatternAnalysis = {
+      commonLossHours: [] as number[],
+      commonLossSymbols: [] as string[],
+      highLeverageLosses: 0,
+      lowVolLosses: 0,
+      highVolLosses: 0,
+    };
 
-PERFORMANCE GERAL:
+    // Analisar padrões nas perdas
+    const lossHourCount = new Map<number, number>();
+    const lossSymbolCount = new Map<string, number>();
+    
+    for (const pattern of stopAnalysis.lossPatterns) {
+      lossHourCount.set(pattern.hour, (lossHourCount.get(pattern.hour) || 0) + 1);
+      lossSymbolCount.set(pattern.symbol, (lossSymbolCount.get(pattern.symbol) || 0) + 1);
+      if (pattern.leverage > 50) lossPatternAnalysis.highLeverageLosses++;
+      if (pattern.volatility < 1.5) lossPatternAnalysis.lowVolLosses++;
+      if (pattern.volatility > 5) lossPatternAnalysis.highVolLosses++;
+    }
+
+    lossPatternAnalysis.commonLossHours = Array.from(lossHourCount.entries())
+      .filter(([_, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([hour]) => hour);
+
+    lossPatternAnalysis.commonLossSymbols = Array.from(lossSymbolCount.entries())
+      .filter(([_, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([symbol]) => symbol);
+
+    const aiPrompt = `Você é um quant expert. Analise este histórico REAL de ${allTrades.length} trades da Bybit.
+
+📊 PERFORMANCE GERAL:
 - Total Trades: ${allTrades.length} (${bybitTrades.length} Bybit + ${internalTrades?.length || 0} interno)
 - Win Rate: ${winRate.toFixed(1)}% | Profit Factor: ${profitFactor.toFixed(2)}
 - Total PnL: $${totalPnl.toFixed(2)}
 - R:R Ratio: ${riskRewardRatio.toFixed(2)}
-- Avg Win Move: ${avgWinMove.toFixed(2)}% | Avg Loss Move: ${avgLossMove.toFixed(2)}%
+- Tempo médio no trade: ${stopAnalysis.avgTimeInTrade.toFixed(1)} minutos
 
-ANÁLISE DE STOPS:
+🎯 REGIME DE MERCADO ATUAL: ${marketRegime.toUpperCase()}
+- Win Rate últimos 20 trades: ${recentWinRate.toFixed(1)}%
+- Volatilidade média recente: ${recentAvgVol.toFixed(2)}%
+
+🚨 PADRÕES DE PERDA IDENTIFICADOS:
+- Sequências de perdas consecutivas: ${stopAnalysis.consecutiveLosses.length} ocorrências
+- Maior sequência de perdas: ${Math.max(...stopAnalysis.consecutiveLosses, 0)}
+- Perdas em alta alavancagem (>50x): ${lossPatternAnalysis.highLeverageLosses}
+- Perdas em baixa volatilidade: ${lossPatternAnalysis.lowVolLosses}
+- Perdas em alta volatilidade: ${lossPatternAnalysis.highVolLosses}
+- Horários com mais perdas: ${lossPatternAnalysis.commonLossHours.join('h, ')}h
+- Símbolos problemáticos: ${lossPatternAnalysis.commonLossSymbols.join(', ')}
+
+⚠️ ANÁLISE DE STOPS:
 - Stops muito apertados: ${stopAnalysis.stopTooTight} trades (${((stopAnalysis.stopTooTight/allTrades.length)*100).toFixed(1)}%)
 - Taxa de stop-out: ${((stopAnalysis.stoppedOutTrades.length / allTrades.length) * 100).toFixed(1)}%
+- Avg Win Move: ${avgWinMove.toFixed(2)}% | Avg Loss Move: ${avgLossMove.toFixed(2)}%
 
-VOLATILIDADE:
+📈 VOLATILIDADE:
 ${Array.from(volatilityBuckets.entries()).map(([k, v]) => {
   return `${k}: ${v.trades} trades, WR ${((v.wins/v.trades)*100).toFixed(0)}%, Stop ideal: ${stopByVolatility[k]?.toFixed(2)}%`;
 }).join('\n')}
 
-TOP SÍMBOLOS:
-${topSymbols.slice(0, 5).map(s => `${s.symbol}: WR ${s.winRate}%, PnL $${s.pnl}, ${s.trades} trades`).join('\n')}
+🏆 TOP SÍMBOLOS:
+${topSymbols.slice(0, 5).map(s => `${s.symbol}: WR ${s.winRate}%, PnL $${s.pnl}, ${s.trades} trades, Lev média ${s.avgLeverage}x`).join('\n')}
 
-SÍMBOLOS A EVITAR: ${worstSymbols.join(', ')}
+❌ SÍMBOLOS A EVITAR: ${worstSymbols.join(', ')}
 
-MELHORES HORÁRIOS (UTC):
+⏰ MELHORES HORÁRIOS (UTC):
 ${bestHours.slice(0, 4).map(h => `${h.hour}h: WR ${h.winRate}%, PnL $${h.pnl}`).join('\n')}
 
-HORÁRIOS A EVITAR: ${worstHours.join('h, ')}h
+⛔ HORÁRIOS A EVITAR: ${worstHours.join('h, ')}h
 
-ALAVANCAGEM:
+💪 ALAVANCAGEM:
 ${Array.from(leverageStats.entries()).map(([lev, stats]) => {
   const wr = ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(0);
   return `${lev}x: WR ${wr}%, PnL $${stats.pnl.toFixed(2)}`;
 }).join('\n')}
 
-Responda em JSON:
+🎖️ SEQUÊNCIAS DE VITÓRIAS: ${stopAnalysis.winStreaks.length} ocorrências de 3+ wins seguidos
+
+Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS em JSON:
 {
+  "marketRegimeAdaptations": {
+    "currentRegime": "${marketRegime}",
+    "recommendedLeverage": <número>,
+    "recommendedRiskPercent": <% do capital por trade>,
+    "shouldBeAggressive": <true/false>
+  },
   "dynamicStopLoss": {
     "base": <stop base otimizado %>,
     "veryLowVol": <stop para volatilidade < 1%>,
@@ -540,15 +633,35 @@ Responda em JSON:
   "leverageRecommendations": {
     "optimal": <alavancagem ótima>,
     "conservative": <alavancagem conservadora>,
-    "aggressive": <alavancagem máxima recomendada>
+    "aggressive": <alavancagem máxima recomendada>,
+    "byRegime": {
+      "trending": <lev para mercado em tendência>,
+      "ranging": <lev para mercado lateral>,
+      "volatile": <lev para mercado volátil>,
+      "calm": <lev para mercado calmo>
+    }
+  },
+  "lossPatternMitigation": {
+    "avoidHighLeverage": <true/false>,
+    "avoidLowVolatility": <true/false>,
+    "dangerousHours": [<horários a evitar>],
+    "dangerousSymbols": [<símbolos a evitar>],
+    "maxConsecutiveLosses": <número de perdas antes de pausar>
   },
   "symbolsToFocus": ["symbol1", "symbol2"],
   "symbolsToAvoid": ["symbol1", "symbol2"],
   "bestTradingHours": [hora1, hora2],
   "hoursToAvoid": [hora1, hora2],
+  "positionSizing": {
+    "basePercent": <% do capital>,
+    "afterWinStreak": <% após sequência de vitórias>,
+    "afterLossStreak": <% após sequência de perdas>,
+    "highConfidence": <% para sinais de alta confiança>
+  },
   "insights": ["insight crítico 1", "insight 2", "insight 3"],
   "criticalWarnings": ["aviso importante 1"],
-  "actionPlan": "Plano de ação resumido para melhorar performance"
+  "actionPlan": "Plano de ação resumido para melhorar performance",
+  "confidenceLevel": <0-100 baseado na qualidade dos dados>
 }`;
 
     let aiRecommendations: any = {
@@ -614,7 +727,7 @@ Responda em JSON:
     }
 
     // ========================
-    // 11. CONSTRUIR CONFIGURAÇÃO FINAL
+    // 11. CONSTRUIR CONFIGURAÇÃO FINAL COM TODOS OS NOVOS DADOS
     // ========================
     const mlConfig = {
       user_id: userId,
@@ -629,6 +742,13 @@ Responda em JSON:
           bybitTrades: bybitTrades.length,
           internalTrades: internalTrades?.length || 0,
           totalAnalyzed: allTrades.length,
+        },
+        // Regime de mercado
+        marketRegime: {
+          current: marketRegime,
+          recentWinRate: recentWinRate,
+          recentVolatility: recentAvgVol,
+          adaptations: aiRecommendations.marketRegimeAdaptations || {},
         },
         // Stops adaptativos
         dynamicStops: aiRecommendations.dynamicStopLoss,
@@ -649,6 +769,23 @@ Responda em JSON:
         riskRewardRatio: riskRewardRatio,
         profitFactor: profitFactor,
         totalPnl: totalPnl,
+        // NOVO: Padrões de perda
+        lossPatterns: {
+          consecutiveLosses: stopAnalysis.consecutiveLosses,
+          maxLossStreak: Math.max(...stopAnalysis.consecutiveLosses, 0),
+          winStreaks: stopAnalysis.winStreaks,
+          commonLossHours: lossPatternAnalysis.commonLossHours,
+          commonLossSymbols: lossPatternAnalysis.commonLossSymbols,
+          highLeverageLosses: lossPatternAnalysis.highLeverageLosses,
+          mitigation: aiRecommendations.lossPatternMitigation || {},
+        },
+        // NOVO: Position sizing dinâmico
+        positionSizing: aiRecommendations.positionSizing || {
+          basePercent: 10,
+          afterWinStreak: 15,
+          afterLossStreak: 5,
+          highConfidence: 20,
+        },
         // Insights
         insights: aiRecommendations.insights || [],
         criticalWarnings: aiRecommendations.criticalWarnings || [],
@@ -660,9 +797,10 @@ Responda em JSON:
           avgWinMove: avgWinMove.toFixed(2),
           avgLossMove: avgLossMove.toFixed(2),
           profitFactor: profitFactor.toFixed(2),
+          avgTimeInTrade: stopAnalysis.avgTimeInTrade.toFixed(1),
         }
       },
-      confidence_score: Math.min(
+      confidence_score: aiRecommendations.confidenceLevel || Math.min(
         winRate + 
         (profitFactor > 1.5 ? 15 : profitFactor > 1 ? 5 : 0) + 
         (allTrades.length > 100 ? 10 : allTrades.length > 50 ? 5 : 0),

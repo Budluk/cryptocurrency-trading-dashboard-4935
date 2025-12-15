@@ -44,7 +44,7 @@ export const MultiAssetTrader = () => {
   const { refetch } = usePositions();
   const { checkNewPosition, getCorrelationRisk } = useCorrelationAnalysis();
   const { processOpenPositions, clearPositionState, getAdaptiveTrailingConfig } = useSmartExitManager();
-  const { addTradeToBuffer, triggerFullTraining, getMLRecommendations } = useContinuousMLTraining();
+  const { addTradeToBuffer, triggerFullTraining, getMLRecommendations, shouldBlockTrade, getRecommendedPositionSize } = useContinuousMLTraining();
   const { 
     getLeverageForScalping, getLeverageForBalance, calculatePositionSize,
     calculateDynamicTrailingStop, calculateValidQuantity, calculateStopTakeProfit
