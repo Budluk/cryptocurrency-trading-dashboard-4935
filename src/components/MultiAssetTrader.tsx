@@ -19,6 +19,7 @@ import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
 import { useAdvancedRiskManager } from "@/hooks/useAdvancedRiskManager";
 import { getUserId } from "@/lib/anonymousUser";
 import { AntiLossMonitor } from "./AntiLossMonitor";
+import { useDataDrivenStrategy } from "@/hooks/useDataDrivenStrategy";
 
 interface Trade {
   symbol: string;
@@ -55,6 +56,11 @@ export const MultiAssetTrader = () => {
   } = useBybitSync();
   const { analyzeSignal, fetchComprehensiveAI, fetchBTCTrend } = useSignalAnalysis();
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
+  const { 
+    analyzeSymbol, shouldTradeDataDriven, getOptimalStopTakeProfit, 
+    filterAssetsDataDriven, isProfitableHour, getStrategyStats,
+    BLACKLISTED_SYMBOLS, HIGH_WINRATE_SYMBOLS, PROFITABLE_HOURS, LOSING_HOURS
+  } = useDataDrivenStrategy();
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
@@ -464,6 +470,11 @@ export const MultiAssetTrader = () => {
         const isInTop10 = topVolNow.includes(a.instrument.symbol);
         const symbol = a.instrument.symbol;
         
+        // 🆕 PRIMEIRO: Verificar BLACKLIST (baseado em dados históricos reais)
+        if (BLACKLISTED_SYMBOLS.has(symbol)) {
+          return false; // Nunca operar símbolos que historicamente perdem
+        }
+        
         // === CRITÉRIOS PARA SCALPING LUCRATIVO ===
         
         // 1. Spread máximo de 0.05% para scalping (muito importante!)
@@ -483,7 +494,7 @@ export const MultiAssetTrader = () => {
         if (a.lastPrice < 0.001) return false;
         
         // 5. Priorizar majors e ativos conhecidos
-        const majorSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT'];
+        const majorSymbols = ['ETHUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT'];
         const isMajor = majorSymbols.includes(symbol);
         
         // Se não é major, exigir volume ainda maior
@@ -492,32 +503,56 @@ export const MultiAssetTrader = () => {
         return true;
       });
       
-      // === ORDENAÇÃO INTELIGENTE: Priorizar por combinação de fatores ===
-      // Score = (liquidityScore * 0.4) + (volatilidade normalizada * 0.3) + (volume normalizado * 0.3)
+      // === ORDENAÇÃO INTELIGENTE: Priorizar WHITELIST + fatores de qualidade ===
       const maxLiquidity = Math.max(...assetsWithVolatility.map(a => a?.liquidityScore || 0), 1);
       const maxVolume = Math.max(...assetsWithVolatility.map(a => a?.volume24h || 0), 1);
       
       const scoredAssets = assetsWithVolatility.filter(Boolean).map(a => {
+        const symbol = a!.instrument.symbol;
         const normalizedLiquidity = (a!.liquidityScore / maxLiquidity);
         const normalizedVolatility = Math.min(a!.volatility / 8, 1); // Cap em 8%
         const normalizedVolume = (a!.volume24h / maxVolume);
         
-        // Bonus para majors (mais previsíveis)
-        const majorBonus = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'].includes(a!.instrument.symbol) ? 0.15 : 0;
+        // 🆕 MEGA BONUS para símbolos da WHITELIST (histórico de lucro comprovado)
+        const whitelistData = HIGH_WINRATE_SYMBOLS.get(symbol);
+        let whitelistBonus = 0;
+        if (whitelistData) {
+          if (whitelistData.winRate >= 70) whitelistBonus = 0.50; // Premium (80%+ win rate)
+          else if (whitelistData.winRate >= 50) whitelistBonus = 0.30; // Bom (50-70% win rate)
+          else whitelistBonus = 0.15; // Aceitável
+        }
+        
+        // Bonus para majors (exceto os blacklistados)
+        const majorBonus = ['ETHUSDT', 'XRPUSDT'].includes(symbol) ? 0.10 : 0;
         
         // Penalidade para spread alto
         const spreadPenalty = a!.spread > 0.03 ? 0.1 : 0;
         
-        const assetScore = (normalizedLiquidity * 0.35) + (normalizedVolatility * 0.30) + (normalizedVolume * 0.35) + majorBonus - spreadPenalty;
+        const assetScore = (normalizedLiquidity * 0.25) + (normalizedVolatility * 0.20) + (normalizedVolume * 0.25) + whitelistBonus + majorBonus - spreadPenalty;
         
-        return { ...a!, assetScore };
+        return { ...a!, assetScore, isWhitelisted: !!whitelistData };
       });
       
+      // 🆕 Ordenar com WHITELIST primeiro
       const topVolatileAssets = scoredAssets
-        .sort((a, b) => b.assetScore - a.assetScore)
-        .slice(0, 30); // Reduzido para focar nos melhores
+        .sort((a, b) => {
+          // Whitelist sempre primeiro
+          if (a.isWhitelisted && !b.isWhitelisted) return -1;
+          if (!a.isWhitelisted && b.isWhitelisted) return 1;
+          return b.assetScore - a.assetScore;
+        })
+        .slice(0, 30);
       
-      console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})`).join(', ')}`);
+      console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
+      
+      // 🆕 VERIFICAR HORÁRIO LUCRATIVO
+      const currentHourUTC = new Date().getUTCHours();
+      const isGoodHour = PROFITABLE_HOURS.has(currentHourUTC);
+      const isBadHour = LOSING_HOURS.has(currentHourUTC);
+      
+      if (isBadHour) {
+        console.log(`⚠️ Horário de perdas (${currentHourUTC}h UTC) - apenas símbolos premium serão operados`);
+      }
 
       let shouldStopTrading = false;
       let openedThisCycle = 0;
@@ -547,15 +582,33 @@ export const MultiAssetTrader = () => {
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
         const isScalpAsset = topVolNow.includes(symbol);
+        const isWhitelistedSymbol = HIGH_WINRATE_SYMBOLS.has(symbol);
+        
+        // 🆕 FILTRO DE HORÁRIO: Em horário ruim, APENAS whitelist premium
+        if (isBadHour && !isWhitelistedSymbol) {
+          const reason = `Horário ${currentHourUTC}h UTC (ruim)`;
+          skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+          continue;
+        }
+        
+        // 🆕 Em horário ruim, whitelist precisa de win rate >= 70%
+        if (isBadHour && isWhitelistedSymbol) {
+          const whitelistData = HIGH_WINRATE_SYMBOLS.get(symbol);
+          if (!whitelistData || whitelistData.winRate < 70) {
+            const reason = `Horário ruim + win rate < 70%`;
+            skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+            continue;
+          }
+        }
         
         try {
           const currentPrice = parseFloat(ticker.lastPrice);
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === SCALPING: THRESHOLDS MAIS BAIXOS ===
-          let scoreThreshold = 35; // Baixo para scalping
-          let minConfirmations = 2; // Menos confirmações para entradas rápidas
+          // === SCALPING: THRESHOLDS AJUSTADOS POR WHITELIST ===
+          let scoreThreshold = isWhitelistedSymbol ? 30 : 40; // Whitelist precisa de menos score
+          let minConfirmations = isWhitelistedSymbol ? 1 : 2; // Whitelist precisa de menos confirmações
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
@@ -564,8 +617,11 @@ export const MultiAssetTrader = () => {
             if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
           }
           
-          // Mínimo score de 30 para scalping (mais agressivo)
-          scoreThreshold = Math.max(30, scoreThreshold);
+          // 🆕 Bonus de horário lucrativo
+          if (isGoodHour) scoreThreshold -= 5;
+          
+          // Mínimo score (whitelist tem threshold menor)
+          scoreThreshold = Math.max(isWhitelistedSymbol ? 25 : 35, scoreThreshold);
           
           // 🆕 Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -697,13 +753,30 @@ export const MultiAssetTrader = () => {
 
           if (parseFloat(orderValueUSD) < 5) continue;
 
-          // Calcular SL/TP baseado em TOPOS e FUNDOS (estrutural)
+          // 🆕 Calcular SL/TP baseado em DADOS HISTÓRICOS + estrutura de preço
           const priceRange = highPrice - lowPrice;
           const atrPercent = (priceRange / currentPrice) * 100;
-          const { stopLoss, takeProfit } = calculateStopTakeProfit(
-            currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig,
-            highPrice, lowPrice // Passar high/low para stops estruturais
-          );
+          
+          // Usar cálculo data-driven para símbolos whitelist ou padrão para outros
+          let stopLoss: string, takeProfit: string;
+          if (isWhitelistedSymbol) {
+            const optimalSLTP = getOptimalStopTakeProfit(
+              symbol, 
+              currentPrice, 
+              analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+              volatility
+            );
+            stopLoss = optimalSLTP.stopLoss.toFixed(6);
+            takeProfit = optimalSLTP.takeProfit.toFixed(6);
+            console.log(`📊 ${symbol} SL/TP otimizado: ${optimalSLTP.reason}`);
+          } else {
+            const sltp = calculateStopTakeProfit(
+              currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig,
+              highPrice, lowPrice
+            );
+            stopLoss = sltp.stopLoss;
+            takeProfit = sltp.takeProfit;
+          }
 
           // Configurar alavancagem
           let finalLeverage = leverage;
