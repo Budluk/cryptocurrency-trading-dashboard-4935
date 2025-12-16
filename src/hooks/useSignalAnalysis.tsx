@@ -85,15 +85,15 @@ export const useSignalAnalysis = () => {
     const atrPercent = (priceRange / currentPrice) * 100;
     const pricePosition = priceRange > 0 ? (currentPrice - lowPrice) / priceRange : 0.5;
     
-    // === VALIDAÇÕES BASE MAIS RIGOROSAS ===
-    const hasMinVolume = volume24h > 150000;      // Mínimo 150k
-    const hasGoodVolume = volume24h > 500000;     // 500k para confirmação
-    const hasStrongVolume = volume24h > 1000000;  // 1M para boost
-    const hasVolumeSpike = volume24h > 2000000;   // 2M para spike
+    // === VALIDAÇÕES BASE ===
+    const hasMinVolume = volume24h > 80000;       // Mínimo 80k
+    const hasGoodVolume = volume24h > 300000;     // 300k para confirmação
+    const hasStrongVolume = volume24h > 700000;   // 700k para boost
+    const hasVolumeSpike = volume24h > 1500000;   // 1.5M para spike
     
     // Volatilidade ideal para scalping
-    const volInRange = volatility > 1.0 && volatility < 15;
-    const volIdeal = volatility > 2.0 && volatility < 8;
+    const volInRange = volatility > 0.5 && volatility < 18;
+    const volIdeal = volatility > 1.5 && volatility < 10;
     
     // === ANÁLISE DE TENDÊNCIA ===
     const strongBullish = priceChange > 2.5;
@@ -303,12 +303,12 @@ export const useSignalAnalysis = () => {
     
     // === DETERMINAR AÇÃO ===
     const scoreDiff = Math.abs(buyScore - sellScore);
-    const minDiff = 15; // Diferença mínima maior
+    const minDiff = 8; // Diferença mínima menor para mais trades
     
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     
-    // Só entrar se diferença significativa
+    // Entrar quando há direção clara
     if (scoreDiff >= minDiff) {
       if (buyScore > sellScore && buyScore >= scoreThreshold) {
         action = 'BUY';
@@ -319,15 +319,15 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    // === FILTROS DE QUALIDADE (MAIS RIGOROSOS) ===
+    // === FILTROS DE QUALIDADE ===
     const volumeOk = hasMinVolume;
     const volatilityOk = volInRange;
-    const atrOk = atrPercent > 0.6 && atrPercent < 10;
-    const priceMovementOk = Math.abs(priceChange) > 0.6 && Math.abs(priceChange) < 12;
+    const atrOk = atrPercent > 0.3 && atrPercent < 15;
+    const priceMovementOk = Math.abs(priceChange) > 0.3 && Math.abs(priceChange) < 15;
     
-    // Momentum Score
+    // Momentum Score (mais permissivo)
     const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2.5 : hasStrongVolume ? 1.8 : hasGoodVolume ? 1.3 : 1);
-    const momentumOk = momentumScore > 1.5;
+    const momentumOk = momentumScore > 0.8;
     
     // Direção do volume (reversões permitidas em S/R)
     const isReversal = (
@@ -339,32 +339,34 @@ export const useSignalAnalysis = () => {
       (action === 'BUY' && priceChange > 0.3) ||
       (action === 'SELL' && priceChange < -0.3);
     
-    // Evitar entradas no meio (preferir S/R)
-    const positionOk = !inMiddle || scoreDiff >= 25 || isReversal;
+    // Permitir entrada no meio se score forte
+    const positionOk = !inMiddle || scoreDiff >= 15 || isReversal || signalScore >= 60;
     
-    // Classificação de qualidade
+    // Classificação de qualidade (mais permissivo)
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
-    if (signalScore >= 85 && hasVolumeSpike && momentumOk && !inMiddle) signalQuality = 'premium';
-    else if (signalScore >= 70 && hasStrongVolume && momentumOk) signalQuality = 'high';
-    else if (signalScore >= 55 && hasGoodVolume) signalQuality = 'medium';
+    if (signalScore >= 75 && hasVolumeSpike && momentumOk && !inMiddle) signalQuality = 'premium';
+    else if (signalScore >= 55 && hasStrongVolume && momentumOk) signalQuality = 'high';
+    else if (signalScore >= 40 && hasGoodVolume) signalQuality = 'medium';
+    else if (signalScore >= 35 && hasMinVolume) signalQuality = 'medium'; // novo tier
     
     // AI upgrade
+    if (aiBoost >= 10 && signalQuality === 'low') signalQuality = 'medium';
     if (aiBoost >= 15 && signalQuality === 'medium') signalQuality = 'high';
-    if (aiConfidence && aiConfidence > 80 && signalQuality !== 'premium') signalQuality = 'high';
+    if (aiConfidence && aiConfidence > 70 && signalQuality !== 'premium') signalQuality = 'high';
     
-    // === DECISÃO FINAL ===
+    // === DECISÃO FINAL (mais permissivo) ===
     const shouldTrade = (
       action !== null &&
       signalScore >= scoreThreshold &&
       scoreDiff >= minDiff &&
-      currentBalance > 3 &&
-      confirmations.length >= minConfirmations &&
+      currentBalance > 2 &&
+      confirmations.length >= Math.max(1, minConfirmations - 1) &&
       volumeOk &&
       volatilityOk &&
       atrOk &&
       priceMovementOk &&
-      momentumOk &&
-      volumeDirectionOk &&
+      (momentumOk || signalScore >= 50) && // momentum ou score alto
+      (volumeDirectionOk || isReversal || signalScore >= 55) && // mais flexível
       positionOk &&
       signalQuality !== 'low'
     );
