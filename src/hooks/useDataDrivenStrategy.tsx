@@ -211,30 +211,30 @@ export const useDataDrivenStrategy = () => {
   ): { stopLoss: number; takeProfit: number; reason: string } => {
     const analysis = analyzeSymbol(symbol);
     
-    // Stop Loss base (0.2-0.35% dependendo do símbolo)
-    let slPercent = 0.25;
-    let tpPercent = 0.45;
+    // Stop Loss ULTRA APERTADO para scalping (0.10-0.15%)
+    let slPercent = 0.12;
+    let tpPercent = 0.22;
     
-    // Símbolos com alto win rate = SL mais apertado, TP mais conservador
+    // Símbolos com alto win rate = SL mais apertado, TP mais próximo
     if (analysis.isWhitelisted && analysis.historicalWinRate && analysis.historicalWinRate >= 70) {
-      slPercent = 0.2;  // SL mais apertado
-      tpPercent = 0.35; // TP mais próximo (win rate compensa)
+      slPercent = 0.10;  // 0.10% SL
+      tpPercent = 0.18;  // 0.18% TP (1.8:1)
     }
-    // Símbolos com win rate médio = R:R melhor
+    // Símbolos com win rate médio
     else if (analysis.isWhitelisted && analysis.historicalWinRate && analysis.historicalWinRate >= 50) {
-      slPercent = 0.25;
-      tpPercent = 0.50; // 2:1 ratio
+      slPercent = 0.12;  // 0.12% SL
+      tpPercent = 0.22;  // 0.22% TP (1.8:1)
     }
-    // Símbolos desconhecidos = R:R maior para compensar incerteza
+    // Símbolos desconhecidos
     else {
-      slPercent = 0.25;
-      tpPercent = 0.55; // 2.2:1 ratio
+      slPercent = 0.15;  // 0.15% SL
+      tpPercent = 0.27;  // 0.27% TP (1.8:1)
     }
     
-    // Ajustar por volatilidade
+    // Ajustar por volatilidade (mas manter apertado)
     if (volatility > 8) {
-      slPercent = Math.min(slPercent * 1.2, 0.4);
-      tpPercent = Math.min(tpPercent * 1.3, 0.8);
+      slPercent = Math.min(slPercent * 1.15, 0.20); // máx 0.20%
+      tpPercent = Math.min(tpPercent * 1.15, 0.35); // máx 0.35%
     }
     
     // Calcular preços
