@@ -46,41 +46,56 @@ export function useSmartExitManager() {
     breakEvenActivated: new Map(),
   });
 
-  // Configurações default de trailing stop adaptativo
-  const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any): TrailingStopConfig => {
-    // Se ML está ativo, usar recomendações
+  // Configurações de trailing stop MAIS AGRESSIVAS - breakeven cedo
+  const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any, profitPct?: number): TrailingStopConfig => {
+    // Se já tem lucro, apertar ainda mais
+    const hasProfit = profitPct && profitPct > 0;
+    
+    // Se ML está ativo, usar recomendações com ajustes
     if (mlConfig?.is_enabled && mlConfig?.optimal_patterns?.dynamicStops) {
       const dynamicStops = mlConfig.optimal_patterns.dynamicStops;
       
-      // Selecionar config baseado na volatilidade
+      // Selecionar config baseado na volatilidade - BREAKEVEN MAIS CEDO
       if (volatility < 2) {
         return {
-          activationPct: 0.8,
-          trailingPct: dynamicStops.lowVolatility || 0.4,
-          breakEvenPct: 0.5,
+          activationPct: hasProfit ? 0.15 : 0.25, // Ativa mais cedo
+          trailingPct: Math.min(dynamicStops.lowVolatility || 0.3, 0.25),
+          breakEvenPct: 0.15, // Breakeven com apenas 0.15% lucro
         };
       } else if (volatility < 5) {
         return {
-          activationPct: 1.2,
-          trailingPct: dynamicStops.mediumVolatility || 0.6,
-          breakEvenPct: 0.8,
+          activationPct: hasProfit ? 0.2 : 0.35,
+          trailingPct: Math.min(dynamicStops.mediumVolatility || 0.4, 0.35),
+          breakEvenPct: 0.2,
         };
       } else {
         return {
-          activationPct: 1.8,
-          trailingPct: dynamicStops.highVolatility || 1.0,
-          breakEvenPct: 1.2,
+          activationPct: hasProfit ? 0.3 : 0.5,
+          trailingPct: Math.min(dynamicStops.highVolatility || 0.6, 0.5),
+          breakEvenPct: 0.25,
         };
       }
     }
 
-    // Fallback sem ML
+    // Fallback sem ML - MAIS CONSERVADOR
     if (volatility < 2) {
-      return { activationPct: 0.8, trailingPct: 0.4, breakEvenPct: 0.5 };
+      return { 
+        activationPct: 0.25, 
+        trailingPct: 0.2, 
+        breakEvenPct: 0.15 // Breakeven com 0.15%
+      };
     } else if (volatility < 5) {
-      return { activationPct: 1.2, trailingPct: 0.6, breakEvenPct: 0.8 };
+      return { 
+        activationPct: 0.35, 
+        trailingPct: 0.3, 
+        breakEvenPct: 0.2 
+      };
     } else {
-      return { activationPct: 2.0, trailingPct: 1.0, breakEvenPct: 1.5 };
+      return { 
+        activationPct: 0.5, 
+        trailingPct: 0.4, 
+        breakEvenPct: 0.25 
+      };
     }
   }, []);
 
