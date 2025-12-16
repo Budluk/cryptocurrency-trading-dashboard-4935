@@ -53,7 +53,7 @@ export const MultiAssetTrader = () => {
     currentBalance, availableBalance, openPositionsCount,
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
-  const { analyzeSignal, fetchComprehensiveAI } = useSignalAnalysis();
+  const { analyzeSignal, fetchComprehensiveAI, fetchBTCTrend } = useSignalAnalysis();
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
   
   // AI cache for comprehensive analysis
@@ -380,6 +380,10 @@ export const MultiAssetTrader = () => {
       const balanceNow = await syncBybitBalance();
       await syncOpenPositions();
       const topVolNow = await fetchTop10VolatileAssets();
+      
+      // 🆕 Buscar tendência do BTC para correlação com alts
+      const btcTrend = await fetchBTCTrend();
+      console.log(`🪙 BTC trend: ${btcTrend > 0 ? '+' : ''}${btcTrend.toFixed(2)}%`);
 
       // Verificar proteções
       if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
@@ -470,9 +474,12 @@ export const MultiAssetTrader = () => {
           // Mínimo score de 35 para garantir qualidade
           scoreThreshold = Math.max(35, scoreThreshold);
           
+          // 🆕 Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
             currentPrice, highPrice, lowPrice, priceChange, volume24h, volatility,
-            scoreThreshold, minConfirmations, currentBalance: balanceNow
+            scoreThreshold, minConfirmations, currentBalance: balanceNow,
+            symbol, // Para tracking de pullback
+            btcPriceChange: btcTrend, // Para correlação BTC
           });
 
           if (!analysisResult.shouldTrade || !analysisResult.action) {
