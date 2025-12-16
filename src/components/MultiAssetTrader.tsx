@@ -50,7 +50,7 @@ export const MultiAssetTrader = () => {
     calculateDynamicTrailingStop, calculateValidQuantity, calculateStopTakeProfit
   } = useTradingCalculations();
   const {
-    currentBalance, openPositionsCount,
+    currentBalance, availableBalance, openPositionsCount,
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
   } = useBybitSync();
   const { analyzeSignal, fetchComprehensiveAI } = useSignalAnalysis();
@@ -525,24 +525,27 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          const freshBalance = balanceNow;
-          if (freshBalance < 2) {
-            console.log(`⚠️ Saldo muito baixo: $${freshBalance.toFixed(2)}`);
-            continue;
+          const freshBalance = balanceNow; // Agora é availableBalance (saldo disponível)
+          if (freshBalance < 5) {
+            console.log(`⚠️ Saldo disponível muito baixo: $${freshBalance.toFixed(2)}`);
+            shouldStopTrading = true;
+            break;
           }
           
           // 🆕 Verificar exposição máxima do portfolio
-          const exposureData = calculateExposure(openPositions, freshBalance);
+          const exposureData = calculateExposure(openPositions, currentBalance);
           if (exposureData.isOverExposed) {
             console.log(`⚠️ Exposição máxima atingida: ${exposureData.exposurePercent.toFixed(1)}% > 80%`);
             continue;
           }
 
-          // 🆕 Usar limite de tamanho baseado em volatilidade
+          // 🆕 Usar limite de tamanho baseado em volatilidade E saldo disponível
           const maxPositionForVol = volRisk.maxPositionSize;
-          const maxMarginPerTrade = Math.min(freshBalance * 0.15, maxPositionForVol);
+          // CRÍTICO: Usar no máximo 20% do saldo DISPONÍVEL (não total)
+          const maxMarginPerTrade = Math.min(freshBalance * 0.20, maxPositionForVol, 15);
           const positionValue = maxMarginPerTrade * leverage;
-          let usdSize = Math.min(positionValue, 50); // Máximo $50 por trade
+          // Limitar USD size baseado no saldo disponível
+          let usdSize = Math.min(positionValue, freshBalance * 0.8, 50);
 
           // Calcular quantidade
           const lotSizeFilter = instrument.lotSizeFilter || {};
@@ -554,10 +557,10 @@ export const MultiAssetTrader = () => {
             usdSize, currentPrice, leverage, minOrderQty, qtyStep, maxOrderQty
           );
 
-          // Verificar margem requerida vs saldo disponível
-          const requiredMargin = (parseFloat(orderValueUSD) / leverage) * 1.05; // 5% buffer fees
-          if (requiredMargin > freshBalance * 0.5) {
-            console.log(`⚠️ Margem ${requiredMargin.toFixed(2)} > 50% saldo ${freshBalance.toFixed(2)}`);
+          // Verificar margem requerida vs saldo DISPONÍVEL (mais conservador)
+          const requiredMargin = (parseFloat(orderValueUSD) / leverage) * 1.10; // 10% buffer para fees
+          if (requiredMargin > freshBalance * 0.35) {
+            console.log(`⚠️ Margem ${requiredMargin.toFixed(2)} > 35% disponível ${freshBalance.toFixed(2)} - pulando`);
             continue;
           }
 
