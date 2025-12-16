@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { getUserId } from '@/lib/anonymousUser';
 
 interface Position {
   id: string;
@@ -43,17 +44,21 @@ export const PositionsProvider = ({ children }: { children: ReactNode }) => {
   const fetchPositions = useCallback(async () => {
     try {
       setIsLoading(true);
+
+      const userId = await getUserId();
       
       // Buscar ambas queries em paralelo para melhor performance
       const [openResult, closedResult] = await Promise.all([
         supabase
           .from('auto_trader_positions')
           .select('id, symbol, side, entry_price, qty, current_price, unrealized_pnl, realized_pnl, status, opened_at, closed_at, stop_loss, take_profit, confidence, trailing_stop_percentage, close_reason, exit_price, leverage, highest_price, volatility, partial_tp_executed, exchange_order_id')
+          .eq('user_id', userId)
           .eq('status', 'OPEN')
           .order('opened_at', { ascending: false }),
         supabase
           .from('auto_trader_positions')
           .select('id, symbol, side, entry_price, qty, current_price, unrealized_pnl, realized_pnl, status, opened_at, closed_at, stop_loss, take_profit, confidence, trailing_stop_percentage, close_reason, exit_price, leverage, highest_price, volatility, partial_tp_executed, exchange_order_id')
+          .eq('user_id', userId)
           .eq('status', 'CLOSED')
           .order('closed_at', { ascending: false })
           .limit(50) // Reduzido de 100 para 50

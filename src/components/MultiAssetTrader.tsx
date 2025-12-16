@@ -62,6 +62,7 @@ export const MultiAssetTrader = () => {
   
   const lastMLCheck = useRef<number>(0);
   const lastClosedPositionsRef = useRef<string[]>([]);
+  const orphanCleanupDoneRef = useRef<boolean>(false);
 
   // Configurações
   const [maxOpenPositions, setMaxOpenPositions] = useState(200);
@@ -797,67 +798,101 @@ export const MultiAssetTrader = () => {
     return () => clearInterval(interval);
   }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
 
-  const startTrading = async () => {
-    // 🧹 LIMPAR POSIÇÕES ÓRFÃS - Sincronizar banco com Bybit
+  const cleanupOrphanPositions = useCallback(async () => {
     console.log('🧹 Sincronizando posições...');
     try {
+      const userId = await getUserId();
+
       // Buscar posições reais do Bybit
       const { data: bybitData } = await supabase.functions.invoke('bybit-trading', {
         body: { action: 'get_positions', isTestnet: false, params: { category: 'linear', settleCoin: 'USDT' } }
       });
-      
+
       const realPositions = (bybitData?.data || []).filter((p: any) => parseFloat(p.size || '0') > 0);
       const realSymbols = new Set(realPositions.map((p: any) => `${p.symbol}-${p.side}`));
       console.log(`📊 ${realPositions.length} posições reais no Bybit`);
-      
-      // Buscar posições "OPEN" no banco
-      const { data: dbOpenPositions } = await supabase
+
+      // Buscar posições "OPEN" do usuário no banco (ordenar para manter só 1 por símbolo+lado)
+      const { data: dbOpenPositions, error: dbError } = await supabase
         .from('auto_trader_positions')
-        .select('id, symbol, side')
-        .eq('status', 'OPEN');
-      
-      const orphanIds: string[] = [];
+        .select('id, symbol, side, opened_at')
+        .eq('user_id', userId)
+        .eq('status', 'OPEN')
+        .order('opened_at', { ascending: false });
+
+      if (dbError) {
+        console.log('⚠️ Erro ao buscar posições no banco:', dbError);
+        return;
+      }
+
+      const idsToClose: string[] = [];
+      const seenRealKeys = new Set<string>();
+
       for (const dbPos of (dbOpenPositions || [])) {
         const key = `${dbPos.symbol}-${dbPos.side}`;
+
+        // Não existe no Bybit -> órfã
         if (!realSymbols.has(key)) {
-          orphanIds.push(dbPos.id);
+          idsToClose.push(dbPos.id);
+          continue;
         }
+
+        // Existe no Bybit, mas já temos 1 registro para esse símbolo+lado -> duplicata
+        if (seenRealKeys.has(key)) {
+          idsToClose.push(dbPos.id);
+          continue;
+        }
+
+        seenRealKeys.add(key);
       }
-      
-      if (orphanIds.length > 0) {
-        console.log(`🗑️ Fechando ${orphanIds.length} posições órfãs...`);
-        // Fechar em lotes de 100
-        for (let i = 0; i < orphanIds.length; i += 100) {
-          const batch = orphanIds.slice(i, i + 100);
+
+      if (idsToClose.length > 0) {
+        console.log(`🗑️ Fechando ${idsToClose.length} posições inconsistentes (órfãs/duplicadas)...`);
+        for (let i = 0; i < idsToClose.length; i += 100) {
+          const batch = idsToClose.slice(i, i + 100);
           await supabase
             .from('auto_trader_positions')
             .update({ status: 'CLOSED', close_reason: 'orphan_cleanup', closed_at: new Date().toISOString() })
             .in('id', batch);
         }
-        console.log(`✅ ${orphanIds.length} posições órfãs limpas`);
+        console.log(`✅ ${idsToClose.length} posições limpas`);
       }
-      
+
       // Recarregar contexto de posições
       await refetch();
     } catch (err) {
       console.log('⚠️ Erro na sincronização:', err);
     }
-    
+  }, [refetch]);
+
+  // Se o trader foi restaurado automaticamente, rodar a limpeza 1x para evitar "limite atingido" falso
+  useEffect(() => {
+    if (!isRunning) return;
+    if (orphanCleanupDoneRef.current) return;
+    orphanCleanupDoneRef.current = true;
+    void cleanupOrphanPositions();
+  }, [isRunning, cleanupOrphanPositions]);
+
+  const startTrading = async () => {
+    // 🧹 Limpeza/sync antes de iniciar (evita travar entradas por posições antigas/duplicadas)
+    orphanCleanupDoneRef.current = true;
+    await cleanupOrphanPositions();
+
     // FORÇAR recarga do sistema anti-perdas
     console.log('🔄 Recarregando sistema anti-perdas...');
     await loadHistoricalPatterns(true);
     const stats = getBlockedStats();
     console.log(`🔒 Símbolos bloqueados: ${stats.blockedSymbols.join(', ') || 'nenhum'}`);
-    
+
     setIsRunning(true);
     setConsecutiveLosses(0);
-    
+
     const userId = await getUserId();
-    
+
     // Check if config exists, then insert or update
     const { data: existing } = await supabase.from('auto_trader_config')
       .select('id').eq('user_id', userId).maybeSingle();
-    
+
     if (existing) {
       await supabase.from('auto_trader_config')
         .update({ trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() })
@@ -872,6 +907,7 @@ export const MultiAssetTrader = () => {
 
   const stopTrading = async () => {
     setIsRunning(false);
+    orphanCleanupDoneRef.current = false;
     
     const userId = await getUserId();
     await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
