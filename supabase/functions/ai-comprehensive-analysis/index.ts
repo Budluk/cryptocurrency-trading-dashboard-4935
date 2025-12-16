@@ -626,42 +626,129 @@ serve(async (req) => {
       sentiment.score * weights.sentiment;
     
     // ========================
-    // SCALPING CONFIG (1m entry, 5m S/R)
+    // SCALPING CONFIG (CONSERVADOR - stops apertados)
     // ========================
     const currentPrice = technical.m1.ema.ema9 || 0;
     const m5Support = technical.m5.support;
     const m5Resistance = technical.m5.resistance;
     const m1Signal = technical.m1.signal;
     const m5Trend = technical.m5.trend;
+    const m15Trend = technical.m15.trend;
     
-    // Scalping entry conditions
+    // 🎯 STOPS CONSERVADORES para reduzir perdas
+    const maxSL = 0.0025; // 0.25% máximo
+    const maxTP = 0.004;  // 0.4% máximo
+    
+    // Scalping entry conditions (MAIS RIGOROSOS)
     let scalpingAction: 'buy' | 'sell' | 'wait' = 'wait';
     let confidence = 0;
+    const reasons: string[] = [];
     
-    // BUY: 1m buy signal + price near 5m support + uptrend confirmation
-    if (m1Signal === 'buy' && technical.m1.pricePosition < 0.3 && m5Trend !== 'down') {
-      scalpingAction = 'buy';
-      confidence = Math.min(90, 50 + Math.abs(compositeScore));
-    }
-    // SELL: 1m sell signal + price near 5m resistance + downtrend confirmation  
-    else if (m1Signal === 'sell' && technical.m1.pricePosition > 0.7 && m5Trend !== 'up') {
-      scalpingAction = 'sell';
-      confidence = Math.min(90, 50 + Math.abs(compositeScore));
-    }
-    // Additional entries at key levels
-    else if (compositeScore > 30 && technical.m1.rsi < 35) {
-      scalpingAction = 'buy';
-      confidence = Math.min(85, 40 + compositeScore);
-    }
-    else if (compositeScore < -30 && technical.m1.rsi > 65) {
-      scalpingAction = 'sell';
-      confidence = Math.min(85, 40 + Math.abs(compositeScore));
+    // Momentum confirmation
+    const macdBullish = technical.m1.macd.histogram > 0 && technical.m5.macd.histogram > 0;
+    const macdBearish = technical.m1.macd.histogram < 0 && technical.m5.macd.histogram < 0;
+    const rsiOversold = technical.m1.rsi < 35 && technical.m5.rsi < 40;
+    const rsiOverbought = technical.m1.rsi > 65 && technical.m5.rsi > 60;
+    const trendAligned = m5Trend === m15Trend && m5Trend !== 'sideways';
+    const volumeOk = fundamental.tradingActivity !== 'low';
+    
+    // Pontuação de entrada
+    let entryScore = 0;
+    
+    // BUY CONDITIONS
+    if (m1Signal === 'buy' || compositeScore > 25) {
+      // Proximidade ao suporte 5m
+      if (technical.m1.pricePosition < 0.25) {
+        entryScore += 20;
+        reasons.push('📍 Perto do suporte 5m');
+      }
+      // RSI oversold
+      if (rsiOversold) {
+        entryScore += 25;
+        reasons.push(`📉 RSI oversold: ${technical.m1.rsi.toFixed(0)}`);
+      }
+      // MACD bullish
+      if (macdBullish) {
+        entryScore += 15;
+        reasons.push('📈 MACD bullish');
+      }
+      // Trend aligned
+      if (trendAligned && m5Trend === 'up') {
+        entryScore += 20;
+        reasons.push('⬆️ Trend alinhado');
+      }
+      // On-chain bullish
+      if (onChain.signal === 'bullish') {
+        entryScore += 15;
+        reasons.push(`📊 OnChain: funding ${onChain.fundingRate.toFixed(3)}%`);
+      }
+      // Volume ok
+      if (volumeOk) entryScore += 5;
+      
+      if (entryScore >= 40 && m5Trend !== 'down') {
+        scalpingAction = 'buy';
+        confidence = Math.min(85, 40 + entryScore * 0.5);
+      }
     }
     
-    // Calculate optimal SL/TP for scalping
-    const atr1m = technical.m1.atr;
-    const slDistance = Math.max(atr1m * 1.5, currentPrice * 0.003); // Min 0.3%
-    const tpDistance = slDistance * 2; // 2:1 R:R
+    // SELL CONDITIONS
+    if (scalpingAction === 'wait' && (m1Signal === 'sell' || compositeScore < -25)) {
+      entryScore = 0;
+      reasons.length = 0;
+      
+      // Proximidade à resistência 5m
+      if (technical.m1.pricePosition > 0.75) {
+        entryScore += 20;
+        reasons.push('📍 Perto da resistência 5m');
+      }
+      // RSI overbought
+      if (rsiOverbought) {
+        entryScore += 25;
+        reasons.push(`📈 RSI overbought: ${technical.m1.rsi.toFixed(0)}`);
+      }
+      // MACD bearish
+      if (macdBearish) {
+        entryScore += 15;
+        reasons.push('📉 MACD bearish');
+      }
+      // Trend aligned
+      if (trendAligned && m5Trend === 'down') {
+        entryScore += 20;
+        reasons.push('⬇️ Trend alinhado');
+      }
+      // On-chain bearish
+      if (onChain.signal === 'bearish') {
+        entryScore += 15;
+        reasons.push(`📊 OnChain: funding ${onChain.fundingRate.toFixed(3)}%`);
+      }
+      // Volume ok
+      if (volumeOk) entryScore += 5;
+      
+      if (entryScore >= 40 && m5Trend !== 'up') {
+        scalpingAction = 'sell';
+        confidence = Math.min(85, 40 + entryScore * 0.5);
+      }
+    }
+    
+    // Penalidades de confiança
+    if (sentiment.fearGreedLabel === 'extreme_greed' && scalpingAction === 'buy') {
+      confidence -= 15;
+      reasons.push('⚠️ Extreme greed - cautela');
+    }
+    if (sentiment.fearGreedLabel === 'extreme_fear' && scalpingAction === 'sell') {
+      confidence -= 15;
+      reasons.push('⚠️ Extreme fear - cautela');
+    }
+    if (!volumeOk) {
+      confidence -= 10;
+      reasons.push('⚠️ Volume baixo');
+    }
+    
+    confidence = Math.max(0, Math.min(90, confidence));
+    
+    // Calcular SL/TP CONSERVADORES
+    const slDistance = currentPrice * maxSL;
+    const tpDistance = currentPrice * maxTP;
     
     const scalpingConfig = {
       action: scalpingAction,
@@ -671,19 +758,9 @@ serve(async (req) => {
       takeProfit: scalpingAction === 'buy' ? currentPrice + tpDistance : currentPrice - tpDistance,
       support5m: m5Support,
       resistance5m: m5Resistance,
-      riskReward: 2,
-      reasoning: [],
+      riskReward: maxTP / maxSL,
+      reasoning: reasons.length > 0 ? reasons : ['⏳ Aguardando setup de alta qualidade'],
     };
-    
-    // Build reasoning
-    if (scalpingAction !== 'wait') {
-      if (onChain.signal === (scalpingAction === 'buy' ? 'bullish' : 'bearish')) {
-        scalpingConfig.reasoning.push(`📊 On-Chain: ${onChain.signal} (funding: ${onChain.fundingRate.toFixed(4)}%)`);
-      }
-      scalpingConfig.reasoning.push(`📈 1m: ${m1Signal} (RSI: ${technical.m1.rsi.toFixed(0)})`);
-      scalpingConfig.reasoning.push(`📉 5m: ${m5Trend} trend (S: ${m5Support.toFixed(2)}, R: ${m5Resistance.toFixed(2)})`);
-      scalpingConfig.reasoning.push(`😱 Sentiment: ${sentiment.fearGreedLabel} (${sentiment.fearGreedIndex})`);
-    }
     
     // ========================
     // AI INSIGHTS
@@ -691,41 +768,30 @@ serve(async (req) => {
     let aiInsights: any = {};
     
     try {
-      const aiPrompt = `Você é um trader quant expert em scalping crypto. Analise rapidamente:
+      const aiPrompt = `Trader SCALPING crypto CONSERVADOR. SL máx 0.25%, TP máx 0.4%.
 
-📊 ON-CHAIN (${targetSymbol}):
-- Funding: ${onChain.fundingRate.toFixed(4)}% | OI Change: ${onChain.openInterestChange.toFixed(2)}%
-- Long/Short: ${onChain.longShortRatio.toFixed(2)} | Whales: ${onChain.whaleActivity}
-- Score: ${onChain.score}
+${targetSymbol} @ ${currentPrice.toFixed(2)}:
 
-📈 TÉCNICO:
-- 1m: ${technical.m1.signal} (RSI ${technical.m1.rsi.toFixed(0)}, MACD ${technical.m1.macd.histogram > 0 ? '+' : '-'})
-- 5m: Trend ${technical.m5.trend}, S: ${m5Support.toFixed(2)}, R: ${m5Resistance.toFixed(2)}
-- 15m: Trend ${technical.m15.trend}
-- Alinhamento: ${technical.alignment} (Score: ${technical.overallScore.toFixed(0)})
+ON-CHAIN: Funding ${onChain.fundingRate.toFixed(4)}% | OI ${onChain.openInterestChange > 0 ? '+' : ''}${onChain.openInterestChange.toFixed(1)}% | L/S ${onChain.longShortRatio.toFixed(2)} | ${onChain.whaleActivity} | Score ${onChain.score}
 
-💰 FUNDAMENTALS:
-- Volume 24h: $${(fundamental.volume24h/1e6).toFixed(2)}M | Volatilidade: ${fundamental.volatility.toFixed(2)}%
-- Atividade: ${fundamental.tradingActivity}
+TÉCNICO:
+1m: ${technical.m1.signal} RSI ${technical.m1.rsi.toFixed(0)} MACD ${technical.m1.macd.histogram > 0 ? '▲' : '▼'}
+5m: ${technical.m5.trend} RSI ${technical.m5.rsi.toFixed(0)} S ${m5Support.toFixed(2)} R ${m5Resistance.toFixed(2)}
+15m: ${technical.m15.trend} | Alinhamento: ${technical.alignment} | Score ${technical.overallScore.toFixed(0)}
 
-😱 SENTIMENTO:
-- Fear/Greed: ${sentiment.fearGreedIndex} (${sentiment.fearGreedLabel})
-- Market Mood: ${sentiment.marketMood}
+MERCADO: Vol $${(fundamental.volume24h/1e6).toFixed(0)}M | Volat ${fundamental.volatility.toFixed(1)}% | ${fundamental.tradingActivity}
 
-🎯 SCORE COMPOSTO: ${compositeScore.toFixed(0)}
+SENTIMENTO: ${sentiment.fearGreedIndex} ${sentiment.fearGreedLabel} | ${sentiment.marketMood}
 
-Para SCALPING (1m entry, 5m S/R), responda em JSON:
-{
-  "recommendation": "buy" | "sell" | "wait",
-  "confidence": 0-100,
-  "reasoning": ["motivo1", "motivo2"],
-  "entryZone": { "min": preço, "max": preço },
-  "stopLoss": preço,
-  "takeProfit": preço,
-  "riskWarnings": ["aviso1"],
-  "optimalLeverage": número,
-  "timeframe": "scalp 1-5min" | "swing 15-60min"
-}`;
+SCORE GERAL: ${compositeScore.toFixed(0)} | Pré-análise: ${scalpingConfig.action} ${scalpingConfig.confidence}%
+
+REGRAS:
+- WAIT se incerto ou condições não ideais
+- BUY só se RSI<40, suporte próximo, trend up
+- SELL só se RSI>60, resistência próxima, trend down
+- Confidence >70 para entrar
+
+JSON: {"action":"buy"|"sell"|"wait","confidence":0-100,"reason":"motivo principal em 10 palavras","warning":"risco se houver","leverage":15-25}`;
 
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -736,7 +802,7 @@ Para SCALPING (1m entry, 5m S/R), responda em JSON:
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash',
           messages: [
-            { role: 'system', content: 'Expert crypto scalper. Respostas em JSON conciso.' },
+            { role: 'system', content: 'Scalper conservador. JSON curto. Priorize WAIT se duvidoso.' },
             { role: 'user', content: aiPrompt }
           ],
         }),
