@@ -448,8 +448,25 @@ export const MultiAssetTrader = () => {
       const skipCounts = new Map<string, number>();
       const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
+      // 🆕 CONTROLE DE DIVERSIFICAÇÃO - evitar todos trades na mesma direção
+      let buyCountThisCycle = 0;
+      let sellCountThisCycle = 0;
+      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // Máximo 2 trades na mesma direção por ciclo
+      const MAX_TRADES_PER_CYCLE = 3; // Máximo 3 trades total por ciclo
+      
+      // Contar posições abertas por direção
+      const existingBuys = openPositions.filter(p => p.side === 'Buy').length;
+      const existingSells = openPositions.filter(p => p.side === 'Sell').length;
+      const MAX_IMBALANCE = 5; // Máximo 5 posições de diferença entre BUY e SELL
+      
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
+        
+        // 🆕 LIMITE DE TRADES POR CICLO
+        if (openedThisCycle >= MAX_TRADES_PER_CYCLE) {
+          console.log(`⚠️ Limite de ${MAX_TRADES_PER_CYCLE} trades/ciclo atingido`);
+          break;
+        }
 
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
@@ -461,18 +478,18 @@ export const MultiAssetTrader = () => {
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
           // ML nas decisões - MELHORADO para qualidade
-          let scoreThreshold = 50; // Score mínimo mais alto para sinais de qualidade
-          let minConfirmations = 2; // Mínimo 2 confirmações
+          let scoreThreshold = 55; // 🆕 Score mínimo MUITO MAIS ALTO para sinais de qualidade
+          let minConfirmations = 3; // 🆕 Mínimo 3 confirmações
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 8; // Bônus menor
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 5; // Bônus menor
             const currentHour = new Date().getUTCHours();
-            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 5;
+            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
           }
           
-          // Mínimo score de 35 para garantir qualidade
-          scoreThreshold = Math.max(35, scoreThreshold);
+          // 🆕 Mínimo score de 50 para garantir qualidade (era 35!)
+          scoreThreshold = Math.max(50, scoreThreshold);
           
           // 🆕 Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -485,6 +502,40 @@ export const MultiAssetTrader = () => {
           if (!analysisResult.shouldTrade || !analysisResult.action) {
             const reason = analysisResult.skipReason || 'Sem motivo';
             skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+            continue;
+          }
+          
+          // 🆕 CONTROLE DE DIVERSIFICAÇÃO - evitar muitos trades na mesma direção
+          const isBuy = analysisResult.action === 'BUY';
+          const isSell = analysisResult.action === 'SELL';
+          
+          // Verificar limite por direção neste ciclo
+          if (isBuy && buyCountThisCycle >= MAX_SAME_DIRECTION_PER_CYCLE) {
+            console.log(`⚠️ ${symbol}: Limite BUY/ciclo atingido (${buyCountThisCycle}/${MAX_SAME_DIRECTION_PER_CYCLE})`);
+            continue;
+          }
+          if (isSell && sellCountThisCycle >= MAX_SAME_DIRECTION_PER_CYCLE) {
+            console.log(`⚠️ ${symbol}: Limite SELL/ciclo atingido (${sellCountThisCycle}/${MAX_SAME_DIRECTION_PER_CYCLE})`);
+            continue;
+          }
+          
+          // Verificar imbalance geral (evitar muitas posições em uma direção)
+          if (isBuy && (existingBuys + buyCountThisCycle) - (existingSells + sellCountThisCycle) >= MAX_IMBALANCE) {
+            console.log(`⚠️ ${symbol}: Muitos BUYs vs SELLs - aguardando equilíbrio`);
+            continue;
+          }
+          if (isSell && (existingSells + sellCountThisCycle) - (existingBuys + buyCountThisCycle) >= MAX_IMBALANCE) {
+            console.log(`⚠️ ${symbol}: Muitos SELLs vs BUYs - aguardando equilíbrio`);
+            continue;
+          }
+          
+          // 🆕 EXIGIR SCORE MAIOR PARA VOLATILIDADE ALTA
+          if (volatility > 8 && analysisResult.signalScore < 60) {
+            console.log(`⚠️ ${symbol}: Vol ${volatility.toFixed(1)}% alta, score ${analysisResult.signalScore} < 60`);
+            continue;
+          }
+          if (volatility > 12 && analysisResult.signalScore < 70) {
+            console.log(`⚠️ ${symbol}: Vol ${volatility.toFixed(1)}% muito alta, score ${analysisResult.signalScore} < 70`);
             continue;
           }
 
@@ -625,6 +676,10 @@ export const MultiAssetTrader = () => {
 
           if (!orderError && orderData?.success) {
             openedThisCycle++;
+            // 🆕 Atualizar contadores de direção
+            if (analysisResult.action === 'BUY') buyCountThisCycle++;
+            if (analysisResult.action === 'SELL') sellCountThisCycle++;
+            
             const tradeLog = {
               timestamp: new Date().toISOString(),
               symbol, side: analysisResult.action, leverage: finalLeverage,
@@ -678,6 +733,9 @@ export const MultiAssetTrader = () => {
             // Position count will be updated on next sync
             
             toast({ title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`, description: `${analysisResult.action} ${finalLeverage}x | $${usdSize.toFixed(0)}` });
+            
+            // 🆕 DELAY MAIOR após trade bem sucedido - deixar mercado respirar
+            await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos
           } else {
             if (martingaleEnabled) setLossStreak(prev => Math.min(prev + 1, 3));
             setConsecutiveLosses(prev => prev + 1);
@@ -690,7 +748,7 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 1500)); // Delay padrão entre ativos
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
