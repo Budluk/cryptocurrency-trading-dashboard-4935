@@ -134,7 +134,7 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ Calcular Stop Loss e Take Profit baseado em TOPOS e FUNDOS
+  // 🛡️ Calcular Stop Loss e Take Profit - CONSERVADOR para reduzir perdas
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -149,60 +149,50 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🎯 USAR TOPOS/FUNDOS SE DISPONÍVEIS (a favor da tendência)
+    // 🎯 STOPS MAIS APERTADOS - reduzir risco por trade
+    // Scalp: 0.25% SL, 0.4% TP (1:1.6 R:R)
+    // Normal: 0.4% SL, 0.6% TP (1:1.5 R:R)
+    const maxSL = isScalpAsset ? 0.0025 : 0.004; // 0.25% scalp, 0.4% normal
+    const maxTP = isScalpAsset ? 0.004 : 0.006;  // 0.4% scalp, 0.6% normal
+    const minSL = 0.0015; // Mínimo 0.15%
+
+    // USAR TOPOS/FUNDOS SE DISPONÍVEIS, mas com limites rígidos
     if (highPrice && lowPrice && highPrice > lowPrice) {
       const { swingStop, swingTarget } = findSwingLevels(highPrice, lowPrice, currentPrice, action);
       
-      // Calcular % do stop baseado no swing level
       const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
       const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
       
-      // Limitar para scalping: max 1% SL, max 2% TP
-      const maxSL = isScalpAsset ? 0.005 : 0.012; // 0.5% scalp, 1.2% normal
-      const maxTP = isScalpAsset ? 0.01 : 0.025;  // 1% scalp, 2.5% normal
-      const minSL = 0.002; // Mínimo 0.2%
-      
+      // Forçar limites conservadores mesmo com swing levels
       stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct));
       takeProfitPct = Math.max(stopLossPct * 1.5, Math.min(maxTP, swingTargetPct));
-      
-      // Aplicar stops estruturais
-      if (action === 'BUY') {
-        stopLoss = currentPrice * (1 - stopLossPct);
-        takeProfit = currentPrice * (1 + takeProfitPct);
-        console.log(`📊 BUY Stop estrutural: abaixo do fundo ${lowPrice.toFixed(4)} -> SL ${stopLoss.toFixed(4)}`);
-      } else {
-        stopLoss = currentPrice * (1 + stopLossPct);
-        takeProfit = currentPrice * (1 - takeProfitPct);
-        console.log(`📊 SELL Stop estrutural: acima do topo ${highPrice.toFixed(4)} -> SL ${stopLoss.toFixed(4)}`);
-      }
     } else {
-      // Fallback: usar ATR/ML se não tiver dados de high/low
-      const ATR_SL_MULTIPLIER = 1.5;
-      
+      // Fallback: usar valores fixos conservadores
       if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
-        stopLossPct = Math.min(mlConfig.recommended_stop_loss_pct / 100, 0.005);
-        takeProfitPct = Math.min(mlConfig.recommended_take_profit_pct / 100, 0.01);
+        // ML limitado a valores conservadores
+        stopLossPct = Math.min(mlConfig.recommended_stop_loss_pct / 100, maxSL);
+        takeProfitPct = Math.min(mlConfig.recommended_take_profit_pct / 100, maxTP);
       } else if (isScalpAsset) {
-        stopLossPct = 0.003;
-        takeProfitPct = 0.006;
+        stopLossPct = 0.0025; // 0.25%
+        takeProfitPct = 0.004; // 0.4%
       } else {
-        const atrBasedSL = (atrPercent / 100) * ATR_SL_MULTIPLIER;
-        const minSL = 0.004;
-        const maxSL = 0.015;
-        stopLossPct = Math.max(minSL, Math.min(maxSL, atrBasedSL));
-        takeProfitPct = stopLossPct * 2;
-      }
-      
-      if (action === 'BUY') {
-        stopLoss = currentPrice * (1 - stopLossPct);
-        takeProfit = currentPrice * (1 + takeProfitPct);
-      } else {
-        stopLoss = currentPrice * (1 + stopLossPct);
-        takeProfit = currentPrice * (1 - takeProfitPct);
+        stopLossPct = 0.004; // 0.4%
+        takeProfitPct = 0.006; // 0.6%
       }
     }
     
+    // Aplicar stops
+    if (action === 'BUY') {
+      stopLoss = currentPrice * (1 - stopLossPct);
+      takeProfit = currentPrice * (1 + takeProfitPct);
+    } else {
+      stopLoss = currentPrice * (1 + stopLossPct);
+      takeProfit = currentPrice * (1 - takeProfitPct);
+    }
+    
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
+    
+    console.log(`🎯 ${action} SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}%`);
     
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
