@@ -13,6 +13,7 @@ export interface AssetScore {
 
 export interface BybitSyncState {
   currentBalance: number;
+  availableBalance: number;
   openPositionsCount: number;
   lastSyncTime: Date | null;
   top10VolatileAssets: string[];
@@ -20,7 +21,7 @@ export interface BybitSyncState {
 }
 
 const syncCache: {
-  balance?: { data: number; timestamp: number };
+  balance?: { data: number; available?: number; timestamp: number };
   positions?: { data: number; timestamp: number };
   volatileAssets?: { data: string[]; scoredAssets: AssetScore[]; timestamp: number };
 } = {};
@@ -37,6 +38,7 @@ const EXCLUDED_ASSETS = [
 
 export function useBybitSync() {
   const [currentBalance, setCurrentBalance] = useState<number>(0);
+  const [availableBalance, setAvailableBalance] = useState<number>(0);
   const [openPositionsCount, setOpenPositionsCount] = useState<number>(0);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [top10VolatileAssets, setTop10VolatileAssets] = useState<string[]>([]);
@@ -47,11 +49,12 @@ export function useBybitSync() {
   const syncBybitBalance = useCallback(async (): Promise<number> => {
     if (syncCache.balance && Date.now() - syncCache.balance.timestamp < CACHE_TTL) {
       setCurrentBalance(syncCache.balance.data);
-      return syncCache.balance.data;
+      // Também atualizar available do cache se disponível
+      return syncCache.balance.available ?? syncCache.balance.data;
     }
 
     if (pendingRequests.current.has('balance')) {
-      return currentBalance;
+      return availableBalance || currentBalance;
     }
 
     pendingRequests.current.add('balance');
@@ -73,29 +76,40 @@ export function useBybitSync() {
 
       const balanceData = data?.data;
       let balance = 0;
+      let available = 0;
       
-      if (typeof balanceData?.totalWalletBalance === 'string' || typeof balanceData?.totalWalletBalance === 'number') {
-        balance = parseFloat(String(balanceData.totalWalletBalance));
-      } else if (balanceData?.list?.[0]?.totalWalletBalance) {
-        balance = parseFloat(balanceData.list[0].totalWalletBalance);
+      // Extrair dados do balance - priorizar list[0] para conta UNIFIED
+      const accountData = balanceData?.list?.[0] || balanceData;
+      
+      if (accountData?.totalWalletBalance) {
+        balance = parseFloat(String(accountData.totalWalletBalance));
       } else if (balanceData?.totalEquity) {
         balance = parseFloat(String(balanceData.totalEquity));
       }
+      
+      // CRÍTICO: Usar availableBalance para saber quanto pode abrir novas posições
+      if (accountData?.totalAvailableBalance) {
+        available = parseFloat(String(accountData.totalAvailableBalance));
+      } else {
+        available = balance; // Fallback se não tiver available
+      }
 
       if (isNaN(balance)) balance = 0;
+      if (isNaN(available)) available = 0;
 
-      syncCache.balance = { data: balance, timestamp: Date.now() };
+      syncCache.balance = { data: balance, available, timestamp: Date.now() };
       setCurrentBalance(balance);
+      setAvailableBalance(available);
       setLastSyncTime(new Date());
-      console.log(`💰 Saldo: $${balance.toFixed(2)}`);
-      return balance;
+      console.log(`💰 Saldo: $${balance.toFixed(2)} | Disponível: $${available.toFixed(2)}`);
+      return available; // Retornar saldo disponível (não total)
     } catch (error) {
       console.error('❌ Erro sync saldo:', error);
-      return currentBalance;
+      return availableBalance;
     } finally {
       pendingRequests.current.delete('balance');
     }
-  }, [currentBalance]);
+  }, [currentBalance, availableBalance]);
 
   const syncOpenPositions = useCallback(async (): Promise<number> => {
     if (syncCache.positions && Date.now() - syncCache.positions.timestamp < CACHE_TTL) {
@@ -258,6 +272,7 @@ export function useBybitSync() {
 
   return {
     currentBalance,
+    availableBalance,
     openPositionsCount,
     lastSyncTime,
     top10VolatileAssets,
