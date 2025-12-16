@@ -429,19 +429,95 @@ export const MultiAssetTrader = () => {
       const tickers = Array.isArray(tickerData.data) ? tickerData.data : (tickerData.data?.list || []);
       console.log(`📈 ${tickers.length} tickers recebidos`);
       
-      // Filtrar e ordenar por volatilidade
+      // === FILTRO AVANÇADO DE ATIVOS PARA SCALPING ===
       const assetsWithVolatility = tradableAssets.map((instrument: any) => {
         const ticker = tickers.find((t: any) => t.symbol === instrument.symbol);
+        if (!ticker) return null;
+        
         const priceChange = parseFloat(ticker?.price24hPcnt || '0') * 100;
         const volume24h = parseFloat(ticker?.turnover24h || '0');
-        return { instrument, ticker, volatility: Math.abs(priceChange), priceChange, volume24h };
+        const lastPrice = parseFloat(ticker?.lastPrice || '0');
+        const bid1Price = parseFloat(ticker?.bid1Price || '0');
+        const ask1Price = parseFloat(ticker?.ask1Price || '0');
+        
+        // Calcular spread percentual (importante para scalping)
+        const spread = lastPrice > 0 ? ((ask1Price - bid1Price) / lastPrice) * 100 : 999;
+        
+        // Calcular "score de liquidez" (volume / volatilidade = melhor liquidez relativa)
+        const liquidityScore = volume24h > 0 && Math.abs(priceChange) > 0 
+          ? volume24h / (Math.abs(priceChange) * 1000000) 
+          : 0;
+        
+        return { 
+          instrument, 
+          ticker, 
+          volatility: Math.abs(priceChange), 
+          priceChange, 
+          volume24h,
+          spread,
+          liquidityScore,
+          lastPrice
+        };
       }).filter(a => {
+        if (!a) return false;
+        
         const isInTop10 = topVolNow.includes(a.instrument.symbol);
-        return isInTop10 ? (a.volatility > 1.5 && a.volume24h > 100000) : (a.volatility > 2.5 && a.volume24h > 300000);
+        const symbol = a.instrument.symbol;
+        
+        // === CRITÉRIOS PARA SCALPING LUCRATIVO ===
+        
+        // 1. Spread máximo de 0.05% para scalping (muito importante!)
+        if (a.spread > 0.05) return false;
+        
+        // 2. Volume mínimo mais alto para liquidez
+        const minVolume = isInTop10 ? 500000 : 1000000; // $500k ou $1M
+        if (a.volume24h < minVolume) return false;
+        
+        // 3. Faixa de volatilidade ideal para scalping: 2-8%
+        // Muito baixa = sem movimento, muito alta = risco de reversão
+        const minVol = isInTop10 ? 1.5 : 2.0;
+        const maxVol = 10; // Evitar ativos extremamente voláteis
+        if (a.volatility < minVol || a.volatility > maxVol) return false;
+        
+        // 4. Preço mínimo para evitar dust trades
+        if (a.lastPrice < 0.001) return false;
+        
+        // 5. Priorizar majors e ativos conhecidos
+        const majorSymbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT'];
+        const isMajor = majorSymbols.includes(symbol);
+        
+        // Se não é major, exigir volume ainda maior
+        if (!isMajor && a.volume24h < 2000000) return false;
+        
+        return true;
       });
       
-      const topVolatileAssets = assetsWithVolatility.sort((a, b) => b.volatility - a.volatility).slice(0, 50);
-      console.log(`🔥 ${topVolatileAssets.length} ativos após filtro volatilidade`);
+      // === ORDENAÇÃO INTELIGENTE: Priorizar por combinação de fatores ===
+      // Score = (liquidityScore * 0.4) + (volatilidade normalizada * 0.3) + (volume normalizado * 0.3)
+      const maxLiquidity = Math.max(...assetsWithVolatility.map(a => a?.liquidityScore || 0), 1);
+      const maxVolume = Math.max(...assetsWithVolatility.map(a => a?.volume24h || 0), 1);
+      
+      const scoredAssets = assetsWithVolatility.filter(Boolean).map(a => {
+        const normalizedLiquidity = (a!.liquidityScore / maxLiquidity);
+        const normalizedVolatility = Math.min(a!.volatility / 8, 1); // Cap em 8%
+        const normalizedVolume = (a!.volume24h / maxVolume);
+        
+        // Bonus para majors (mais previsíveis)
+        const majorBonus = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'].includes(a!.instrument.symbol) ? 0.15 : 0;
+        
+        // Penalidade para spread alto
+        const spreadPenalty = a!.spread > 0.03 ? 0.1 : 0;
+        
+        const assetScore = (normalizedLiquidity * 0.35) + (normalizedVolatility * 0.30) + (normalizedVolume * 0.35) + majorBonus - spreadPenalty;
+        
+        return { ...a!, assetScore };
+      });
+      
+      const topVolatileAssets = scoredAssets
+        .sort((a, b) => b.assetScore - a.assetScore)
+        .slice(0, 30); // Reduzido para focar nos melhores
+      
+      console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})`).join(', ')}`);
 
       let shouldStopTrading = false;
       let openedThisCycle = 0;
