@@ -561,41 +561,60 @@ export const useSignalAnalysis = () => {
       (action === 'BUY' && priceChange > 0.3) ||
       (action === 'SELL' && priceChange < -0.3);
     
-    const positionOk = !inMiddle || scoreDiff >= 15 || isReversal || signalScore >= 60;
+    const positionOk = !inMiddle || scoreDiff >= 18 || isReversal || signalScore >= 65;
     
-    // Classificação de qualidade
+    // === CLASSIFICAÇÃO DE QUALIDADE MAIS RIGOROSA ===
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
-    if (signalScore >= 75 && hasVolumeSpike && momentumOk && !inMiddle && tfAligned) signalQuality = 'premium';
-    else if (signalScore >= 55 && hasStrongVolume && momentumOk && tfAligned) signalQuality = 'high';
-    else if (signalScore >= 55 && hasStrongVolume && momentumOk) signalQuality = 'high';
-    else if (signalScore >= 40 && hasGoodVolume) signalQuality = 'medium';
-    else if (signalScore >= 35 && hasMinVolume) signalQuality = 'medium';
     
-    // AI upgrade
-    if (aiBoost >= 10 && signalQuality === 'low') signalQuality = 'medium';
-    if (aiBoost >= 15 && signalQuality === 'medium') signalQuality = 'high';
-    if (aiConfidence && aiConfidence > 70 && signalQuality !== 'premium') signalQuality = 'high';
+    // Premium: apenas sinais excepcionais
+    if (signalScore >= 80 && hasVolumeSpike && momentumOk && !inMiddle && tfAligned && scoreDiff >= 20) {
+      signalQuality = 'premium';
+    }
+    // High: sinais muito bons com múltiplas confirmações
+    else if (signalScore >= 65 && hasStrongVolume && momentumOk && tfAligned && scoreDiff >= 15) {
+      signalQuality = 'high';
+    }
+    else if (signalScore >= 60 && hasVolumeSpike && momentumOk && scoreDiff >= 12) {
+      signalQuality = 'high';
+    }
+    // Medium: sinais decentes
+    else if (signalScore >= 50 && hasGoodVolume && momentumOk && scoreDiff >= 10) {
+      signalQuality = 'medium';
+    }
+    else if (signalScore >= 45 && hasStrongVolume && scoreDiff >= 8) {
+      signalQuality = 'medium';
+    }
+    // Low: sinais fracos (não trade)
     
-    // === DECISÃO FINAL ===
+    // AI upgrade (mais conservador)
+    if (aiBoost >= 15 && signalQuality === 'low' && signalScore >= 45) signalQuality = 'medium';
+    if (aiBoost >= 20 && signalQuality === 'medium' && signalScore >= 55) signalQuality = 'high';
+    if (aiConfidence && aiConfidence > 75 && signalQuality === 'medium') signalQuality = 'high';
+    
+    // === REQUISITOS MÍNIMOS MAIS INTELIGENTES ===
+    const minScoreForHighVol = volatility > 8 ? 60 : volatility > 5 ? 55 : 50;
+    const minDiffForHighVol = volatility > 8 ? 15 : volatility > 5 ? 12 : 10;
+    
+    // === DECISÃO FINAL (MAIS RIGOROSA) ===
     const shouldTrade = (
       action !== null &&
-      signalScore >= scoreThreshold &&
-      scoreDiff >= minDiff &&
-      currentBalance > 2 &&
-      confirmations.length >= Math.max(1, minConfirmations - 1) &&
+      signalScore >= Math.max(scoreThreshold, minScoreForHighVol) && // Score mínimo ajustado por volatilidade
+      scoreDiff >= Math.max(minDiff, minDiffForHighVol) && // Diff mínimo ajustado
+      currentBalance > 5 && // Mínimo $5 para evitar trades pequenos
+      confirmations.length >= minConfirmations && // Mínimo confirmações
       volumeOk &&
       volatilityOk &&
       atrOk &&
       priceMovementOk &&
-      (momentumOk || signalScore >= 50) &&
-      (volumeDirectionOk || isReversal || signalScore >= 55) &&
+      momentumOk && // Sempre requer momentum (removido bypass)
+      volumeDirectionOk && // Volume deve confirmar direção (removido bypass)
       positionOk &&
-      signalQuality !== 'low' &&
-      // === NOVAS VERIFICAÇÕES ===
-      (pullbackReady || isReversal || signalScore >= 70) && // Pullback ou score muito alto
-      (btcAligned || isReversal) && // BTC alinhado ou reversão forte
-      (isGoodHour || signalScore >= 65 || isReversal) && // Hora boa ou sinal forte
-      (marketRegime !== 'ranging' || isReversal || signalScore >= 60) // Não ranging ou reversão
+      signalQuality !== 'low' && // Nunca trades de baixa qualidade
+      // === VERIFICAÇÕES RIGOROSAS ===
+      (pullbackReady || isReversal) && // Sempre requer pullback ou reversão
+      (btcAligned || (isReversal && signalScore >= 70)) && // BTC deve estar alinhado (exceto reversão forte)
+      (isGoodHour || signalScore >= 70) && // Hora boa ou sinal muito forte
+      (marketRegime !== 'ranging' || (isReversal && signalScore >= 65)) // Não ranging ou reversão muito forte
     );
 
     // Skip reason
