@@ -508,9 +508,9 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    // === DETERMINAR AÇÃO ===
+    // === DETERMINAR AÇÃO (SCALPING FRIENDLY) ===
     const scoreDiff = Math.abs(buyScore - sellScore);
-    const minDiff = marketRegime === 'ranging' ? 12 : 8; // Mais exigente em ranging
+    const minDiff = 5; // Baixo para scalping - diferença mínima entre buy/sell
     
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
@@ -525,31 +525,31 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    // === MULTI-TIMEFRAME ALIGNMENT ===
+    // === MULTI-TIMEFRAME ALIGNMENT (mais flexível para scalping) ===
     const { aligned: tfAligned, strength: tfStrength } = checkMultiTimeframeAlignment(comprehensiveAI, action);
     
-    // Boost score if timeframes aligned
-    if (tfAligned && tfStrength >= 0.7) {
-      signalScore = Math.round(signalScore * 1.15);
-      confirmations.push(`✅ ${Math.round(tfStrength * 100)}% TFs alinhados`);
+    // Boost leve se timeframes aligned (não obrigatório)
+    if (tfAligned && tfStrength >= 0.6) {
+      signalScore = Math.round(signalScore * 1.1);
+      confirmations.push(`✅ ${Math.round(tfStrength * 100)}% TFs`);
     }
     
-    // === PULLBACK CHECK ===
+    // === PULLBACK CHECK (flexível) ===
     const pullbackReady = symbol ? checkPullback(symbol, currentPrice, action, priceChange) : true;
     
-    // === BTC CORRELATION CHECK ===
+    // === BTC CORRELATION (mais tolerante) ===
     const btcAligned = btcPriceChange !== undefined && symbol 
       ? checkBTCCorrelation(symbol, action, btcPriceChange) 
       : true;
     
-    // === FILTROS DE QUALIDADE ===
+    // === FILTROS PARA SCALPING ===
     const volumeOk = hasMinVolume;
     const volatilityOk = volInRange;
-    const atrOk = atrPercent > 0.3 && atrPercent < 15;
-    const priceMovementOk = Math.abs(priceChange) > 0.3 && Math.abs(priceChange) < 15;
+    const atrOk = atrPercent > 0.2 && atrPercent < 18; // Mais permissivo
+    const priceMovementOk = Math.abs(priceChange) > 0.15 && Math.abs(priceChange) < 20; // Menor movimento aceito
     
     const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2.5 : hasStrongVolume ? 1.8 : hasGoodVolume ? 1.3 : 1);
-    const momentumOk = momentumScore > 0.8;
+    const momentumOk = momentumScore > 0.5; // Mais tolerante
     
     // Reversões permitidas
     const isReversal = (
@@ -557,64 +557,70 @@ export const useSignalAnalysis = () => {
       (action === 'SELL' && (overbought || mildOverbought) && nearResistance)
     );
     
-    const volumeDirectionOk = isReversal ||
-      (action === 'BUY' && priceChange > 0.3) ||
-      (action === 'SELL' && priceChange < -0.3);
+    // Momentum trade (não reversão, segue tendência)
+    const isMomentumTrade = (
+      (action === 'BUY' && priceChange > 1.0 && hasStrongVolume) ||
+      (action === 'SELL' && priceChange < -1.0 && hasStrongVolume)
+    );
     
-    const positionOk = !inMiddle || scoreDiff >= 18 || isReversal || signalScore >= 65;
+    const volumeDirectionOk = isReversal || isMomentumTrade ||
+      (action === 'BUY' && priceChange > 0.2) ||
+      (action === 'SELL' && priceChange < -0.2);
     
-    // === CLASSIFICAÇÃO DE QUALIDADE MAIS RIGOROSA ===
+    const positionOk = !inMiddle || scoreDiff >= 15 || isReversal || isMomentumTrade || signalScore >= 55;
+    
+    // === CLASSIFICAÇÃO DE QUALIDADE (SCALPING) ===
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     
-    // Premium: apenas sinais excepcionais
-    if (signalScore >= 80 && hasVolumeSpike && momentumOk && !inMiddle && tfAligned && scoreDiff >= 20) {
+    // Premium: sinais excepcionais
+    if (signalScore >= 70 && hasVolumeSpike && (isReversal || isMomentumTrade) && scoreDiff >= 18) {
       signalQuality = 'premium';
     }
-    // High: sinais muito bons com múltiplas confirmações
-    else if (signalScore >= 65 && hasStrongVolume && momentumOk && tfAligned && scoreDiff >= 15) {
+    // High: sinais bons
+    else if (signalScore >= 55 && hasStrongVolume && (isReversal || isMomentumTrade) && scoreDiff >= 12) {
       signalQuality = 'high';
     }
-    else if (signalScore >= 60 && hasVolumeSpike && momentumOk && scoreDiff >= 12) {
+    else if (signalScore >= 50 && hasVolumeSpike && scoreDiff >= 10) {
       signalQuality = 'high';
     }
-    // Medium: sinais decentes
-    else if (signalScore >= 50 && hasGoodVolume && momentumOk && scoreDiff >= 10) {
+    // Medium: sinais decentes para scalp
+    else if (signalScore >= 40 && hasGoodVolume && momentumOk && scoreDiff >= 8) {
       signalQuality = 'medium';
     }
-    else if (signalScore >= 45 && hasStrongVolume && scoreDiff >= 8) {
+    else if (signalScore >= 35 && hasStrongVolume && scoreDiff >= 6) {
       signalQuality = 'medium';
     }
-    // Low: sinais fracos (não trade)
+    else if (signalScore >= 30 && (isReversal || isMomentumTrade)) {
+      signalQuality = 'medium';
+    }
+    // Low: sinais fracos
     
-    // AI upgrade (mais conservador)
-    if (aiBoost >= 15 && signalQuality === 'low' && signalScore >= 45) signalQuality = 'medium';
-    if (aiBoost >= 20 && signalQuality === 'medium' && signalScore >= 55) signalQuality = 'high';
-    if (aiConfidence && aiConfidence > 75 && signalQuality === 'medium') signalQuality = 'high';
+    // AI upgrade
+    if (aiBoost >= 10 && signalQuality === 'low' && signalScore >= 30) signalQuality = 'medium';
+    if (aiBoost >= 15 && signalQuality === 'medium' && signalScore >= 45) signalQuality = 'high';
+    if (aiConfidence && aiConfidence > 65 && signalQuality === 'medium') signalQuality = 'high';
     
-    // === REQUISITOS MÍNIMOS MAIS INTELIGENTES ===
-    const minScoreForHighVol = volatility > 8 ? 60 : volatility > 5 ? 55 : 50;
-    const minDiffForHighVol = volatility > 8 ? 15 : volatility > 5 ? 12 : 10;
-    
-    // === DECISÃO FINAL (MAIS RIGOROSA) ===
+    // === DECISÃO FINAL (SCALPING - MENOS RESTRITIVA) ===
     const shouldTrade = (
       action !== null &&
-      signalScore >= Math.max(scoreThreshold, minScoreForHighVol) && // Score mínimo ajustado por volatilidade
-      scoreDiff >= Math.max(minDiff, minDiffForHighVol) && // Diff mínimo ajustado
-      currentBalance > 5 && // Mínimo $5 para evitar trades pequenos
-      confirmations.length >= minConfirmations && // Mínimo confirmações
+      signalScore >= scoreThreshold && // Score mínimo (35)
+      scoreDiff >= minDiff && // Diferença clara (5)
+      currentBalance > 2 && // Mínimo $2
+      confirmations.length >= minConfirmations && // Confirmações (2)
       volumeOk &&
-      volatilityOk &&
-      atrOk &&
+      (volatilityOk || isReversal || isMomentumTrade) && // Volatilidade ok OU trade especial
+      (atrOk || isReversal) && // ATR ok OU reversão
       priceMovementOk &&
-      momentumOk && // Sempre requer momentum (removido bypass)
-      volumeDirectionOk && // Volume deve confirmar direção (removido bypass)
+      // === FLEXIBILIZAÇÕES PARA SCALPING ===
+      (momentumOk || isReversal || signalScore >= 50) && // Momentum OU reversão OU score alto
+      (volumeDirectionOk || signalScore >= 55) && // Volume direção OU score alto
       positionOk &&
-      signalQuality !== 'low' && // Nunca trades de baixa qualidade
-      // === VERIFICAÇÕES RIGOROSAS ===
-      (pullbackReady || isReversal) && // Sempre requer pullback ou reversão
-      (btcAligned || (isReversal && signalScore >= 70)) && // BTC deve estar alinhado (exceto reversão forte)
-      (isGoodHour || signalScore >= 70) && // Hora boa ou sinal muito forte
-      (marketRegime !== 'ranging' || (isReversal && signalScore >= 65)) // Não ranging ou reversão muito forte
+      signalQuality !== 'low' && // Qualidade pelo menos medium
+      // === VERIFICAÇÕES MAIS FLEXÍVEIS ===
+      (pullbackReady || isReversal || isMomentumTrade || signalScore >= 50) && // Pullback OU trade especial
+      (btcAligned || isReversal || isMomentumTrade || signalScore >= 55) && // BTC ok OU trade especial
+      (isGoodHour || isReversal || isMomentumTrade || signalScore >= 55) // Hora ok OU trade especial
+      // Removido bloqueio de ranging - scalping funciona em ranging com reversões
     );
 
     // Skip reason
@@ -623,18 +629,13 @@ export const useSignalAnalysis = () => {
       if (action === null) skipReason = 'Sem sinal claro';
       else if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
       else if (scoreDiff < minDiff) skipReason = `Diff ${scoreDiff}/${minDiff}`;
-      else if (!pullbackReady) skipReason = '⏳ Aguardando pullback';
-      else if (!btcAligned) skipReason = '🪙 BTC contrário';
-      else if (!isGoodHour) skipReason = `⏰ ${hourReason}`;
-      else if (marketRegime === 'ranging' && !isReversal) skipReason = '📊 Mercado lateral';
-      else if (!volumeDirectionOk) skipReason = 'Volume contra direção';
-      else if (!momentumOk) skipReason = `Momentum ${momentumScore.toFixed(1)}`;
-      else if (!positionOk) skipReason = 'Preço no meio do range';
       else if (signalQuality === 'low') skipReason = 'Qualidade baixa';
       else if (!volumeOk) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M`;
-      else if (!volatilityOk) skipReason = `Volatility ${volatility.toFixed(1)}%`;
-      else if (!atrOk) skipReason = `ATR ${atrPercent.toFixed(1)}%`;
       else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(1)}%`;
+      else if (!momentumOk && !isReversal && signalScore < 50) skipReason = `Momentum ${momentumScore.toFixed(1)}`;
+      else if (!pullbackReady && !isReversal && !isMomentumTrade && signalScore < 50) skipReason = '⏳ Aguardando pullback';
+      else if (!btcAligned && !isReversal && !isMomentumTrade && signalScore < 55) skipReason = '🪙 BTC contrário';
+      else if (!isGoodHour && !isReversal && !isMomentumTrade && signalScore < 55) skipReason = `⏰ ${hourReason}`;
       else if (currentBalance <= 2) skipReason = `Saldo $${currentBalance.toFixed(2)}`;
       else skipReason = 'Filtro geral';
     }

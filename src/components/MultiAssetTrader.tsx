@@ -448,21 +448,21 @@ export const MultiAssetTrader = () => {
       const skipCounts = new Map<string, number>();
       const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
-      // 🆕 CONTROLE DE DIVERSIFICAÇÃO - evitar todos trades na mesma direção
+      // === SCALPING: LIMITES MAIS FLEXÍVEIS ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // Máximo 2 trades na mesma direção por ciclo
-      const MAX_TRADES_PER_CYCLE = 3; // Máximo 3 trades total por ciclo
+      const MAX_SAME_DIRECTION_PER_CYCLE = 4; // Aumentado para scalping
+      const MAX_TRADES_PER_CYCLE = 6; // Mais trades por ciclo para scalping
       
       // Contar posições abertas por direção
       const existingBuys = openPositions.filter(p => p.side === 'Buy').length;
       const existingSells = openPositions.filter(p => p.side === 'Sell').length;
-      const MAX_IMBALANCE = 5; // Máximo 5 posições de diferença entre BUY e SELL
+      const MAX_IMBALANCE = 8; // Mais flexível para scalping
       
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
         
-        // 🆕 LIMITE DE TRADES POR CICLO
+        // LIMITE DE TRADES POR CICLO
         if (openedThisCycle >= MAX_TRADES_PER_CYCLE) {
           console.log(`⚠️ Limite de ${MAX_TRADES_PER_CYCLE} trades/ciclo atingido`);
           break;
@@ -477,19 +477,19 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // ML nas decisões - MELHORADO para qualidade
-          let scoreThreshold = 55; // 🆕 Score mínimo MUITO MAIS ALTO para sinais de qualidade
-          let minConfirmations = 3; // 🆕 Mínimo 3 confirmações
+          // === SCALPING: THRESHOLDS MAIS BAIXOS ===
+          let scoreThreshold = 35; // Baixo para scalping
+          let minConfirmations = 2; // Menos confirmações para entradas rápidas
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 5; // Bônus menor
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 5;
             const currentHour = new Date().getUTCHours();
             if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
           }
           
-          // 🆕 Mínimo score de 50 para garantir qualidade (era 35!)
-          scoreThreshold = Math.max(50, scoreThreshold);
+          // Mínimo score de 30 para scalping (mais agressivo)
+          scoreThreshold = Math.max(30, scoreThreshold);
           
           // 🆕 Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -529,13 +529,10 @@ export const MultiAssetTrader = () => {
             continue;
           }
           
-          // 🆕 EXIGIR SCORE MAIOR PARA VOLATILIDADE ALTA
-          if (volatility > 8 && analysisResult.signalScore < 60) {
-            console.log(`⚠️ ${symbol}: Vol ${volatility.toFixed(1)}% alta, score ${analysisResult.signalScore} < 60`);
-            continue;
-          }
-          if (volatility > 12 && analysisResult.signalScore < 70) {
-            console.log(`⚠️ ${symbol}: Vol ${volatility.toFixed(1)}% muito alta, score ${analysisResult.signalScore} < 70`);
+          // === SCALPING: Volatilidade alta = OPORTUNIDADE, não risco ===
+          // Só bloquear em volatilidade EXTREMA (>15%) sem score forte
+          if (volatility > 15 && analysisResult.signalScore < 50) {
+            console.log(`⚠️ ${symbol}: Vol extrema ${volatility.toFixed(1)}%, score ${analysisResult.signalScore} baixo`);
             continue;
           }
 
@@ -583,8 +580,8 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          const freshBalance = balanceNow; // Agora é availableBalance (saldo disponível)
-          if (freshBalance < 5) {
+          const freshBalance = balanceNow;
+          if (freshBalance < 2) { // Reduzido para scalping com posições menores
             console.log(`⚠️ Saldo disponível muito baixo: $${freshBalance.toFixed(2)}`);
             shouldStopTrading = true;
             break;
