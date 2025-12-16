@@ -11,7 +11,6 @@ export interface SignalAnalysisResult {
   skipReason: string;
   signalQuality: 'low' | 'medium' | 'high' | 'premium';
   momentumScore: number;
-  // Multi-timeframe data
   m1Signal?: 'buy' | 'sell' | 'hold';
   m5Support?: number;
   m5Resistance?: number;
@@ -29,7 +28,6 @@ interface AnalysisParams {
   scoreThreshold: number;
   minConfirmations: number;
   currentBalance: number;
-  // Optional comprehensive AI data
   comprehensiveAI?: {
     compositeScore: number;
     scalpingConfig: {
@@ -52,12 +50,10 @@ export const useSignalAnalysis = () => {
   const lastAIFetch = useRef<Map<string, number>>(new Map());
   const aiCache = useRef<Map<string, any>>(new Map());
 
-  // Fetch comprehensive AI analysis
   const fetchComprehensiveAI = useCallback(async (symbol: string): Promise<any | null> => {
     const now = Date.now();
     const lastFetch = lastAIFetch.current.get(symbol) || 0;
     
-    // Cache for 30 seconds
     if (now - lastFetch < 30000 && aiCache.current.has(symbol)) {
       return aiCache.current.get(symbol);
     }
@@ -89,147 +85,146 @@ export const useSignalAnalysis = () => {
     const atrPercent = (priceRange / currentPrice) * 100;
     const pricePosition = priceRange > 0 ? (currentPrice - lowPrice) / priceRange : 0.5;
     
-    // Base validations
-    const hasGoodVolume = volume24h > 50000;
-    const hasVolumeSpike = volume24h > 1500000;
-    const hasStrongVolume = volume24h > 800000;
-    const hasGoodVolatility = volatility > 0.2;
+    // === VALIDAÇÕES BASE MAIS RIGOROSAS ===
+    const hasMinVolume = volume24h > 150000;      // Mínimo 150k
+    const hasGoodVolume = volume24h > 500000;     // 500k para confirmação
+    const hasStrongVolume = volume24h > 1000000;  // 1M para boost
+    const hasVolumeSpike = volume24h > 2000000;   // 2M para spike
     
-    // Trends
-    const isBullishTrend = priceChange > 1.5;
-    const isBearishTrend = priceChange < -1.5;
-    const isModerateBullish = priceChange > 0.8 && priceChange <= 1.5;
-    const isModerateBearish = priceChange < -0.8 && priceChange >= -1.5;
+    // Volatilidade ideal para scalping
+    const volInRange = volatility > 1.0 && volatility < 15;
+    const volIdeal = volatility > 2.0 && volatility < 8;
     
-    // Zones (SCALPING: use 5m S/R when available)
-    let nearResistance = pricePosition > 0.80;
+    // === ANÁLISE DE TENDÊNCIA ===
+    const strongBullish = priceChange > 2.5;
+    const bullish = priceChange > 1.2;
+    const mildBullish = priceChange > 0.5;
+    
+    const strongBearish = priceChange < -2.5;
+    const bearish = priceChange < -1.2;
+    const mildBearish = priceChange < -0.5;
+    
+    // === ZONAS DE S/R (preço na faixa do dia) ===
     let nearSupport = pricePosition < 0.20;
+    let nearResistance = pricePosition > 0.80;
+    let inMiddle = pricePosition >= 0.35 && pricePosition <= 0.65;
     
+    // Usar S/R de 5m quando disponível (mais preciso)
     if (comprehensiveAI?.scalpingConfig) {
       const { support5m, resistance5m } = comprehensiveAI.scalpingConfig;
       if (support5m > 0 && resistance5m > 0) {
         const range5m = resistance5m - support5m;
         if (range5m > 0) {
           const pos5m = (currentPrice - support5m) / range5m;
-          nearSupport = pos5m < 0.25;
-          nearResistance = pos5m > 0.75;
+          nearSupport = pos5m < 0.20;
+          nearResistance = pos5m > 0.80;
+          inMiddle = pos5m >= 0.35 && pos5m <= 0.65;
         }
       }
     }
     
-    // Reversals
-    const isOversold = priceChange < -3.5;
-    const isOverbought = priceChange > 3.5;
-    const isMildOversold = priceChange < -2.0 && priceChange >= -3.5;
-    const isMildOverbought = priceChange > 2.0 && priceChange <= 3.5;
+    // === CONDIÇÕES DE REVERSÃO ===
+    const oversold = priceChange < -4.0;
+    const mildOversold = priceChange < -2.5 && priceChange >= -4.0;
+    const overbought = priceChange > 4.0;
+    const mildOverbought = priceChange > 2.5 && priceChange <= 4.0;
     
     const confirmations: string[] = [];
     
-    // === BUY SIGNALS ===
+    // === PONTUAÇÃO BUY ===
     let buyScore = 0;
     
-    if (isBullishTrend && hasVolumeSpike) {
-      buyScore += 40;
-      confirmations.push('Trend bullish + volume spike');
-    } else if (isBullishTrend && hasStrongVolume) {
-      buyScore += 33;
-      confirmations.push('Trend bullish confirmado');
-    } else if (isModerateBullish && hasVolumeSpike) {
+    // 1. Tendência + Volume (máximo 35 pontos)
+    if (strongBullish && hasVolumeSpike) {
+      buyScore += 35;
+      confirmations.push('📈 Tendência forte + volume spike');
+    } else if (bullish && hasStrongVolume) {
       buyScore += 28;
-      confirmations.push('Trend bullish moderado + volume');
-    } else if (isModerateBullish && hasGoodVolume) {
+      confirmations.push('📈 Tendência bullish confirmada');
+    } else if (bullish && hasGoodVolume) {
+      buyScore += 22;
+      confirmations.push('📈 Tendência bullish');
+    } else if (mildBullish && hasStrongVolume) {
+      buyScore += 18;
+      confirmations.push('Momentum bullish + volume');
+    }
+    
+    // 2. Reversão em suporte (máximo 40 pontos)
+    if (oversold && nearSupport && hasVolumeSpike) {
+      buyScore += 40;
+      confirmations.push('🔄 Reversão forte no suporte');
+    } else if (mildOversold && nearSupport && hasStrongVolume) {
+      buyScore += 32;
+      confirmations.push('🔄 Reversão no suporte');
+    } else if (nearSupport && !bearish && hasGoodVolume) {
       buyScore += 20;
-      confirmations.push('Momentum bullish');
-    } else if (isModerateBullish) {
-      buyScore += 15;
-      confirmations.push('Momentum bullish leve');
+      confirmations.push('📍 Zona de suporte + volume');
     }
     
-    if (isOversold && nearSupport && hasVolumeSpike) {
-      buyScore += 45;
-      confirmations.push('Reversão bullish forte');
-    } else if (isMildOversold && nearSupport) {
-      buyScore += 30;
-      confirmations.push('Zona de suporte detectada');
-    } else if (nearSupport && hasStrongVolume) {
-      buyScore += 23;
-      confirmations.push('Suporte com volume');
-    } else if (nearSupport) {
-      buyScore += 15;
-      confirmations.push('Zona de suporte');
-    }
-    
-    if (pricePosition > 0.55 && priceChange > 1.0 && volatility > 1.0) {
-      buyScore += 25;
-      confirmations.push('Momentum bullish forte');
-    } else if (pricePosition > 0.50 && priceChange > 0.5) {
-      buyScore += 17;
-      confirmations.push('Momentum positivo');
-    } else if (priceChange > 0.3) {
-      buyScore += 10;
-      confirmations.push('Momentum leve');
-    }
-    
-    if (atrPercent > 1.0 && atrPercent < 10) {
+    // 3. Momentum (máximo 20 pontos)
+    if (pricePosition > 0.55 && mildBullish && volIdeal) {
       buyScore += 20;
-      confirmations.push('ATR ideal');
-    } else if (atrPercent > 0.5 && atrPercent < 15) {
+      confirmations.push('⚡ Momentum forte');
+    } else if (pricePosition > 0.45 && priceChange > 0.3 && volInRange) {
       buyScore += 12;
-      confirmations.push('ATR aceitável');
+      confirmations.push('Momentum positivo');
     }
     
-    // === SELL SIGNALS ===
+    // 4. ATR ideal (máximo 15 pontos)
+    if (atrPercent > 1.5 && atrPercent < 6) {
+      buyScore += 15;
+      confirmations.push('ATR ideal para scalp');
+    } else if (atrPercent > 0.8 && atrPercent < 10) {
+      buyScore += 8;
+    }
+    
+    // === PONTUAÇÃO SELL ===
     let sellScore = 0;
     
-    if (isBearishTrend && hasVolumeSpike) {
-      sellScore += 40;
-      confirmations.push('Trend bearish + volume spike');
-    } else if (isBearishTrend && hasStrongVolume) {
-      sellScore += 33;
-      confirmations.push('Trend bearish confirmado');
-    } else if (isModerateBearish && hasVolumeSpike) {
+    // 1. Tendência + Volume
+    if (strongBearish && hasVolumeSpike) {
+      sellScore += 35;
+      confirmations.push('📉 Tendência forte + volume spike');
+    } else if (bearish && hasStrongVolume) {
       sellScore += 28;
-      confirmations.push('Trend bearish moderado + volume');
-    } else if (isModerateBearish && hasGoodVolume) {
+      confirmations.push('📉 Tendência bearish confirmada');
+    } else if (bearish && hasGoodVolume) {
+      sellScore += 22;
+      confirmations.push('📉 Tendência bearish');
+    } else if (mildBearish && hasStrongVolume) {
+      sellScore += 18;
+      confirmations.push('Momentum bearish + volume');
+    }
+    
+    // 2. Reversão em resistência
+    if (overbought && nearResistance && hasVolumeSpike) {
+      sellScore += 40;
+      confirmations.push('🔄 Reversão forte na resistência');
+    } else if (mildOverbought && nearResistance && hasStrongVolume) {
+      sellScore += 32;
+      confirmations.push('🔄 Reversão na resistência');
+    } else if (nearResistance && !bullish && hasGoodVolume) {
       sellScore += 20;
-      confirmations.push('Momentum bearish');
-    } else if (isModerateBearish) {
-      sellScore += 15;
-      confirmations.push('Momentum bearish leve');
+      confirmations.push('📍 Zona de resistência + volume');
     }
     
-    if (isOverbought && nearResistance && hasVolumeSpike) {
-      sellScore += 45;
-      confirmations.push('Reversão bearish forte');
-    } else if (isMildOverbought && nearResistance) {
-      sellScore += 30;
-      confirmations.push('Zona de resistência detectada');
-    } else if (nearResistance && hasStrongVolume) {
-      sellScore += 23;
-      confirmations.push('Resistência com volume');
-    } else if (nearResistance) {
-      sellScore += 15;
-      confirmations.push('Zona de resistência');
-    }
-    
-    if (pricePosition < 0.45 && priceChange < -1.0 && volatility > 1.0) {
-      sellScore += 25;
-      confirmations.push('Momentum bearish forte');
-    } else if (pricePosition < 0.50 && priceChange < -0.5) {
-      sellScore += 17;
-      confirmations.push('Momentum negativo');
-    } else if (priceChange < -0.3) {
-      sellScore += 10;
-      confirmations.push('Momentum leve negativo');
-    }
-    
-    if (atrPercent > 1.0 && atrPercent < 10) {
+    // 3. Momentum
+    if (pricePosition < 0.45 && mildBearish && volIdeal) {
       sellScore += 20;
-    } else if (atrPercent > 0.5 && atrPercent < 15) {
+      confirmations.push('⚡ Momentum bearish forte');
+    } else if (pricePosition < 0.55 && priceChange < -0.3 && volInRange) {
       sellScore += 12;
+      confirmations.push('Momentum negativo');
     }
     
-    // === COMPREHENSIVE AI BOOST ===
+    // 4. ATR
+    if (atrPercent > 1.5 && atrPercent < 6) {
+      sellScore += 15;
+    } else if (atrPercent > 0.8 && atrPercent < 10) {
+      sellScore += 8;
+    }
+    
+    // === AI BOOST (mais seletivo) ===
     let aiBoost = 0;
     let m1Signal: 'buy' | 'sell' | 'hold' | undefined;
     let m5Support: number | undefined;
@@ -244,151 +239,153 @@ export const useSignalAnalysis = () => {
       m5Resistance = comprehensiveAI.scalpingConfig?.resistance5m;
       m1Signal = comprehensiveAI.technical?.m1?.signal as any;
       
-      // Boost from composite score
-      if (compositeScore !== undefined) {
-        if (compositeScore > 30) {
-          buyScore += 25;
-          confirmations.push(`🤖 AI: Score +${compositeScore.toFixed(0)}`);
-          aiBoost += 25;
-        } else if (compositeScore < -30) {
-          sellScore += 25;
-          confirmations.push(`🤖 AI: Score ${compositeScore.toFixed(0)}`);
-          aiBoost += 25;
-        } else if (Math.abs(compositeScore) > 15) {
-          const boost = 15;
-          if (compositeScore > 0) buyScore += boost;
-          else sellScore += boost;
-          aiBoost += boost;
+      // Só boost quando AI está confiante E alinhada com análise técnica
+      if (compositeScore !== undefined && aiConfidence && aiConfidence > 60) {
+        if (compositeScore > 35 && buyScore > sellScore) {
+          buyScore += 20;
+          confirmations.push(`🤖 AI bullish: ${compositeScore.toFixed(0)}%`);
+          aiBoost = 20;
+        } else if (compositeScore < -35 && sellScore > buyScore) {
+          sellScore += 20;
+          confirmations.push(`🤖 AI bearish: ${compositeScore.toFixed(0)}%`);
+          aiBoost = 20;
         }
       }
       
-      // Boost from on-chain
-      if (comprehensiveAI.onChain?.signal === 'bullish') {
-        buyScore += 15;
+      // On-chain alignment (só quando forte)
+      if (comprehensiveAI.onChain?.signal === 'bullish' && buyScore > sellScore) {
+        buyScore += 10;
         confirmations.push('📊 On-Chain bullish');
-      } else if (comprehensiveAI.onChain?.signal === 'bearish') {
-        sellScore += 15;
+      } else if (comprehensiveAI.onChain?.signal === 'bearish' && sellScore > buyScore) {
+        sellScore += 10;
         confirmations.push('📊 On-Chain bearish');
       }
       
-      // Funding rate warning (contrarian)
+      // Funding rate (contrarian só em extremos)
       const funding = comprehensiveAI.onChain?.fundingRate || 0;
-      if (funding > 0.03) {
-        sellScore += 10;
-        confirmations.push('💰 Funding alto - cautela longs');
-      } else if (funding < -0.02) {
-        buyScore += 10;
-        confirmations.push('💰 Funding negativo - oportunidade');
+      if (funding > 0.05 && sellScore > buyScore) {
+        sellScore += 8;
+        confirmations.push('💰 Funding muito alto');
+      } else if (funding < -0.03 && buyScore > sellScore) {
+        buyScore += 8;
+        confirmations.push('💰 Funding negativo');
       }
       
-      // Sentiment boost (contrarian at extremes)
+      // Sentiment (contrarian só em extremos)
       const fgi = comprehensiveAI.sentiment?.fearGreedIndex || 50;
-      if (fgi < 25) {
-        buyScore += 15;
-        confirmations.push('😱 Fear extremo - oportunidade');
-      } else if (fgi > 75) {
-        sellScore += 15;
-        confirmations.push('🤑 Greed extremo - cautela');
-      }
-      
-      // 1m signal confirmation
-      if (m1Signal === 'buy') {
+      if (fgi < 20 && buyScore > sellScore) {
         buyScore += 12;
-        confirmations.push('📈 1m: BUY signal');
-      } else if (m1Signal === 'sell') {
+        confirmations.push('😱 Fear extremo');
+      } else if (fgi > 80 && sellScore > buyScore) {
         sellScore += 12;
-        confirmations.push('📉 1m: SELL signal');
+        confirmations.push('🤑 Greed extremo');
       }
       
-      // Technical alignment bonus
-      const alignment = comprehensiveAI.technical?.alignment;
-      if (alignment === 'strong_buy') {
-        buyScore += 20;
-        confirmations.push('✅ Timeframes alinhados BUY');
-      } else if (alignment === 'strong_sell') {
-        sellScore += 20;
-        confirmations.push('✅ Timeframes alinhados SELL');
-      } else if (alignment === 'buy') {
+      // 1m signal (só quando alinhado)
+      if (m1Signal === 'buy' && buyScore > sellScore) {
         buyScore += 10;
-      } else if (alignment === 'sell') {
+        confirmations.push('📈 1m BUY');
+      } else if (m1Signal === 'sell' && sellScore > buyScore) {
         sellScore += 10;
+        confirmations.push('📉 1m SELL');
+      }
+      
+      // Timeframe alignment
+      const alignment = comprehensiveAI.technical?.alignment;
+      if (alignment === 'strong_buy' && buyScore > sellScore) {
+        buyScore += 15;
+        confirmations.push('✅ TFs alinhados BUY');
+      } else if (alignment === 'strong_sell' && sellScore > buyScore) {
+        sellScore += 15;
+        confirmations.push('✅ TFs alinhados SELL');
       }
     }
     
-    // Determine action
-    const strongCounterTrend = (buyScore >= scoreThreshold && isBearishTrend) || 
-                                (sellScore >= scoreThreshold && isBullishTrend);
+    // === DETERMINAR AÇÃO ===
+    const scoreDiff = Math.abs(buyScore - sellScore);
+    const minDiff = 15; // Diferença mínima maior
     
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     
-    if (buyScore > sellScore && buyScore >= scoreThreshold && !strongCounterTrend) {
-      action = 'BUY';
-      signalScore = buyScore;
-    } else if (sellScore > buyScore && sellScore >= scoreThreshold && !strongCounterTrend) {
-      action = 'SELL';
-      signalScore = sellScore;
+    // Só entrar se diferença significativa
+    if (scoreDiff >= minDiff) {
+      if (buyScore > sellScore && buyScore >= scoreThreshold) {
+        action = 'BUY';
+        signalScore = buyScore;
+      } else if (sellScore > buyScore && sellScore >= scoreThreshold) {
+        action = 'SELL';
+        signalScore = sellScore;
+      }
     }
     
-    // === QUALITY CRITERIA (SCALPING OPTIMIZED) ===
-    const volumeCheck = volume24h > 100000;
-    const volatilityCheck = volatility > 1.5 && volatility < 18;
-    const atrMinCheck = atrPercent > 0.4 && atrPercent < 12;
-    const priceMovementOk = Math.abs(priceChange) > 0.8 && Math.abs(priceChange) < 15;
-    const hasStrongSignal = Math.abs(buyScore - sellScore) >= 12;
+    // === FILTROS DE QUALIDADE (MAIS RIGOROSOS) ===
+    const volumeOk = hasMinVolume;
+    const volatilityOk = volInRange;
+    const atrOk = atrPercent > 0.6 && atrPercent < 10;
+    const priceMovementOk = Math.abs(priceChange) > 0.6 && Math.abs(priceChange) < 12;
     
     // Momentum Score
-    const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2 : hasStrongVolume ? 1.5 : 1);
-    const momentumConfirmed = momentumScore > 2.0;
-
-    // Volume direction (allow reversals at S/R)
-    const reversalOk = (
-      (action === 'BUY' && (isOversold || isMildOversold) && nearSupport) ||
-      (action === 'SELL' && (isOverbought || isMildOverbought) && nearResistance)
+    const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2.5 : hasStrongVolume ? 1.8 : hasGoodVolume ? 1.3 : 1);
+    const momentumOk = momentumScore > 1.5;
+    
+    // Direção do volume (reversões permitidas em S/R)
+    const isReversal = (
+      (action === 'BUY' && (oversold || mildOversold) && nearSupport) ||
+      (action === 'SELL' && (overbought || mildOverbought) && nearResistance)
     );
-
-    const volumeDirectionOk = reversalOk ||
-      (action === 'BUY' && priceChange > 0) ||
-      (action === 'SELL' && priceChange < 0);
     
-    // Signal quality classification
+    const volumeDirectionOk = isReversal ||
+      (action === 'BUY' && priceChange > 0.3) ||
+      (action === 'SELL' && priceChange < -0.3);
+    
+    // Evitar entradas no meio (preferir S/R)
+    const positionOk = !inMiddle || scoreDiff >= 25 || isReversal;
+    
+    // Classificação de qualidade
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
-    if (signalScore >= 80 && hasVolumeSpike && momentumConfirmed) signalQuality = 'premium';
-    else if (signalScore >= 65 && hasStrongVolume && momentumConfirmed) signalQuality = 'high';
-    else if (signalScore >= 50 && hasGoodVolume) signalQuality = 'medium';
+    if (signalScore >= 85 && hasVolumeSpike && momentumOk && !inMiddle) signalQuality = 'premium';
+    else if (signalScore >= 70 && hasStrongVolume && momentumOk) signalQuality = 'high';
+    else if (signalScore >= 55 && hasGoodVolume) signalQuality = 'medium';
     
-    // AI can upgrade quality
-    if (aiBoost >= 25 && signalQuality === 'medium') signalQuality = 'high';
-    if (aiConfidence && aiConfidence > 75 && signalQuality !== 'premium') signalQuality = 'high';
+    // AI upgrade
+    if (aiBoost >= 15 && signalQuality === 'medium') signalQuality = 'high';
+    if (aiConfidence && aiConfidence > 80 && signalQuality !== 'premium') signalQuality = 'high';
     
+    // === DECISÃO FINAL ===
     const shouldTrade = (
-      signalScore >= scoreThreshold &&
       action !== null &&
-      currentBalance > 2 &&
+      signalScore >= scoreThreshold &&
+      scoreDiff >= minDiff &&
+      currentBalance > 3 &&
       confirmations.length >= minConfirmations &&
-      volumeCheck &&
-      volatilityCheck &&
-      hasStrongSignal &&
+      volumeOk &&
+      volatilityOk &&
+      atrOk &&
       priceMovementOk &&
-      (signalQuality !== 'low' || signalScore >= 70) &&
-      volumeDirectionOk
+      momentumOk &&
+      volumeDirectionOk &&
+      positionOk &&
+      signalQuality !== 'low'
     );
 
     // Skip reason
     let skipReason = '';
     if (!shouldTrade) {
-      if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
-      else if (!hasStrongSignal) skipReason = `Sinal fraco: diff=${Math.abs(buyScore - sellScore)}/12`;
+      if (action === null) skipReason = 'Sem sinal claro';
+      else if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
+      else if (scoreDiff < minDiff) skipReason = `Diff ${scoreDiff}/${minDiff}`;
       else if (!volumeDirectionOk) skipReason = 'Volume contra direção';
-      else if (signalQuality === 'low' && signalScore < 70) skipReason = `Qualidade baixa: ${signalQuality}`;
-      else if (!volumeCheck) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.1M`;
-      else if (!volatilityCheck) skipReason = `Volatility ${volatility.toFixed(2)}% fora 1.5-18%`;
-      else if (!atrMinCheck) skipReason = `ATR ${atrPercent.toFixed(2)}% fora 0.4-12%`;
-      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(2)}% fora 0.8-15%`;
-      else if (action === null) skipReason = 'Sem ação definida';
-      else if (currentBalance <= 2) skipReason = `Saldo $${currentBalance.toFixed(2)} < $2`;
+      else if (!momentumOk) skipReason = `Momentum ${momentumScore.toFixed(1)} < 1.5`;
+      else if (!positionOk) skipReason = 'Preço no meio do range';
+      else if (signalQuality === 'low') skipReason = 'Qualidade baixa';
+      else if (!volumeOk) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M < $0.15M`;
+      else if (!volatilityOk) skipReason = `Volatility ${volatility.toFixed(1)}%`;
+      else if (!atrOk) skipReason = `ATR ${atrPercent.toFixed(1)}%`;
+      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(1)}%`;
+      else if (currentBalance <= 3) skipReason = `Saldo $${currentBalance.toFixed(2)}`;
       else if (confirmations.length < minConfirmations) skipReason = `Conf ${confirmations.length}/${minConfirmations}`;
-      else skipReason = 'Outro filtro';
+      else skipReason = 'Filtro geral';
     }
 
     return {
