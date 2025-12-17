@@ -778,6 +778,33 @@ export const MultiAssetTrader = () => {
             stopLoss = sltp.stopLoss;
             takeProfit = sltp.takeProfit;
           }
+          
+          // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
+          const slNum = parseFloat(stopLoss);
+          const tpNum = parseFloat(takeProfit);
+          
+          if (analysisResult.action === 'BUY') {
+            // BUY: SL deve estar ABAIXO do preço, TP deve estar ACIMA
+            if (slNum >= currentPrice) {
+              // SL está errado - recalcular forçado
+              stopLoss = (currentPrice * 0.999).toFixed(6); // 0.1% abaixo
+              console.log(`⚠️ SL corrigido para BUY: ${slNum} → ${stopLoss} (preço: ${currentPrice})`);
+            }
+            if (tpNum <= currentPrice) {
+              takeProfit = (currentPrice * 1.003).toFixed(6); // 0.3% acima
+              console.log(`⚠️ TP corrigido para BUY: ${tpNum} → ${takeProfit} (preço: ${currentPrice})`);
+            }
+          } else {
+            // SELL: SL deve estar ACIMA do preço, TP deve estar ABAIXO
+            if (slNum <= currentPrice) {
+              stopLoss = (currentPrice * 1.001).toFixed(6); // 0.1% acima
+              console.log(`⚠️ SL corrigido para SELL: ${slNum} → ${stopLoss} (preço: ${currentPrice})`);
+            }
+            if (tpNum >= currentPrice) {
+              takeProfit = (currentPrice * 0.997).toFixed(6); // 0.3% abaixo
+              console.log(`⚠️ TP corrigido para SELL: ${tpNum} → ${takeProfit} (preço: ${currentPrice})`);
+            }
+          }
 
           // Configurar alavancagem
           let finalLeverage = leverage;
