@@ -1445,12 +1445,22 @@ export const MultiAssetTrader = () => {
         </Card>
 
         {/* 🎯 Sistema de Ordens Armadas S/R */}
-        <Card className="p-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20 mb-4">
+        <Card className={`p-4 mb-4 transition-all duration-300 ${
+          armedOrders.filter(o => o.status === 'armed').length > 0 
+            ? 'bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-amber-400 shadow-lg shadow-amber-500/20 animate-pulse' 
+            : 'bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20'
+        }`}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Crosshair className="h-5 w-5 text-amber-400" />
+              <Crosshair className={`h-5 w-5 ${armedOrders.filter(o => o.status === 'armed').length > 0 ? 'text-amber-300 animate-spin' : 'text-amber-400'}`} style={{ animationDuration: '3s' }} />
               <span className="text-sm font-medium">Ordens Armadas S/R</span>
-              <Badge variant="outline" className="text-[10px] text-amber-400">$0.20+ min</Badge>
+              {armedOrders.filter(o => o.status === 'armed').length > 0 ? (
+                <Badge className="bg-amber-500 text-black font-bold text-xs px-2 py-1 animate-bounce">
+                  🎯 {armedOrders.filter(o => o.status === 'armed').length} ARMADA{armedOrders.filter(o => o.status === 'armed').length > 1 ? 'S' : ''}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] text-amber-400">$0.20+ min</Badge>
+              )}
             </div>
             <Switch checked={armedModeEnabled} onCheckedChange={setArmedModeEnabled} disabled={isRunning} />
           </div>
@@ -1461,23 +1471,41 @@ export const MultiAssetTrader = () => {
                 Ordens limit em níveis de suporte/resistência com stops automáticos
               </div>
               
-              {/* Ordens armadas ativas */}
+              {/* Ordens armadas ativas - DESTAQUE VISUAL */}
               {armedOrders.filter(o => o.status === 'armed').length > 0 ? (
-                <div className="space-y-1 max-h-24 overflow-y-auto mb-3">
+                <div className="space-y-2 max-h-32 overflow-y-auto mb-3 p-2 bg-amber-500/10 rounded-lg border-2 border-amber-400/50">
+                  <div className="text-xs text-amber-300 font-semibold mb-1">⚡ ORDENS PRONTAS PARA EXECUTAR:</div>
                   {armedOrders.filter(o => o.status === 'armed').slice(0, 5).map((order) => (
-                    <div key={order.id} className="flex justify-between items-center text-xs p-2 bg-background/50 rounded border border-amber-500/20">
-                      <span className="font-medium">{order.symbol}</span>
-                      <Badge variant={order.side === 'Buy' ? 'default' : 'destructive'} className="text-[10px]">
-                        {order.srType === 'support' ? '🟢' : '🔴'} {order.side}
+                    <div key={order.id} className="flex justify-between items-center text-xs p-2 bg-background/70 rounded border border-amber-400/40 hover:bg-amber-500/20 transition-colors">
+                      <span className="font-bold text-amber-200">{order.symbol.replace('USDT', '')}</span>
+                      <Badge variant={order.side === 'Buy' ? 'default' : 'destructive'} className="text-[10px] font-semibold">
+                        {order.srType === 'support' ? '🟢 SUP' : '🔴 RES'} {order.side}
                       </Badge>
-                      <span className="text-amber-400">@{order.entryPrice.toFixed(4)}</span>
-                      <span className="text-green-400">+${order.expectedProfit.toFixed(2)}</span>
+                      <span className="text-amber-300 font-mono">@{order.entryPrice.toFixed(4)}</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-red-400 text-[9px]">SL: {order.stopLoss.toFixed(4)}</span>
+                        <span className="text-green-400 text-[9px]">TP: {order.takeProfit.toFixed(4)}</span>
+                      </div>
+                      <span className="text-green-400 font-bold">+${order.expectedProfit.toFixed(2)}</span>
                     </div>
                   ))}
+                  <div className="text-[10px] text-amber-400/80 text-center mt-1">
+                    💡 Ordens executam automaticamente quando preço atingir nível S/R
+                  </div>
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground text-center py-2 mb-3">
-                  {isRunning ? '🔍 Buscando níveis S/R...' : 'Inicie o trader para armar ordens'}
+                <div className="text-xs text-muted-foreground text-center py-3 mb-3 border border-dashed border-amber-500/30 rounded">
+                  {isRunning ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="animate-pulse">🔍 Analisando níveis S/R...</span>
+                      <span className="text-[10px]">Aguardando oportunidades com +$0.20 de lucro</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <span>⏸️ Sistema parado</span>
+                      <span className="text-[10px]">Inicie o trader para armar ordens</span>
+                    </div>
+                  )}
                 </div>
               )}
               
