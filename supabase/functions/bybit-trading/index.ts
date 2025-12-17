@@ -207,7 +207,7 @@ async function getPositions() {
 
 async function placeOrder(params: any) {
   const { symbol, side, qty, orderType = 'Market', stopLoss, takeProfit, leverage } = params;
-  
+
   if (leverage) {
     try {
       await setLeverage({ symbol, leverage });
@@ -216,6 +216,7 @@ async function placeOrder(params: any) {
     }
   }
 
+  // 1) Cria a ordem SEM SL/TP para evitar erro de base_price (slippage em Market)
   const orderParams: Record<string, any> = {
     category: 'linear',
     symbol,
@@ -226,18 +227,144 @@ async function placeOrder(params: any) {
     positionIdx: 0,
   };
 
-  if (stopLoss) {
-    orderParams.stopLoss = String(stopLoss);
-    orderParams.slTriggerBy = 'LastPrice';
-  }
-  
-  if (takeProfit) {
-    orderParams.takeProfit = String(takeProfit);
-    orderParams.tpTriggerBy = 'LastPrice';
+  console.log('Order params:', JSON.stringify(orderParams));
+  const orderResult = await makeBybitRequest('POST', '/v5/order/create', orderParams);
+
+  // 2) Aplica SL/TP logo após a execução usando o preço REAL (avgPrice)
+  if (stopLoss || takeProfit) {
+    try {
+      const basePrice = await waitForPositionAvgPrice(symbol, side);
+      const refPrice = basePrice ?? (await getLastPrice(symbol));
+
+      const corrected = correctStopsAgainstPrice({
+        symbol,
+        side,
+        refPrice,
+        stopLoss,
+        takeProfit,
+      });
+
+      // Se não conseguimos obter preço de referência, ainda tentamos setar com o que veio
+      const stopParams = {
+        symbol,
+        stopLoss: corrected.stopLoss ?? (stopLoss ? String(stopLoss) : undefined),
+        takeProfit: corrected.takeProfit ?? (takeProfit ? String(takeProfit) : undefined),
+      };
+
+      const stopResult = await setTradingStop(stopParams);
+      return { ...orderResult, stopResult };
+    } catch (e) {
+      console.error('Trading stop error:', e);
+      return { ...orderResult, stopResult: { error: e?.message ?? String(e) } };
+    }
   }
 
-  console.log('Order params:', JSON.stringify(orderParams));
-  return await makeBybitRequest('POST', '/v5/order/create', orderParams);
+  return orderResult;
+}
+
+function formatPriceForBybit(price: number, refPrice: number): string {
+  const decimals = refPrice < 1 ? 6 : refPrice < 100 ? 4 : 2;
+  return price.toFixed(decimals);
+}
+
+function correctStopsAgainstPrice({
+  side,
+  refPrice,
+  stopLoss,
+  takeProfit,
+}: {
+  symbol: string;
+  side: 'Buy' | 'Sell';
+  refPrice: number | null;
+  stopLoss?: string | number;
+  takeProfit?: string | number;
+}): { stopLoss?: string; takeProfit?: string; refPrice: number | null } {
+  if (!refPrice || !Number.isFinite(refPrice)) {
+    return { refPrice: null };
+  }
+
+  const buffer = 0.0015; // 0.15% só para garantir "lado correto" no preço real
+  const rr = 2.5;
+
+  let sl = stopLoss !== undefined && stopLoss !== null ? Number(stopLoss) : undefined;
+  let tp = takeProfit !== undefined && takeProfit !== null ? Number(takeProfit) : undefined;
+
+  if (side === 'Buy') {
+    if (sl !== undefined && Number.isFinite(sl) && sl >= refPrice) {
+      sl = refPrice * (1 - buffer);
+    }
+    if (tp !== undefined && Number.isFinite(tp) && tp <= refPrice) {
+      tp = refPrice * (1 + buffer * rr);
+    }
+  } else {
+    if (sl !== undefined && Number.isFinite(sl) && sl <= refPrice) {
+      sl = refPrice * (1 + buffer);
+    }
+    if (tp !== undefined && Number.isFinite(tp) && tp >= refPrice) {
+      tp = refPrice * (1 - buffer * rr);
+    }
+  }
+
+  return {
+    refPrice,
+    stopLoss: sl !== undefined && Number.isFinite(sl) ? formatPriceForBybit(sl, refPrice) : undefined,
+    takeProfit: tp !== undefined && Number.isFinite(tp) ? formatPriceForBybit(tp, refPrice) : undefined,
+  };
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForPositionAvgPrice(symbol: string, side: 'Buy' | 'Sell'): Promise<number | null> {
+  for (let i = 0; i < 5; i++) {
+    await sleep(250);
+    const positions = await getPositionsBySymbol(symbol);
+    const pos = positions.find((p: any) => p.symbol === symbol && p.side === side && Number(p.size || 0) > 0);
+    const avg = pos?.avgPrice ? Number(pos.avgPrice) : NaN;
+    if (Number.isFinite(avg) && avg > 0) return avg;
+  }
+  return null;
+}
+
+async function getPositionsBySymbol(symbol: string) {
+  const result = await makeBybitRequest('GET', '/v5/position/list', { category: 'linear', symbol });
+  return result?.list || [];
+}
+
+async function getLastPrice(symbol: string): Promise<number | null> {
+  try {
+    const list = await getTickers(symbol);
+    const t = list?.find((x: any) => x.symbol === symbol) ?? list?.[0];
+    const p = t?.lastPrice ? Number(t.lastPrice) : NaN;
+    return Number.isFinite(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setTradingStop(params: { symbol: string; stopLoss?: string; takeProfit?: string }) {
+  const { symbol, stopLoss, takeProfit } = params;
+
+  const body: Record<string, any> = {
+    category: 'linear',
+    symbol,
+    tpslMode: 'Full',
+    positionIdx: 0,
+  };
+
+  if (stopLoss) {
+    body.stopLoss = String(stopLoss);
+    body.slTriggerBy = 'LastPrice';
+  }
+
+  if (takeProfit) {
+    body.takeProfit = String(takeProfit);
+    body.tpTriggerBy = 'LastPrice';
+  }
+
+  console.log('Trading-stop params:', JSON.stringify(body));
+  return await makeBybitRequest('POST', '/v5/position/trading-stop', body);
 }
 
 async function closePosition(params: any) {
