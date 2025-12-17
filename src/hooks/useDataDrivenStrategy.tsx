@@ -211,30 +211,31 @@ export const useDataDrivenStrategy = () => {
   ): { stopLoss: number; takeProfit: number; reason: string } => {
     const analysis = analyzeSymbol(symbol);
     
-    // Stop Loss ULTRA APERTADO para scalping (0.10-0.15%)
-    let slPercent = 0.12;
-    let tpPercent = 0.22;
+    // 🎯 R:R 1:2.5+ PARA COMPENSAR WIN RATE BAIXO (~38%)
+    // Matemática: (0.38 * 2.5) - (0.62 * 1) = +0.33 (lucrativo)
+    let slPercent = 0.10;  // SL apertado
+    let tpPercent = 0.25;  // TP 2.5x maior (R:R 1:2.5)
     
-    // Símbolos com alto win rate = SL mais apertado, TP mais próximo
+    // Símbolos com alto win rate = pode usar R:R menor
     if (analysis.isWhitelisted && analysis.historicalWinRate && analysis.historicalWinRate >= 70) {
-      slPercent = 0.10;  // 0.10% SL
-      tpPercent = 0.18;  // 0.18% TP (1.8:1)
+      slPercent = 0.08;   // 0.08% SL (mais apertado)
+      tpPercent = 0.20;   // 0.20% TP (R:R 1:2.5)
     }
-    // Símbolos com win rate médio
+    // Símbolos com win rate médio = R:R padrão
     else if (analysis.isWhitelisted && analysis.historicalWinRate && analysis.historicalWinRate >= 50) {
-      slPercent = 0.12;  // 0.12% SL
-      tpPercent = 0.22;  // 0.22% TP (1.8:1)
+      slPercent = 0.10;   // 0.10% SL
+      tpPercent = 0.25;   // 0.25% TP (R:R 1:2.5)
     }
-    // Símbolos desconhecidos
+    // Símbolos desconhecidos = R:R maior para compensar incerteza
     else {
-      slPercent = 0.15;  // 0.15% SL
-      tpPercent = 0.27;  // 0.27% TP (1.8:1)
+      slPercent = 0.10;   // 0.10% SL
+      tpPercent = 0.30;   // 0.30% TP (R:R 1:3)
     }
     
-    // Ajustar por volatilidade (mas manter apertado)
+    // Ajustar por volatilidade (manter R:R mínimo 1:2.5)
     if (volatility > 8) {
-      slPercent = Math.min(slPercent * 1.15, 0.20); // máx 0.20%
-      tpPercent = Math.min(tpPercent * 1.15, 0.35); // máx 0.35%
+      slPercent = Math.min(slPercent * 1.1, 0.12);  // máx 0.12%
+      tpPercent = Math.min(tpPercent * 1.2, 0.40);  // máx 0.40%
     }
     
     // Calcular preços

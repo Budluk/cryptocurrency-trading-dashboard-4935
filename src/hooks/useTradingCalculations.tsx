@@ -149,11 +149,12 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🎯 STOPS ULTRA APERTADOS PARA SCALPING
-    // Scalp: 0.12% SL, 0.20% TP (1:1.7 R:R)
-    // Normal: 0.18% SL, 0.30% TP (1:1.7 R:R)
-    const maxSL = isScalpAsset ? 0.0012 : 0.0018; // 0.12% scalp, 0.18% normal
-    const maxTP = isScalpAsset ? 0.002 : 0.003;   // 0.20% scalp, 0.30% normal
+    // 🎯 R:R 1:2.5+ PARA COMPENSAR WIN RATE BAIXO (~38%)
+    // Com 38% win rate, precisa R:R >= 2.5 para lucrar
+    // Scalp: 0.10% SL, 0.25% TP (1:2.5 R:R)
+    // Normal: 0.12% SL, 0.30% TP (1:2.5 R:R)
+    const maxSL = isScalpAsset ? 0.001 : 0.0012;  // 0.10% scalp, 0.12% normal
+    const maxTP = isScalpAsset ? 0.0025 : 0.003;  // 0.25% scalp, 0.30% normal
     const minSL = 0.0008; // Mínimo 0.08%
 
     // USAR TOPOS/FUNDOS SE DISPONÍVEIS, mas com limites rígidos
