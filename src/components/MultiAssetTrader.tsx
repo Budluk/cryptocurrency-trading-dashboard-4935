@@ -780,32 +780,36 @@ export const MultiAssetTrader = () => {
           }
           
           // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
-          // Usar margem de segurança maior (0.15%) para compensar movimentos de preço
+          // Usar margem de segurança de 0.4% para compensar movimentos de preço
           const slNum = parseFloat(stopLoss);
           const tpNum = parseFloat(takeProfit);
-          const safetyMargin = 0.0015; // 0.15% margem de segurança
+          const safetyMargin = 0.004; // 0.4% margem de segurança
           
           if (analysisResult.action === 'BUY') {
-            // BUY: SL deve estar ABAIXO do preço, TP deve estar ACIMA
-            const minSL = currentPrice * (1 - safetyMargin);
-            if (slNum >= currentPrice * 0.9999) { // Se SL está muito próximo ou acima do preço
-              stopLoss = minSL.toFixed(6);
-              console.log(`⚠️ SL corrigido para BUY: ${slNum} → ${stopLoss} (preço: ${currentPrice})`);
+            // BUY: SL deve estar BEM ABAIXO do preço, TP acima
+            const safeSL = currentPrice * (1 - safetyMargin);
+            const safeTP = currentPrice * (1 + safetyMargin * 2);
+            
+            if (slNum >= currentPrice * (1 - safetyMargin * 0.5)) {
+              stopLoss = safeSL.toFixed(6);
+              console.log(`⚠️ SL BUY corrigido: ${slNum.toFixed(6)} → ${stopLoss} (preço: ${currentPrice})`);
             }
-            if (tpNum <= currentPrice * 1.0001) {
-              takeProfit = (currentPrice * (1 + safetyMargin * 2.5)).toFixed(6);
-              console.log(`⚠️ TP corrigido para BUY: ${tpNum} → ${takeProfit} (preço: ${currentPrice})`);
+            if (tpNum <= currentPrice * (1 + safetyMargin * 0.5)) {
+              takeProfit = safeTP.toFixed(6);
+              console.log(`⚠️ TP BUY corrigido: ${tpNum.toFixed(6)} → ${takeProfit} (preço: ${currentPrice})`);
             }
           } else {
-            // SELL: SL deve estar ACIMA do preço, TP deve estar ABAIXO
-            const minSL = currentPrice * (1 + safetyMargin);
-            if (slNum <= currentPrice * 1.0001) {
-              stopLoss = minSL.toFixed(6);
-              console.log(`⚠️ SL corrigido para SELL: ${slNum} → ${stopLoss} (preço: ${currentPrice})`);
+            // SELL: SL deve estar BEM ACIMA do preço, TP abaixo
+            const safeSL = currentPrice * (1 + safetyMargin);
+            const safeTP = currentPrice * (1 - safetyMargin * 2);
+            
+            if (slNum <= currentPrice * (1 + safetyMargin * 0.5)) {
+              stopLoss = safeSL.toFixed(6);
+              console.log(`⚠️ SL SELL corrigido: ${slNum.toFixed(6)} → ${stopLoss} (preço: ${currentPrice})`);
             }
-            if (tpNum >= currentPrice * 0.9999) {
-              takeProfit = (currentPrice * (1 - safetyMargin * 2.5)).toFixed(6);
-              console.log(`⚠️ TP corrigido para SELL: ${tpNum} → ${takeProfit} (preço: ${currentPrice})`);
+            if (tpNum >= currentPrice * (1 - safetyMargin * 0.5)) {
+              takeProfit = safeTP.toFixed(6);
+              console.log(`⚠️ TP SELL corrigido: ${tpNum.toFixed(6)} → ${takeProfit} (preço: ${currentPrice})`);
             }
           }
 
