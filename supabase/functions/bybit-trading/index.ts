@@ -355,7 +355,8 @@ async function setTradingStop(params: { symbol: string; stopLoss?: string; takeP
 
   if (stopLoss) {
     body.stopLoss = String(stopLoss);
-    body.slTriggerBy = 'LastPrice';
+    // Usar MarkPrice reduz stops por wick/spread em scalping (menos "stop hunt" no LastPrice)
+    body.slTriggerBy = 'MarkPrice';
   }
 
   if (takeProfit) {
