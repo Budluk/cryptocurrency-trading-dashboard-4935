@@ -58,8 +58,8 @@ export const MultiAssetTrader = () => {
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
   const { 
     analyzeSymbol, shouldTradeDataDriven, getOptimalStopTakeProfit, 
-    filterAssetsDataDriven, isProfitableHour, getStrategyStats,
-    BLACKLISTED_SYMBOLS, HIGH_WINRATE_SYMBOLS, PROFITABLE_HOURS, LOSING_HOURS
+    filterAssetsDataDriven, hasAssetsForCurrentHour, getAssetsForCurrentHour, getStrategyStats,
+    GLOBAL_BLACKLIST, PREMIUM_SYMBOLS, HOUR_ASSET_MAP
   } = useDataDrivenStrategy();
   
   // AI cache for comprehensive analysis
@@ -470,8 +470,8 @@ export const MultiAssetTrader = () => {
         const isInTop10 = topVolNow.includes(a.instrument.symbol);
         const symbol = a.instrument.symbol;
         
-        // 🆕 PRIMEIRO: Verificar BLACKLIST (baseado em dados históricos reais)
-        if (BLACKLISTED_SYMBOLS.has(symbol)) {
+        // 🆕 PRIMEIRO: Verificar BLACKLIST GLOBAL (baseado em dados históricos reais)
+        if (GLOBAL_BLACKLIST.has(symbol)) {
           return false; // Nunca operar símbolos que historicamente perdem
         }
         
@@ -513,13 +513,15 @@ export const MultiAssetTrader = () => {
         const normalizedVolatility = Math.min(a!.volatility / 8, 1); // Cap em 8%
         const normalizedVolume = (a!.volume24h / maxVolume);
         
-        // 🆕 MEGA BONUS para símbolos da WHITELIST (histórico de lucro comprovado)
-        const whitelistData = HIGH_WINRATE_SYMBOLS.get(symbol);
+        // 🆕 MEGA BONUS para símbolos com bom histórico na hora atual
+        const symbolAnalysis = analyzeSymbol(symbol);
         let whitelistBonus = 0;
-        if (whitelistData) {
-          if (whitelistData.winRate >= 70) whitelistBonus = 0.50; // Premium (80%+ win rate)
-          else if (whitelistData.winRate >= 50) whitelistBonus = 0.30; // Bom (50-70% win rate)
-          else whitelistBonus = 0.15; // Aceitável
+        if (symbolAnalysis.isOptimalForHour && symbolAnalysis.hourWinRate) {
+          if (symbolAnalysis.hourWinRate >= 70) whitelistBonus = 0.50;
+          else if (symbolAnalysis.hourWinRate >= 50) whitelistBonus = 0.30;
+          else whitelistBonus = 0.15;
+        } else if (symbolAnalysis.isPremium) {
+          whitelistBonus = 0.20;
         }
         
         // Bonus para majors (exceto os blacklistados)
@@ -530,7 +532,7 @@ export const MultiAssetTrader = () => {
         
         const assetScore = (normalizedLiquidity * 0.25) + (normalizedVolatility * 0.20) + (normalizedVolume * 0.25) + whitelistBonus + majorBonus - spreadPenalty;
         
-        return { ...a!, assetScore, isWhitelisted: !!whitelistData };
+        return { ...a!, assetScore, isWhitelisted: symbolAnalysis.isOptimalForHour || symbolAnalysis.isPremium };
       });
       
       // 🆕 Ordenar com WHITELIST primeiro
@@ -545,13 +547,15 @@ export const MultiAssetTrader = () => {
       
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
       
-      // 🆕 VERIFICAR HORÁRIO LUCRATIVO
+      // 🆕 VERIFICAR SE TEM ATIVOS PARA ESTA HORA
       const currentHourUTC = new Date().getUTCHours();
-      const isGoodHour = PROFITABLE_HOURS.has(currentHourUTC);
-      const isBadHour = LOSING_HOURS.has(currentHourUTC);
+      const hourAssets = getAssetsForCurrentHour();
+      const hasGoodAssets = hourAssets.length > 0;
       
-      if (isBadHour) {
-        console.log(`⚠️ Horário de perdas (${currentHourUTC}h UTC) - apenas símbolos premium serão operados`);
+      if (!hasGoodAssets) {
+        console.log(`⚠️ Hora ${currentHourUTC}h UTC sem ativos lucrativos específicos - usando premium symbols`);
+      } else {
+        console.log(`✅ Hora ${currentHourUTC}h UTC: ${hourAssets.length} ativos ideais: ${hourAssets.map(a => a.symbol).join(', ')}`);
       }
 
       let shouldStopTrading = false;
@@ -582,23 +586,18 @@ export const MultiAssetTrader = () => {
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
         const isScalpAsset = topVolNow.includes(symbol);
-        const isWhitelistedSymbol = HIGH_WINRATE_SYMBOLS.has(symbol);
         
-        // 🆕 FILTRO DE HORÁRIO: Em horário ruim, APENAS whitelist premium
-        if (isBadHour && !isWhitelistedSymbol) {
-          const reason = `Horário ${currentHourUTC}h UTC (ruim)`;
+        // 🆕 ANÁLISE BASEADA EM DADOS POR HORA
+        const symbolAnalysis = analyzeSymbol(symbol);
+        const isOptimalForHour = symbolAnalysis.isOptimalForHour;
+        const isPremiumSymbol = symbolAnalysis.isPremium;
+        
+        // 🆕 FILTRO: Priorizar ativos ideais para esta hora
+        if (!isOptimalForHour && !isPremiumSymbol) {
+          // Se não é ativo ideal nem premium, pular (opera 24h com precisão)
+          const reason = `Não é ativo ideal para ${currentHourUTC}h UTC`;
           skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
           continue;
-        }
-        
-        // 🆕 Em horário ruim, whitelist precisa de win rate >= 70%
-        if (isBadHour && isWhitelistedSymbol) {
-          const whitelistData = HIGH_WINRATE_SYMBOLS.get(symbol);
-          if (!whitelistData || whitelistData.winRate < 70) {
-            const reason = `Horário ruim + win rate < 70%`;
-            skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
-            continue;
-          }
         }
         
         try {
@@ -606,9 +605,9 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === SCALPING: THRESHOLDS AJUSTADOS POR WHITELIST ===
-          let scoreThreshold = isWhitelistedSymbol ? 30 : 40; // Whitelist precisa de menos score
-          let minConfirmations = isWhitelistedSymbol ? 1 : 2; // Whitelist precisa de menos confirmações
+          // === THRESHOLDS AJUSTADOS POR ANÁLISE DE HORA ===
+          let scoreThreshold = isOptimalForHour ? 30 : (isPremiumSymbol ? 35 : 45);
+          let minConfirmations = isOptimalForHour ? 1 : 2;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
@@ -617,11 +616,13 @@ export const MultiAssetTrader = () => {
             if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
           }
           
-          // 🆕 Bonus de horário lucrativo
-          if (isGoodHour) scoreThreshold -= 5;
+          // 🆕 Bonus para ativo ideal da hora
+          if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
+            scoreThreshold -= 10; // Alta confiança
+          }
           
-          // Mínimo score (whitelist tem threshold menor)
-          scoreThreshold = Math.max(isWhitelistedSymbol ? 25 : 35, scoreThreshold);
+          // Mínimo score
+          scoreThreshold = Math.max(isOptimalForHour ? 20 : 30, scoreThreshold);
           
           // 🆕 Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -757,9 +758,9 @@ export const MultiAssetTrader = () => {
           const priceRange = highPrice - lowPrice;
           const atrPercent = (priceRange / currentPrice) * 100;
           
-          // Usar cálculo data-driven para símbolos whitelist ou padrão para outros
+          // Usar cálculo data-driven para símbolos ideais ou premium
           let stopLoss: string, takeProfit: string;
-          if (isWhitelistedSymbol) {
+          if (isOptimalForHour || isPremiumSymbol) {
             const optimalSLTP = getOptimalStopTakeProfit(
               symbol, 
               currentPrice, 
