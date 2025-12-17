@@ -780,28 +780,31 @@ export const MultiAssetTrader = () => {
           }
           
           // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
+          // Usar margem de segurança maior (0.15%) para compensar movimentos de preço
           const slNum = parseFloat(stopLoss);
           const tpNum = parseFloat(takeProfit);
+          const safetyMargin = 0.0015; // 0.15% margem de segurança
           
           if (analysisResult.action === 'BUY') {
             // BUY: SL deve estar ABAIXO do preço, TP deve estar ACIMA
-            if (slNum >= currentPrice) {
-              // SL está errado - recalcular forçado
-              stopLoss = (currentPrice * 0.999).toFixed(6); // 0.1% abaixo
+            const minSL = currentPrice * (1 - safetyMargin);
+            if (slNum >= currentPrice * 0.9999) { // Se SL está muito próximo ou acima do preço
+              stopLoss = minSL.toFixed(6);
               console.log(`⚠️ SL corrigido para BUY: ${slNum} → ${stopLoss} (preço: ${currentPrice})`);
             }
-            if (tpNum <= currentPrice) {
-              takeProfit = (currentPrice * 1.003).toFixed(6); // 0.3% acima
+            if (tpNum <= currentPrice * 1.0001) {
+              takeProfit = (currentPrice * (1 + safetyMargin * 2.5)).toFixed(6);
               console.log(`⚠️ TP corrigido para BUY: ${tpNum} → ${takeProfit} (preço: ${currentPrice})`);
             }
           } else {
             // SELL: SL deve estar ACIMA do preço, TP deve estar ABAIXO
-            if (slNum <= currentPrice) {
-              stopLoss = (currentPrice * 1.001).toFixed(6); // 0.1% acima
+            const minSL = currentPrice * (1 + safetyMargin);
+            if (slNum <= currentPrice * 1.0001) {
+              stopLoss = minSL.toFixed(6);
               console.log(`⚠️ SL corrigido para SELL: ${slNum} → ${stopLoss} (preço: ${currentPrice})`);
             }
-            if (tpNum >= currentPrice) {
-              takeProfit = (currentPrice * 0.997).toFixed(6); // 0.3% abaixo
+            if (tpNum >= currentPrice * 0.9999) {
+              takeProfit = (currentPrice * (1 - safetyMargin * 2.5)).toFixed(6);
               console.log(`⚠️ TP corrigido para SELL: ${tpNum} → ${takeProfit} (preço: ${currentPrice})`);
             }
           }
