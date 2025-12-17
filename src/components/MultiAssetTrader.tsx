@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet, Crosshair } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -20,6 +20,7 @@ import { useAdvancedRiskManager } from "@/hooks/useAdvancedRiskManager";
 import { getUserId } from "@/lib/anonymousUser";
 import { AntiLossMonitor } from "./AntiLossMonitor";
 import { useDataDrivenStrategy } from "@/hooks/useDataDrivenStrategy";
+import { useArmedOrders } from "@/hooks/useArmedOrders";
 
 interface Trade {
   symbol: string;
@@ -62,6 +63,21 @@ export const MultiAssetTrader = () => {
     GLOBAL_BLACKLIST, PREMIUM_SYMBOLS, HOUR_ASSET_MAP
   } = useDataDrivenStrategy();
   
+  // 🎯 Sistema de ordens armadas S/R
+  const {
+    armedOrders,
+    hourlyPerformance,
+    srLevels,
+    isAnalyzing: isAnalyzingSR,
+    analyzeHourlyPerformance,
+    getBestAssetsForCurrentHour: getBestHourlyAssets,
+    updateSRLevels,
+    checkAndArmOrders,
+    checkArmedOrdersForTrigger,
+    cleanupOldOrders,
+    MIN_PROFIT_TARGET
+  } = useArmedOrders();
+  
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
   const { calculateExposure, classifyVolatilityRisk, getAdaptiveTrailingConfig: getAdvancedTrailing, checkAssetCorrelation, getProtectProfitLevel } = useAdvancedRiskManager();
@@ -87,6 +103,7 @@ export const MultiAssetTrader = () => {
   const [hedgeEnabled, setHedgeEnabled] = useState(false);
   const [mlDecisionsEnabled, setMlDecisionsEnabled] = useState(true);
   const [dynamicLeverageEnabled, setDynamicLeverageEnabled] = useState(false);
+  const [armedModeEnabled, setArmedModeEnabled] = useState(true); // 🎯 MODO ORDENS ARMADAS
   
   // Tracking
   const [positionTracking, setPositionTracking] = useState<Map<string, {
@@ -1407,6 +1424,60 @@ export const MultiAssetTrader = () => {
               <Switch checked={trailingStopEnabled} onCheckedChange={setTrailingStopEnabled} disabled={isRunning} />
             </div>
           </div>
+        </Card>
+
+        {/* 🎯 Sistema de Ordens Armadas S/R */}
+        <Card className="p-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Crosshair className="h-5 w-5 text-amber-400" />
+              <span className="text-sm font-medium">Ordens Armadas S/R</span>
+              <Badge variant="outline" className="text-[10px] text-amber-400">$0.20+ min</Badge>
+            </div>
+            <Switch checked={armedModeEnabled} onCheckedChange={setArmedModeEnabled} disabled={isRunning} />
+          </div>
+          
+          {armedModeEnabled && (
+            <>
+              <div className="text-xs text-muted-foreground mb-2">
+                Ordens limit em níveis de suporte/resistência com stops automáticos
+              </div>
+              
+              {/* Ordens armadas ativas */}
+              {armedOrders.filter(o => o.status === 'armed').length > 0 ? (
+                <div className="space-y-1 max-h-24 overflow-y-auto mb-3">
+                  {armedOrders.filter(o => o.status === 'armed').slice(0, 5).map((order) => (
+                    <div key={order.id} className="flex justify-between items-center text-xs p-2 bg-background/50 rounded border border-amber-500/20">
+                      <span className="font-medium">{order.symbol}</span>
+                      <Badge variant={order.side === 'Buy' ? 'default' : 'destructive'} className="text-[10px]">
+                        {order.srType === 'support' ? '🟢' : '🔴'} {order.side}
+                      </Badge>
+                      <span className="text-amber-400">@{order.entryPrice.toFixed(4)}</span>
+                      <span className="text-green-400">+${order.expectedProfit.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-2 mb-3">
+                  {isRunning ? '🔍 Buscando níveis S/R...' : 'Inicie o trader para armar ordens'}
+                </div>
+              )}
+              
+              {/* Melhores ativos por hora */}
+              {getBestHourlyAssets().length > 0 && (
+                <div className="border-t border-border/50 pt-2">
+                  <div className="text-xs text-muted-foreground mb-1">🕐 Melhores para {new Date().getUTCHours()}h UTC:</div>
+                  <div className="flex flex-wrap gap-1">
+                    {getBestHourlyAssets().slice(0, 5).map((perf) => (
+                      <Badge key={`${perf.symbol}-${perf.hour}`} variant="outline" className="text-[10px]">
+                        {perf.symbol.replace('USDT', '')} {perf.winRate.toFixed(0)}%
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </Card>
 
         {/* Opções Avançadas */}
