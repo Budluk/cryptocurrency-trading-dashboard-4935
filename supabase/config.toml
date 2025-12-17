@@ -26,3 +26,6 @@ verify_jwt = true
 
 [functions.ai-comprehensive-analysis]
 verify_jwt = false
+
+[functions.ai-trading-intelligence]
+verify_jwt = false

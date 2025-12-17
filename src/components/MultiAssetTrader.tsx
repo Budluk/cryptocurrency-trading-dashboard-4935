@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet, Crosshair } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet, Crosshair, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -21,6 +21,7 @@ import { getUserId } from "@/lib/anonymousUser";
 import { AntiLossMonitor } from "./AntiLossMonitor";
 import { useDataDrivenStrategy } from "@/hooks/useDataDrivenStrategy";
 import { useArmedOrders } from "@/hooks/useArmedOrders";
+import { useAITradingIntelligence } from "@/hooks/useAITradingIntelligence";
 
 interface Trade {
   symbol: string;
@@ -78,6 +79,22 @@ export const MultiAssetTrader = () => {
     MIN_PROFIT_TARGET
   } = useArmedOrders();
   
+  // 🤖 AI Trading Intelligence
+  const {
+    isLoading: isAILoading,
+    patterns: aiPatterns,
+    recommendations: aiRecommendations,
+    whaleAnalysis,
+    sentimentAnalysis,
+    tradingSignal,
+    lastTrainingTime,
+    trainOnWinningPatterns,
+    validateTradeWithAI,
+    getOptimizedParameters,
+    analyzeWhales,
+    analyzeSentiment
+  } = useAITradingIntelligence();
+  
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
   const { calculateExposure, classifyVolatilityRisk, getAdaptiveTrailingConfig: getAdvancedTrailing, checkAssetCorrelation, getProtectProfitLevel } = useAdvancedRiskManager();
@@ -104,6 +121,7 @@ export const MultiAssetTrader = () => {
   const [mlDecisionsEnabled, setMlDecisionsEnabled] = useState(true);
   const [dynamicLeverageEnabled, setDynamicLeverageEnabled] = useState(false);
   const [armedModeEnabled, setArmedModeEnabled] = useState(true); // 🎯 MODO ORDENS ARMADAS
+  const [aiIntelligenceEnabled, setAiIntelligenceEnabled] = useState(true); // 🤖 AI INTELLIGENCE
   
   // Tracking
   const [positionTracking, setPositionTracking] = useState<Map<string, {
@@ -1476,6 +1494,80 @@ export const MultiAssetTrader = () => {
                   </div>
                 </div>
               )}
+            </>
+          )}
+        </Card>
+
+        {/* 🤖 AI Trading Intelligence */}
+        <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-400" />
+              <span className="text-sm font-medium">AI Trading Intelligence</span>
+              {lastTrainingTime && (
+                <Badge variant="outline" className="text-[10px] text-purple-400">
+                  Treinado {new Date(lastTrainingTime).toLocaleTimeString()}
+                </Badge>
+              )}
+            </div>
+            <Switch checked={aiIntelligenceEnabled} onCheckedChange={setAiIntelligenceEnabled} disabled={isRunning} />
+          </div>
+          
+          {aiIntelligenceEnabled && (
+            <>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {/* Padrões */}
+                <div className="p-2 bg-background/50 rounded border text-center">
+                  <div className="text-[10px] text-muted-foreground">Win Rate</div>
+                  <div className="font-bold text-green-400">{aiPatterns?.winRate?.toFixed(1) || '--'}%</div>
+                </div>
+                
+                {/* Baleias */}
+                <div className="p-2 bg-background/50 rounded border text-center">
+                  <div className="text-[10px] text-muted-foreground">Baleias</div>
+                  <div className={`font-bold ${whaleAnalysis?.whaleDirection === 'BULLISH' ? 'text-green-400' : whaleAnalysis?.whaleDirection === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'}`}>
+                    {whaleAnalysis?.whaleDirection || '--'}
+                  </div>
+                </div>
+                
+                {/* Sentimento */}
+                <div className="p-2 bg-background/50 rounded border text-center">
+                  <div className="text-[10px] text-muted-foreground">Sentimento</div>
+                  <div className={`font-bold ${sentimentAnalysis?.sentiment === 'BULLISH' ? 'text-green-400' : sentimentAnalysis?.sentiment === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'}`}>
+                    {sentimentAnalysis?.sentiment || '--'}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Recomendações */}
+              {aiRecommendations && (
+                <div className="text-xs text-muted-foreground mb-2 p-2 bg-background/30 rounded">
+                  <div className="flex flex-wrap gap-2">
+                    <span>Lev: <span className="text-purple-400 font-medium">{aiRecommendations.optimalLeverage}x</span></span>
+                    <span>SL: <span className="text-red-400 font-medium">{(aiRecommendations.optimalStopLoss * 100).toFixed(2)}%</span></span>
+                    <span>TP: <span className="text-green-400 font-medium">{(aiRecommendations.optimalTakeProfit * 100).toFixed(2)}%</span></span>
+                  </div>
+                  {aiRecommendations.insights && (
+                    <div className="mt-1 text-[10px] opacity-75">{aiRecommendations.insights}</div>
+                  )}
+                </div>
+              )}
+              
+              {/* Botão de treinar */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={async () => {
+                  const result = await trainOnWinningPatterns();
+                  if (result) {
+                    toast({ title: "🤖 IA Treinada!", description: `${result.patterns?.totalTrades || 0} trades analisados` });
+                  }
+                }}
+                disabled={isRunning || isAILoading}
+              >
+                {isAILoading ? '🔄 Treinando...' : '🧠 Treinar IA com Histórico Bybit'}
+              </Button>
             </>
           )}
         </Card>
