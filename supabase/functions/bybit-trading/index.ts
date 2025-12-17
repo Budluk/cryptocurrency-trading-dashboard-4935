@@ -63,6 +63,9 @@ serve(async (req) => {
       case 'get_execution_list':
         result = await getExecutionList(params);
         break;
+      case 'get_klines':
+        result = await getKlines(params);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -454,4 +457,21 @@ async function getExecutionList(params: any) {
   
   const result = await makeBybitRequest('GET', '/v5/execution/list', queryParams);
   return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+}
+
+// Buscar candles (klines) para análise de S/R
+async function getKlines(params: any) {
+  const { symbol, interval = '5', limit = 100, start, end } = params;
+  const queryParams: Record<string, any> = {
+    category: 'linear',
+    symbol,
+    interval, // 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
+    limit
+  };
+  if (start) queryParams.start = start;
+  if (end) queryParams.end = end;
+  
+  // Klines é public endpoint - sem auth
+  const result = await makeBybitRequest('GET', '/v5/market/kline', queryParams, false);
+  return { list: result?.list || [] };
 }
