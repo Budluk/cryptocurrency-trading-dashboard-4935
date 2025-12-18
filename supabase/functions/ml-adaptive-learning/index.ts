@@ -505,9 +505,19 @@ serve(async (req) => {
     // ========================
     // 9. CÁLCULOS FINAIS OTIMIZADOS
     // ========================
-    const avgWin = winningTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / winningTrades.length || 0;
-    const avgLoss = Math.abs(losingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losingTrades.length) || 1;
-    const profitFactor = (avgWin * winningTrades.length) / (avgLoss * losingTrades.length) || 0;
+    // Filtrar trades vencedores e perdedores
+    const winningTrades = allTrades.filter(t => (t.realized_pnl || 0) > 0);
+    const losingTrades = allTrades.filter(t => (t.realized_pnl || 0) < 0);
+    
+    const avgWin = winningTrades.length > 0 
+      ? winningTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / winningTrades.length 
+      : 0;
+    const avgLoss = losingTrades.length > 0 
+      ? Math.abs(losingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losingTrades.length) 
+      : 1;
+    const profitFactor = losingTrades.length > 0 
+      ? (avgWin * winningTrades.length) / (avgLoss * losingTrades.length) 
+      : winningTrades.length > 0 ? 999 : 0;
     const riskRewardRatio = avgLoss > 0 ? avgWin / avgLoss : 2;
     const totalPnl = allTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
 
