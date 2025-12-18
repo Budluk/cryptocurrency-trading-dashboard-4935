@@ -125,26 +125,44 @@ export const useArmedOrders = () => {
     takeProfit: number,
     leverage: number,
     minOrderQty: number,
-    qtyStep: number
+    qtyStep: number,
+    maxOrderQty?: number
   ): { qty: string; expectedProfit: number } => {
     // profit = (|TP - entry| / entry) * qty * entry * leverage
     // MIN_PROFIT = (tpDist%) * qty * entry * leverage
     // qty = MIN_PROFIT / (tpDist% * entry * leverage)
     
     const tpDistPct = Math.abs(takeProfit - entryPrice) / entryPrice;
+    
+    // Evitar divisão por zero
+    if (tpDistPct === 0 || entryPrice === 0 || leverage === 0) {
+      return { qty: minOrderQty.toString(), expectedProfit: 0 };
+    }
+    
     const minQty = MIN_PROFIT_TARGET / (tpDistPct * entryPrice * leverage);
     
+    // Calcular casas decimais corretas baseado no qtyStep
+    const qtyStepStr = qtyStep.toString();
+    const decimalPlaces = qtyStepStr.includes('.') 
+      ? qtyStepStr.split('.')[1].length 
+      : 0;
+    
     // Arredondar para qtyStep (usar floor para evitar qty inválido)
-    const adjustedQty = Math.floor(minQty / qtyStep) * qtyStep;
-    const finalQty = Math.max(adjustedQty, minOrderQty);
+    let adjustedQty = Math.floor(minQty / qtyStep) * qtyStep;
+    
+    // Garantir que qty >= minOrderQty
+    adjustedQty = Math.max(adjustedQty, minOrderQty);
+    
+    // Garantir que qty <= maxOrderQty se definido
+    if (maxOrderQty && adjustedQty > maxOrderQty) {
+      adjustedQty = maxOrderQty;
+    }
+    
+    // Garantir precisão decimal correta
+    const finalQty = Number(adjustedQty.toFixed(decimalPlaces));
     
     // Recalcular expected profit
     const expectedProfit = tpDistPct * finalQty * entryPrice * leverage;
-    
-    // Calcular casas decimais corretas baseado no qtyStep
-    const decimalPlaces = qtyStep.toString().includes('.') 
-      ? qtyStep.toString().split('.')[1].length 
-      : 0;
     
     return {
       qty: finalQty.toFixed(decimalPlaces),
@@ -193,9 +211,10 @@ export const useArmedOrders = () => {
     const lotSizeFilter = instrument.lotSizeFilter || {};
     const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.01');
     const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.01');
+    const maxOrderQty = parseFloat(lotSizeFilter.maxOrderQty || '999999');
     
     const { qty, expectedProfit } = calculateQtyForMinProfit(
-      entryPrice, takeProfit, leverage, minOrderQty, qtyStep
+      entryPrice, takeProfit, leverage, minOrderQty, qtyStep, maxOrderQty
     );
     
     const armedOrder: ArmedOrder = {
@@ -224,7 +243,56 @@ export const useArmedOrders = () => {
     try {
       console.log(`🔫 DISPARANDO ordem armada: ${order.symbol} ${order.side} @ ${order.entryPrice}`);
       
-      // Configurar alavancagem
+      // 1. Verificar saldo disponível primeiro
+      const { data: balanceData } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'get_balance',
+          isTestnet: false,
+          params: { accountType: 'UNIFIED' }
+        }
+      });
+      
+      const availableBalance = parseFloat(
+        balanceData?.data?.list?.[0]?.totalAvailableBalance || '0'
+      );
+      
+      const orderQty = parseFloat(order.qty);
+      const requiredMargin = (orderQty * order.entryPrice) / order.leverage;
+      
+      if (requiredMargin > availableBalance * 0.8) {
+        console.log(`⚠️ ${order.symbol}: Saldo insuficiente. Necessário: $${requiredMargin.toFixed(2)}, Disponível: $${availableBalance.toFixed(2)}`);
+        return false;
+      }
+      
+      // 2. Recalcular SL/TP baseado no preço atual para garantir direção correta
+      let stopLoss = order.stopLoss;
+      let takeProfit = order.takeProfit;
+      const entryPrice = order.entryPrice;
+      
+      // Validar direção do stop loss
+      if (order.side === 'Buy') {
+        // Para BUY: SL deve ser MENOR que entry
+        if (stopLoss >= entryPrice) {
+          stopLoss = entryPrice * (1 - SR_DISTANCE_PCT / 100);
+          console.log(`⚠️ Corrigindo SL para BUY: ${stopLoss.toFixed(4)}`);
+        }
+        // TP deve ser MAIOR que entry
+        if (takeProfit <= entryPrice) {
+          takeProfit = entryPrice * (1 + TP_DISTANCE_PCT / 100);
+        }
+      } else {
+        // Para SELL: SL deve ser MAIOR que entry
+        if (stopLoss <= entryPrice) {
+          stopLoss = entryPrice * (1 + SR_DISTANCE_PCT / 100);
+          console.log(`⚠️ Corrigindo SL para SELL: ${stopLoss.toFixed(4)}`);
+        }
+        // TP deve ser MENOR que entry
+        if (takeProfit >= entryPrice) {
+          takeProfit = entryPrice * (1 - TP_DISTANCE_PCT / 100);
+        }
+      }
+      
+      // 3. Configurar alavancagem
       await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'set_leverage',
@@ -238,7 +306,10 @@ export const useArmedOrders = () => {
         }
       });
       
-      // Colocar ordem limite no nível S/R
+      // 4. Formatar preços corretamente
+      const priceFilter = order.symbol.includes('USDT') ? 4 : 2;
+      
+      // 5. Colocar ordem limite no nível S/R
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: {
           action: 'place_order',
@@ -248,10 +319,10 @@ export const useArmedOrders = () => {
             symbol: order.symbol,
             side: order.side,
             orderType: 'Limit',
-            price: order.entryPrice.toFixed(4),
+            price: entryPrice.toFixed(priceFilter),
             qty: order.qty,
-            stopLoss: order.stopLoss.toFixed(4),
-            takeProfit: order.takeProfit.toFixed(4),
+            stopLoss: stopLoss.toFixed(priceFilter),
+            takeProfit: takeProfit.toFixed(priceFilter),
             timeInForce: 'GTC',
             positionIdx: 0,
             reduceOnly: false
@@ -276,8 +347,8 @@ export const useArmedOrders = () => {
           entry_price: order.entryPrice,
           qty: parseFloat(order.qty),
           leverage: order.leverage,
-          stop_loss: order.stopLoss,
-          take_profit: order.takeProfit,
+          stop_loss: stopLoss,
+          take_profit: takeProfit,
           status: 'OPEN',
           order_source: 'armed_sr',
           confidence: order.srType === 'support' ? 75 : 70
@@ -286,6 +357,7 @@ export const useArmedOrders = () => {
         return true;
       }
       
+      console.error(`❌ Erro Bybit:`, data?.error);
       return false;
     } catch (err) {
       console.error(`❌ Erro ao disparar ordem armada:`, err);
