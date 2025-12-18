@@ -134,15 +134,20 @@ export const useArmedOrders = () => {
     const tpDistPct = Math.abs(takeProfit - entryPrice) / entryPrice;
     const minQty = MIN_PROFIT_TARGET / (tpDistPct * entryPrice * leverage);
     
-    // Arredondar para qtyStep
-    const adjustedQty = Math.ceil(minQty / qtyStep) * qtyStep;
+    // Arredondar para qtyStep (usar floor para evitar qty inválido)
+    const adjustedQty = Math.floor(minQty / qtyStep) * qtyStep;
     const finalQty = Math.max(adjustedQty, minOrderQty);
     
     // Recalcular expected profit
     const expectedProfit = tpDistPct * finalQty * entryPrice * leverage;
     
+    // Calcular casas decimais corretas baseado no qtyStep
+    const decimalPlaces = qtyStep.toString().includes('.') 
+      ? qtyStep.toString().split('.')[1].length 
+      : 0;
+    
     return {
-      qty: finalQty.toFixed(6).replace(/\.?0+$/, ''),
+      qty: finalQty.toFixed(decimalPlaces),
       expectedProfit
     };
   }, []);

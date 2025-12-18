@@ -66,6 +66,9 @@ serve(async (req) => {
       case 'get_klines':
         result = await getKlines(params);
         break;
+      case 'set_trading_stop':
+        result = await setTradingStop(params);
+        break;
       default:
         throw new Error(`Unknown action: ${action}`);
     }
