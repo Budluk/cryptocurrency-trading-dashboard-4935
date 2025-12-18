@@ -211,8 +211,106 @@ async function getPositions() {
   return result?.list || [];
 }
 
+type LotSizeMeta = {
+  qtyStep: number;
+  minOrderQty: number;
+  maxOrderQty?: number;
+  decimals: number;
+  qtyStepRaw: string;
+  minOrderQtyRaw: string;
+  maxOrderQtyRaw?: string;
+};
+
+function decimalsFromStep(stepStr: string): number {
+  if (!stepStr.includes('.')) return 0;
+  const frac = stepStr.split('.')[1] ?? '';
+  // If exchange returns 0.0100, treat as 0.01 (2 decimals)
+  const trimmed = frac.replace(/0+$/, '');
+  return trimmed.length;
+}
+
+function floorToStep(value: number, step: number): number {
+  // small epsilon to reduce floating precision issues
+  return Math.floor((value + 1e-12) / step) * step;
+}
+
+async function getLotSizeMeta(symbol: string): Promise<LotSizeMeta | null> {
+  try {
+    const list = await getInstruments(symbol);
+    const instrument = list?.[0];
+    const lot = instrument?.lotSizeFilter;
+
+    const qtyStepRaw = lot?.qtyStep ? String(lot.qtyStep) : '';
+    const minOrderQtyRaw = lot?.minOrderQty ? String(lot.minOrderQty) : '';
+    const maxOrderQtyRaw = lot?.maxOrderQty ? String(lot.maxOrderQty) : undefined;
+
+    const qtyStep = Number(qtyStepRaw);
+    const minOrderQty = Number(minOrderQtyRaw);
+    const maxOrderQty = maxOrderQtyRaw !== undefined ? Number(maxOrderQtyRaw) : undefined;
+
+    if (!Number.isFinite(qtyStep) || qtyStep <= 0) return null;
+
+    return {
+      qtyStep,
+      minOrderQty: Number.isFinite(minOrderQty) && minOrderQty > 0 ? minOrderQty : qtyStep,
+      maxOrderQty: Number.isFinite(maxOrderQty as number) && (maxOrderQty as number) > 0 ? (maxOrderQty as number) : undefined,
+      decimals: decimalsFromStep(qtyStepRaw),
+      qtyStepRaw,
+      minOrderQtyRaw,
+      maxOrderQtyRaw,
+    };
+  } catch (e) {
+    console.log('Lot size fetch warning:', e?.message ?? String(e));
+    return null;
+  }
+}
+
+function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boolean): string {
+  let q = floorToStep(rawQty, meta.qtyStep);
+
+  if (meta.minOrderQty && q < meta.minOrderQty) {
+    // If floor dropped below min but raw was >= min, bump to min.
+    if (rawQty >= meta.minOrderQty) {
+      q = meta.minOrderQty;
+    } else {
+      // For reduceOnly, never increase qty beyond what caller requested.
+      if (reduceOnly) {
+        throw new Error(`Qty ${rawQty} below minOrderQty ${meta.minOrderQty} for ${meta.qtyStepRaw} step`);
+      }
+      q = meta.minOrderQty;
+    }
+  }
+
+  if (meta.maxOrderQty && q > meta.maxOrderQty) {
+    q = meta.maxOrderQty;
+  }
+
+  // Avoid -0.00
+  if (Object.is(q, -0)) q = 0;
+
+  return q.toFixed(meta.decimals);
+}
+
 async function placeOrder(params: any) {
-  const { symbol, side, qty, orderType = 'Market', stopLoss, takeProfit, leverage } = params;
+  const {
+    symbol,
+    side,
+    qty,
+    orderType = 'Market',
+    stopLoss,
+    takeProfit,
+    leverage,
+    reduceOnly,
+    positionIdx,
+  } = params;
+
+  if (!symbol) throw new Error('place_order: symbol is required');
+  if (side !== 'Buy' && side !== 'Sell') throw new Error(`place_order: invalid side '${side}'`);
+
+  const rawQty = Number(qty);
+  if (!Number.isFinite(rawQty) || rawQty <= 0) {
+    throw new Error(`place_order: invalid qty '${qty}'`);
+  }
 
   if (leverage) {
     try {
@@ -222,16 +320,31 @@ async function placeOrder(params: any) {
     }
   }
 
+  // Normalize qty to instrument filters (prevents Bybit retCode=10001 "Qty invalid")
+  let qtyStr = String(qty);
+  const lotMeta = await getLotSizeMeta(symbol);
+  if (lotMeta) {
+    qtyStr = normalizeQtyString(rawQty, lotMeta, !!reduceOnly);
+    console.log(
+      `Qty normalized for ${symbol}: raw=${rawQty} -> ${qtyStr} (step=${lotMeta.qtyStepRaw}, min=${lotMeta.minOrderQtyRaw}) reduceOnly=${!!reduceOnly}`
+    );
+  }
+
   // 1) Cria a ordem SEM SL/TP para evitar erro de base_price (slippage em Market)
   const orderParams: Record<string, any> = {
     category: 'linear',
     symbol,
     side,
     orderType,
-    qty: String(qty),
+    qty: qtyStr,
     timeInForce: 'GTC',
-    positionIdx: 0,
+    positionIdx: Number.isFinite(Number(positionIdx)) ? Number(positionIdx) : 0,
   };
+
+  // Respect reduceOnly when caller is trying to close/partial close
+  if (reduceOnly !== undefined) {
+    orderParams.reduceOnly = !!reduceOnly;
+  }
 
   console.log('Order params:', JSON.stringify(orderParams));
   const orderResult = await makeBybitRequest('POST', '/v5/order/create', orderParams);
