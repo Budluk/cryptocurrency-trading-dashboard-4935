@@ -85,48 +85,53 @@ export function MLAdaptiveSettings() {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       addLog(`⏱️ Resposta recebida em ${elapsed}s`);
       
-      if (error) {
-        addLog(`❌ Erro na função: ${error.message}`);
-        throw error;
-      }
+       if (error) {
+         addLog(`❌ Erro na função: ${error.message}`);
+         setTrainingStatus({ step: 'Erro', progress: 100, details: error.message });
+         toast.error(error.message);
+         return;
+       }
       
-      addLog(`📦 Dados recebidos: ${JSON.stringify(data).substring(0, 100)}...`);
-      
-      if (data.success) {
-        // Show data sources
-        const dataSources = data.analysis?.dataSources || {};
-        addLog(`✅ Bybit: ${dataSources.bybitTrades || 0} trades carregados`);
-        setTrainingStatus({ step: 'Database', progress: 40, details: 'Carregando trades do banco de dados...' });
-        await new Promise(r => setTimeout(r, 200));
-        
-        addLog(`✅ Database: ${dataSources.dbTrades || 0} trades carregados`);
-        addLog(`📊 Total: ${data.analysis.totalTrades} trades únicos para análise`);
-        
-        setTrainingStatus({ step: 'Processando', progress: 60, details: 'Calculando métricas de performance...' });
-        await new Promise(r => setTimeout(r, 200));
-        addLog('🧮 Calculando win rate, profit factor, drawdown...');
-        
-        setTrainingStatus({ step: 'IA Analysis', progress: 75, details: 'IA analisando padrões...' });
-        await new Promise(r => setTimeout(r, 200));
-        addLog('🤖 IA processando padrões de stop loss...');
-        addLog('🤖 IA identificando melhores horários...');
-        addLog('🤖 IA calculando alavancagem ideal...');
-        
-        setTrainingStatus({ step: 'Salvando', progress: 90, details: 'Salvando configurações otimizadas...' });
-        await new Promise(r => setTimeout(r, 200));
-        addLog('💾 Salvando parâmetros otimizados no banco...');
-        
-        setTrainingStatus({ step: 'Concluído', progress: 100, details: 'Treinamento finalizado!' });
-        addLog(`✨ Análise concluída com sucesso!`);
-        addLog(`📈 Confiança: ${data.analysis.confidenceScore}%`);
-        
-        toast.success(`Análise concluída! ${data.analysis.totalTrades} trades analisados`);
-        queryClient.invalidateQueries({ queryKey: ['ml-adaptive-config'] });
-      } else {
-        addLog(`⚠️ ${data.message || 'Dados insuficientes para análise'}`);
-        setTrainingStatus({ step: 'Aviso', progress: 100, details: data.message || 'Dados insuficientes' });
-        toast.warning(data.message || 'Dados insuficientes');
-      }
+       addLog(`📦 Dados recebidos: ${JSON.stringify(data).substring(0, 120)}...`);
+
+       if (data?.success) {
+         const ds = data.dataSource || {};
+
+         // Show data sources
+         addLog(`✅ Bybit: ${ds.bybitTrades ?? 0} trades carregados`);
+         setTrainingStatus({ step: 'Database', progress: 40, details: 'Carregando trades do banco de dados...' });
+         await new Promise(r => setTimeout(r, 200));
+
+         addLog(`✅ Database: ${ds.internalTrades ?? 0} trades carregados`);
+         addLog(`📊 Total: ${ds.totalAnalyzed ?? 0} trades únicos para análise`);
+
+         setTrainingStatus({ step: 'Processando', progress: 60, details: 'Calculando métricas de performance...' });
+         await new Promise(r => setTimeout(r, 200));
+
+         if (data.performance) {
+           addLog(`🧮 Win rate: ${data.performance.winRate}% | PF: ${data.performance.profitFactor} | PnL: $${data.performance.totalPnl}`);
+         }
+
+         setTrainingStatus({ step: 'Salvando', progress: 90, details: 'Salvando configurações otimizadas...' });
+         await new Promise(r => setTimeout(r, 200));
+         addLog('💾 Config ML salva no banco.');
+
+         setTrainingStatus({ step: 'Concluído', progress: 100, details: 'Treinamento finalizado!' });
+         addLog(`✨ ${data.message || 'Análise concluída com sucesso!'}`);
+
+         const confidence = data.config?.confidence_score;
+         if (typeof confidence === 'number') {
+           addLog(`📈 Confiança: ${confidence.toFixed(0)}%`);
+         }
+
+         toast.success(`Análise concluída! ${ds.totalAnalyzed ?? 0} trades analisados`);
+         queryClient.invalidateQueries({ queryKey: ['ml-adaptive-config'] });
+       } else {
+         const msg = data?.message || data?.error || 'Dados insuficientes para análise';
+         addLog(`⚠️ ${msg}`);
+         setTrainingStatus({ step: 'Aviso', progress: 100, details: msg });
+         toast.warning(msg);
+       }
     } catch (error) {
       console.error('Analysis error:', error);
       addLog(`❌ Erro: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
@@ -154,7 +159,7 @@ export function MLAdaptiveSettings() {
   const dynamicTP = patterns?.dynamicTP;
   const learningMetrics = patterns?.learningMetrics;
   const insights = patterns?.insights || [];
-  const dataSources = patterns?.dataSources;
+  const dataSources = patterns?.dataSource;
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-card to-card/80">
@@ -233,14 +238,14 @@ export function MLAdaptiveSettings() {
           <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/20 text-xs">
             <div className="flex items-center gap-1">
               <Cloud className="h-3 w-3 text-primary" />
-              <span>Bybit: {dataSources.bybitTrades || 0}</span>
+              <span>Bybit: {dataSources.bybitTrades ?? 0}</span>
             </div>
             <div className="flex items-center gap-1">
               <Database className="h-3 w-3 text-primary" />
-              <span>DB: {dataSources.dbTrades || 0}</span>
+              <span>DB: {dataSources.internalTrades ?? 0}</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground">
-              = {dataSources.totalUnique || mlConfig.trades_analyzed} únicos
+              = {dataSources.totalAnalyzed ?? mlConfig.trades_analyzed} únicos
             </div>
           </div>
         )}
