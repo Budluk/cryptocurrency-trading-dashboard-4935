@@ -1386,9 +1386,10 @@ export const MultiAssetTrader = () => {
                   toast({ title: "❌ Erro no ML", description: error.message, variant: "destructive" });
                   return;
                 }
-                if (data.success) {
+                if (data?.success) {
                   setMlConfig(data.config);
-                  toast({ title: "🧠 ML Configurado!", description: `Leverage: ${data.recommendations.leverage}x` });
+                  const lev = data.config?.recommended_leverage ?? data.leverage?.optimal;
+                  toast({ title: "🧠 ML Configurado!", description: `Leverage: ${lev ?? '—'}x` });
                 }
               }}
               disabled={isRunning}

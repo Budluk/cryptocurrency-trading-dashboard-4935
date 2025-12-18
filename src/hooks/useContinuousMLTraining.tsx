@@ -268,10 +268,11 @@ export const useContinuousMLTraining = () => {
         return null;
       }
 
-      toast({
-        title: "✅ Treinamento Concluído",
-        description: `${data.tradesCount || 0} trades analisados`,
-      });
+       const total = data?.dataSource?.totalAnalyzed ?? data?.config?.trades_analyzed ?? 0;
+       toast({
+         title: "✅ Treinamento Concluído",
+         description: `${total} trades analisados`,
+       });
 
       return data;
 
