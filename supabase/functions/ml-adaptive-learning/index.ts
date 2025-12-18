@@ -521,6 +521,14 @@ serve(async (req) => {
     const riskRewardRatio = avgLoss > 0 ? avgWin / avgLoss : 2;
     const totalPnl = allTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
 
+    // Calcular média de movimentos de preço para stops e TPs
+    const avgLossMove = stopAnalysis.stoppedOutTrades.length > 0 
+      ? stopAnalysis.stoppedOutTrades.reduce((sum, t) => sum + (t.priceMove || 0), 0) / stopAnalysis.stoppedOutTrades.length 
+      : 0.3;
+    const avgWinMove = stopAnalysis.optimalTPs.length > 0 
+      ? stopAnalysis.optimalTPs.reduce((sum, val) => sum + val, 0) / stopAnalysis.optimalTPs.length 
+      : 0.5;
+
     // Stop otimizado baseado nos dados reais
     const baseStop = Math.max(avgLossMove * 0.8, stopAnalysis.avgVolatility * 0.5);
     const optimizedStop = Math.min(Math.max(baseStop, 0.5), 2.5);
