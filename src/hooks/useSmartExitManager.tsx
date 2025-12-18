@@ -140,7 +140,23 @@ export function useSmartExitManager() {
 
     // Primeira saída: 50% quando atingir firstExitPct
     if (profitPct >= config.firstExitPct && !executed.includes(1)) {
-      const exitQty = position.size * config.firstExitSize;
+      // Buscar instrumento para obter qtyStep
+      const { data: instData } = await supabase.functions.invoke('bybit-trading', {
+        body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
+      });
+      
+      const instrument = instData?.data?.list?.[0];
+      const lotSizeFilter = instrument?.lotSizeFilter || {};
+      const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.001');
+      const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.001');
+      
+      // Calcular e formatar qty corretamente
+      let exitQty = Math.floor((position.size * config.firstExitSize) / qtyStep) * qtyStep;
+      exitQty = Math.max(exitQty, minOrderQty);
+      
+      const qtyStepStr = qtyStep.toString();
+      const decimalPlaces = qtyStepStr.includes('.') ? qtyStepStr.split('.')[1].length : 0;
+      const exitQtyStr = exitQty.toFixed(decimalPlaces);
       
       console.log(`📊 SAÍDA PARCIAL 1: ${position.symbol} - Fechando ${(config.firstExitSize * 100)}% @ ${profitPct.toFixed(2)}% lucro`);
       
@@ -154,7 +170,7 @@ export function useSmartExitManager() {
               symbol: position.symbol,
               side: position.side === 'Buy' ? 'Sell' : 'Buy',
               orderType: 'Market',
-              qty: exitQty.toString(),
+              qty: exitQtyStr,
               reduceOnly: true,
               positionIdx: 0,
             }
@@ -186,7 +202,23 @@ export function useSmartExitManager() {
 
     // Segunda saída: resto quando atingir secondExitPct
     if (profitPct >= config.secondExitPct && executed.includes(1) && !executed.includes(2)) {
-      const exitQty = position.size * config.secondExitSize;
+      // Buscar instrumento para obter qtyStep
+      const { data: instData } = await supabase.functions.invoke('bybit-trading', {
+        body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
+      });
+      
+      const instrument = instData?.data?.list?.[0];
+      const lotSizeFilter = instrument?.lotSizeFilter || {};
+      const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.001');
+      const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.001');
+      
+      // Calcular e formatar qty corretamente
+      let exitQty = Math.floor((position.size * config.secondExitSize) / qtyStep) * qtyStep;
+      exitQty = Math.max(exitQty, minOrderQty);
+      
+      const qtyStepStr = qtyStep.toString();
+      const decimalPlaces = qtyStepStr.includes('.') ? qtyStepStr.split('.')[1].length : 0;
+      const exitQtyStr = exitQty.toFixed(decimalPlaces);
       
       console.log(`📊 SAÍDA PARCIAL 2: ${position.symbol} - Fechando ${(config.secondExitSize * 100)}% @ ${profitPct.toFixed(2)}% lucro`);
       
@@ -200,7 +232,7 @@ export function useSmartExitManager() {
               symbol: position.symbol,
               side: position.side === 'Buy' ? 'Sell' : 'Buy',
               orderType: 'Market',
-              qty: exitQty.toString(),
+              qty: exitQtyStr,
               reduceOnly: true,
               positionIdx: 0,
             }
