@@ -1038,14 +1038,34 @@ export const MultiAssetTrader = () => {
           : ((position.entry_price - currentPrice) / position.entry_price) * 100;
         
         if (pnlPercent >= threshold) {
-          const addQty = (tracking?.originalQty || position.qty) * 0.5;
+          // Calcular qty com formatação correta
+          const baseQty = (tracking?.originalQty || position.qty) * 0.5;
+          
+          // Buscar instrumento para obter qtyStep
+          const { data: instData } = await supabase.functions.invoke('bybit-trading', {
+            body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
+          });
+          
+          const instrument = instData?.data?.list?.[0];
+          const lotSizeFilter = instrument?.lotSizeFilter || {};
+          const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.001');
+          const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.001');
+          
+          // Arredondar qty para qtyStep
+          let addQty = Math.floor(baseQty / qtyStep) * qtyStep;
+          addQty = Math.max(addQty, minOrderQty);
+          
+          // Formatar com casas decimais corretas
+          const qtyStepStr = qtyStep.toString();
+          const decimalPlaces = qtyStepStr.includes('.') ? qtyStepStr.split('.')[1].length : 0;
+          const addQtyStr = addQty.toFixed(decimalPlaces);
           
           const { data: addOrder, error } = await supabase.functions.invoke('bybit-trading', {
             body: {
               action: 'place_order', isTestnet: false,
               params: {
                 category: 'linear', symbol: position.symbol, side: position.side,
-                orderType: 'Market', qty: addQty.toString(),
+                orderType: 'Market', qty: addQtyStr,
                 timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
               }
             }
