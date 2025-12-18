@@ -508,7 +508,8 @@ serve(async (req) => {
     // Filtrar trades vencedores e perdedores
     const winningTrades = allTrades.filter(t => (t.realized_pnl || 0) > 0);
     const losingTrades = allTrades.filter(t => (t.realized_pnl || 0) < 0);
-    
+
+    const winRate = allTrades.length > 0 ? (winningTrades.length / allTrades.length) * 100 : 0;
     const avgWin = winningTrades.length > 0 
       ? winningTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / winningTrades.length 
       : 0;
