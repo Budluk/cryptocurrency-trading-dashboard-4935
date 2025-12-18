@@ -874,18 +874,41 @@ export const MultiAssetTrader = () => {
           
           if (!leverageSuccess) continue;
 
-          // Executar ordem
-          const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
-            body: {
-              action: 'place_order', isTestnet: false,
-              params: {
-                category: 'linear', symbol,
-                side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
-                orderType: 'Market', qty: qtyStr,
-                stopLoss, takeProfit,
-                timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
-              }
+          // Executar ordem - MODO ARMADO usa Limit, senão Market
+          let orderType: 'Market' | 'Limit' = 'Market';
+          let limitPrice: string | undefined;
+          
+          if (armedModeEnabled) {
+            // 🎯 MODO ARMADO: Ordem Limit em nível melhor que preço atual
+            // Para BUY: entrada abaixo do preço (esperar pullback)
+            // Para SELL: entrada acima do preço (esperar pullback)
+            const pullbackPct = 0.0008; // 0.08% pullback para melhor entrada
+            
+            if (analysisResult.action === 'BUY') {
+              limitPrice = (currentPrice * (1 - pullbackPct)).toFixed(6);
+            } else {
+              limitPrice = (currentPrice * (1 + pullbackPct)).toFixed(6);
             }
+            
+            orderType = 'Limit';
+            console.log(`🎯 ORDEM LIMITE ARMADA: ${symbol} ${analysisResult.action} @ ${limitPrice} (atual: ${currentPrice.toFixed(4)})`);
+          }
+          
+          const orderParams: Record<string, any> = {
+            category: 'linear', symbol,
+            side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+            orderType, qty: qtyStr,
+            stopLoss, takeProfit,
+            timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
+          };
+          
+          // Adicionar preço limite se modo armado
+          if (orderType === 'Limit' && limitPrice) {
+            orderParams.price = limitPrice;
+          }
+          
+          const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
+            body: { action: 'place_order', isTestnet: false, params: orderParams }
           });
 
           if (!orderError && orderData?.success) {
@@ -894,6 +917,10 @@ export const MultiAssetTrader = () => {
             if (analysisResult.action === 'BUY') buyCountThisCycle++;
             if (analysisResult.action === 'SELL') sellCountThisCycle++;
             
+            // 🎯 Status diferente para ordens limite vs market
+            const orderStatus = orderType === 'Limit' ? 'PENDING' : 'OPEN';
+            const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : currentPrice;
+            
             const tradeLog = {
               timestamp: new Date().toISOString(),
               symbol, side: analysisResult.action, leverage: finalLeverage,
@@ -901,20 +928,24 @@ export const MultiAssetTrader = () => {
               signalScore: analysisResult.signalScore,
               signalQuality: analysisResult.signalQuality,
               exposure: exposureData.exposurePercent.toFixed(1),
-              volRisk: volRisk.riskLevel
+              volRisk: volRisk.riskLevel,
+              orderType,
+              limitPrice: limitPrice || null
             };
-            console.log(`✅ TRADE:`, JSON.stringify(tradeLog));
+            console.log(`✅ ${orderType === 'Limit' ? '🎯 LIMITE ARMADA' : 'TRADE'}:`, JSON.stringify(tradeLog));
             
             const saveUserId = await getUserId();
             await supabase.from('auto_trader_positions').insert({
               user_id: saveUserId, symbol,
               side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
-              entry_price: currentPrice, qty, leverage: finalLeverage,
+              entry_price: entryPrice, qty, leverage: finalLeverage,
               stop_loss: parseFloat(stopLoss), take_profit: parseFloat(takeProfit),
               trailing_stop_percentage: calculateDynamicTrailingStop(volatility),
-              highest_price: currentPrice, volatility,
+              highest_price: entryPrice, volatility,
               partial_tp_executed: false, original_quantity: qty,
-              confidence: analysisResult.signalScore, status: 'OPEN',
+              confidence: analysisResult.signalScore, 
+              status: orderStatus,
+              order_source: orderType === 'Limit' ? 'armed_limit' : 'market',
               exchange_order_id: orderData.data?.orderId
             });
             

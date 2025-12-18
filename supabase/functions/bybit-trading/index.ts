@@ -297,6 +297,7 @@ async function placeOrder(params: any) {
     side,
     qty,
     orderType = 'Market',
+    price, // 🎯 Preço limite para ordens Limit
     stopLoss,
     takeProfit,
     leverage,
@@ -310,6 +311,11 @@ async function placeOrder(params: any) {
   const rawQty = Number(qty);
   if (!Number.isFinite(rawQty) || rawQty <= 0) {
     throw new Error(`place_order: invalid qty '${qty}'`);
+  }
+
+  // Validar preço para ordens Limit
+  if (orderType === 'Limit' && !price) {
+    throw new Error('place_order: price is required for Limit orders');
   }
 
   if (leverage) {
@@ -330,7 +336,7 @@ async function placeOrder(params: any) {
     );
   }
 
-  // 1) Cria a ordem SEM SL/TP para evitar erro de base_price (slippage em Market)
+  // 1) Cria a ordem
   const orderParams: Record<string, any> = {
     category: 'linear',
     symbol,
@@ -340,6 +346,12 @@ async function placeOrder(params: any) {
     timeInForce: 'GTC',
     positionIdx: Number.isFinite(Number(positionIdx)) ? Number(positionIdx) : 0,
   };
+
+  // 🎯 Adicionar preço para ordens Limit
+  if (orderType === 'Limit' && price) {
+    orderParams.price = String(price);
+    console.log(`📋 ORDEM LIMITE: ${symbol} ${side} @ ${price}`);
+  }
 
   // Respect reduceOnly when caller is trying to close/partial close
   if (reduceOnly !== undefined) {
