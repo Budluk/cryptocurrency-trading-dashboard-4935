@@ -134,11 +134,11 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ Calcular Stop Loss e Take Profit - CONSERVADOR para reduzir perdas
+  // 🛡️ Calcular Stop Loss e Take Profit - CORRIGIDO PARA VOLATILIDADE REAL
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
-    atrPercent: number,
+    atrPercent: number, // ATR em % (ex: 5.0 = 5%)
     isScalpAsset: boolean,
     mlConfig: any,
     highPrice?: number,
@@ -149,37 +149,46 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🎯 R:R 1:2.5+ PARA COMPENSAR WIN RATE BAIXO (~38%)
-    // Com 38% win rate, precisa R:R >= 2.5 para lucrar
-    // Scalp: 0.10% SL, 0.25% TP (1:2.5 R:R)
-    // Normal: 0.12% SL, 0.30% TP (1:2.5 R:R)
-    const maxSL = isScalpAsset ? 0.001 : 0.0012;  // 0.10% scalp, 0.12% normal
-    const maxTP = isScalpAsset ? 0.0025 : 0.003;  // 0.25% scalp, 0.30% normal
-    const minSL = 0.0008; // Mínimo 0.08%
+    // 🔧 CORREÇÃO CRÍTICA: SL baseado em ATR/volatilidade REAL
+    // SL deve ser ~20-30% do ATR para não ser atingido por ruído normal
+    // Mínimo absoluto: 0.3% para cobrir spread + slippage
+    // Máximo: 1.5% para limitar risco
+    
+    const volatilityBasedSL = atrPercent * 0.25; // 25% do ATR
+    const minSL = 0.003; // 0.3% mínimo
+    const maxSL = 0.015; // 1.5% máximo
+    
+    // 🎯 R:R 1:2.5+ PARA COMPENSAR WIN RATE (~38%)
+    const targetRR = 2.5;
 
-    // USAR TOPOS/FUNDOS SE DISPONÍVEIS, mas com limites rígidos
+    // USAR TOPOS/FUNDOS SE DISPONÍVEIS para stops estruturais
     if (highPrice && lowPrice && highPrice > lowPrice) {
       const { swingStop, swingTarget } = findSwingLevels(highPrice, lowPrice, currentPrice, action);
       
       const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
       const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
       
-      // Forçar limites conservadores mesmo com swing levels
+      // Usar swing levels mas dentro dos limites
       stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct));
-      takeProfitPct = Math.max(stopLossPct * 1.5, Math.min(maxTP, swingTargetPct));
+      // TP deve manter R:R mínimo
+      takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 3, swingTargetPct));
     } else {
-      // Fallback: usar valores fixos conservadores
+      // Fallback: usar ATR/volatilidade
       if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
-        // ML limitado a valores conservadores
-        stopLossPct = Math.min(mlConfig.recommended_stop_loss_pct / 100, maxSL);
-        takeProfitPct = Math.min(mlConfig.recommended_take_profit_pct / 100, maxTP);
-      } else if (isScalpAsset) {
-        stopLossPct = 0.0025; // 0.25%
-        takeProfitPct = 0.004; // 0.4%
+        // ML pode sugerir valores, mas limitados
+        stopLossPct = Math.max(minSL, Math.min(maxSL, mlConfig.recommended_stop_loss_pct / 100));
+        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 3, mlConfig.recommended_take_profit_pct / 100));
       } else {
-        stopLossPct = 0.004; // 0.4%
-        takeProfitPct = 0.006; // 0.6%
+        // Usar volatilidade
+        stopLossPct = Math.max(minSL, Math.min(maxSL, volatilityBasedSL / 100));
+        takeProfitPct = stopLossPct * targetRR;
       }
+    }
+    
+    // Scalp assets podem ter stops menores (mas não menos que 0.25%)
+    if (isScalpAsset) {
+      stopLossPct = Math.max(0.0025, stopLossPct * 0.8); // 0.25% mínimo
+      takeProfitPct = stopLossPct * targetRR;
     }
     
     // Aplicar stops
@@ -193,7 +202,7 @@ export const useTradingCalculations = () => {
     
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
     
-    console.log(`🎯 ${action} SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}%`);
+    console.log(`🎯 ${action} ATR: ${atrPercent.toFixed(1)}% → SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}% | R:R ${(takeProfitPct/stopLossPct).toFixed(1)}:1`);
     
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
