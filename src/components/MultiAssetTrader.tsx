@@ -469,6 +469,12 @@ export const MultiAssetTrader = () => {
       // tickers data is array directly in data field
       const tickers = Array.isArray(tickerData.data) ? tickerData.data : (tickerData.data?.list || []);
       console.log(`📈 ${tickers.length} tickers recebidos`);
+
+      // Map rápido para monitorar ordens armadas (S/R)
+      const tickersMap = new Map<string, { lastPrice: string }>();
+      for (const t of tickers) {
+        if (t?.symbol && t?.lastPrice) tickersMap.set(t.symbol, { lastPrice: t.lastPrice });
+      }
       
       // === FILTRO AVANÇADO DE ATIVOS PARA SCALPING ===
       const assetsWithVolatility = tradableAssets.map((instrument: any) => {
@@ -581,6 +587,34 @@ export const MultiAssetTrader = () => {
         .slice(0, 30);
       
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
+
+      // 🎯 ORDENS ARMADAS (S/R): armar + disparar a cada ciclo com base nos tickers atuais
+      if (armedModeEnabled) {
+        try {
+          // 1) Disparar ordens já armadas quando o preço encostar no nível
+          await checkArmedOrdersForTrigger(tickersMap);
+
+          // 2) Armar novas ordens S/R (rate-limit de 5min/símbolo já existe no hook)
+          const baseArmedLev = mlConfig?.recommended_leverage
+            ? Number(mlConfig.recommended_leverage)
+            : getLeverageForBalance(balanceNow, historicalWinRate);
+          const armedLeverage = Math.max(5, Math.min(25, Math.floor(baseArmedLev)));
+
+          await checkAndArmOrders(
+            topVolatileAssets.map(a => ({
+              symbol: a.instrument.symbol,
+              ticker: a.ticker,
+              instrument: a.instrument,
+            })),
+            armedLeverage
+          );
+
+          // 3) Limpeza simples para não acumular ordens antigas
+          cleanupOldOrders();
+        } catch (err) {
+          console.log('⚠️ Falha no monitor de ordens armadas:', err);
+        }
+      }
       
       // 🆕 VERIFICAR SE TEM ATIVOS PARA ESTA HORA
       const currentHourUTC = new Date().getUTCHours();
