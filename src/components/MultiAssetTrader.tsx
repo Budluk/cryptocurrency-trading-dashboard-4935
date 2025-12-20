@@ -273,12 +273,12 @@ export const MultiAssetTrader = () => {
       // Buscar posições fechadas sem PnL
       const { data: closedWithoutPnl, error: fetchError } = await supabase
         .from('auto_trader_positions')
-        .select('id, symbol, side, leverage, closed_at, entry_price, qty')
+        .select('id, symbol, side, leverage, closed_at, entry_price, exit_price, qty')
         .eq('user_id', userId)
         .eq('status', 'CLOSED')
         .is('realized_pnl', null)
         .order('closed_at', { ascending: false })
-        .limit(30);
+        .limit(50);
 
       if (fetchError) {
         console.error('❌ Erro ao buscar posições:', fetchError);
@@ -286,68 +286,87 @@ export const MultiAssetTrader = () => {
       }
 
       if (!closedWithoutPnl?.length) {
-        console.log('✅ Todas posições têm PnL sincronizado');
-        return;
+        return; // Silencioso quando não há nada para sincronizar
       }
 
       console.log(`🔄 Sincronizando PnL de ${closedWithoutPnl.length} posições...`);
 
-      // Buscar PnL real do Bybit (últimos 100 registros)
+      // Buscar PnL real do Bybit (últimos 200 registros)
       const { data: bybitPnL, error: apiError } = await supabase.functions.invoke('bybit-trading', {
         body: { 
           action: 'get_closed_pnl', 
           isTestnet: false, 
-          params: { category: 'linear', limit: 100 } 
+          params: { category: 'linear', limit: 200 } 
         }
       });
 
-      if (apiError || !bybitPnL?.success) {
-        console.error('❌ Erro ao buscar PnL do Bybit:', apiError || bybitPnL?.error);
-        return;
-      }
-
-      const pnlList = bybitPnL.data?.list || [];
+      const pnlList = (!apiError && bybitPnL?.success) ? (bybitPnL.data?.list || []) : [];
       console.log(`📊 Bybit retornou ${pnlList.length} registros de PnL`);
-
-      if (pnlList.length === 0) {
-        console.log('⚠️ Nenhum PnL encontrado no Bybit');
-        return;
-      }
 
       let syncedCount = 0;
       
       for (const pos of closedWithoutPnl) {
-        // Tentar encontrar correspondência por símbolo (Bybit pode ter múltiplos trades por símbolo)
+        let realizedPnl: number | null = null;
+        let closeReason = 'UNKNOWN';
+
+        // 1. Tentar encontrar no Bybit por símbolo + tempo
         const symbolMatches = pnlList.filter((p: any) => p.symbol === pos.symbol);
         
-        if (symbolMatches.length === 0) {
-          console.log(`⚠️ Nenhum PnL encontrado para ${pos.symbol}`);
-          continue;
-        }
-
-        // Pegar o mais recente para o símbolo, ou tentar match por tempo
-        let matchingPnl = symbolMatches[0]; // Mais recente por padrão
-        
-        // Se temos closed_at, tentar match mais preciso
-        if (pos.closed_at) {
+        if (symbolMatches.length > 0 && pos.closed_at) {
           const posCloseTime = new Date(pos.closed_at).getTime();
           
-          // Encontrar o match mais próximo no tempo (tolerance de 5 minutos)
+          // Encontrar o match mais próximo no tempo (tolerance de 10 minutos)
+          let bestMatch = symbolMatches[0];
+          let bestDiff = Infinity;
+          
           for (const pnl of symbolMatches) {
             const pnlTime = parseInt(pnl.updatedTime);
-            if (Math.abs(pnlTime - posCloseTime) < 300000) { // 5 min tolerance
-              matchingPnl = pnl;
-              break;
+            const diff = Math.abs(pnlTime - posCloseTime);
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              bestMatch = pnl;
             }
+          }
+          
+          // Se encontrou match dentro de 10 min, usar
+          if (bestDiff < 600000) {
+            realizedPnl = parseFloat(bestMatch.closedPnl);
+            closeReason = bestMatch.execType || 'BYBIT';
           }
         }
 
-        const realizedPnl = parseFloat(matchingPnl.closedPnl);
+        // 2. Se não encontrou no Bybit, CALCULAR manualmente
+        if (realizedPnl === null && pos.entry_price && pos.exit_price && pos.qty) {
+          const entryPrice = parseFloat(String(pos.entry_price));
+          const exitPrice = parseFloat(String(pos.exit_price));
+          const qty = parseFloat(String(pos.qty));
+          const leverage = pos.leverage || 1;
+          
+          if (pos.side === 'Buy') {
+            // Long: lucro quando preço sobe
+            realizedPnl = (exitPrice - entryPrice) * qty;
+          } else {
+            // Short: lucro quando preço desce
+            realizedPnl = (entryPrice - exitPrice) * qty;
+          }
+          
+          closeReason = 'CALCULATED';
+          console.log(`📐 PnL calculado para ${pos.symbol}: entry=${entryPrice}, exit=${exitPrice}, qty=${qty}, pnl=${realizedPnl.toFixed(4)}`);
+        }
+
+        // Se ainda não tem PnL, pular
+        if (realizedPnl === null) {
+          console.log(`⚠️ Não foi possível determinar PnL para ${pos.symbol}`);
+          continue;
+        }
         
         // Atualizar no banco
         const { error: updateError } = await supabase
           .from('auto_trader_positions')
-          .update({ realized_pnl: realizedPnl })
+          .update({ 
+            realized_pnl: realizedPnl,
+            close_reason: closeReason
+          })
           .eq('id', pos.id);
 
         if (updateError) {
@@ -365,10 +384,12 @@ export const MultiAssetTrader = () => {
 
         syncedCount++;
         const emoji = realizedPnl >= 0 ? '🟢' : '🔴';
-        console.log(`${emoji} PnL sincronizado: ${pos.symbol} ${pos.side} = $${realizedPnl.toFixed(4)}`);
+        console.log(`${emoji} PnL sincronizado: ${pos.symbol} ${pos.side} = $${realizedPnl.toFixed(4)} (${closeReason})`);
       }
 
-      console.log(`✅ Sincronizados ${syncedCount}/${closedWithoutPnl.length} PnLs`);
+      if (syncedCount > 0) {
+        console.log(`✅ Sincronizados ${syncedCount}/${closedWithoutPnl.length} PnLs`);
+      }
       
     } catch (error) {
       console.error('❌ Erro ao sincronizar PnL:', error);
