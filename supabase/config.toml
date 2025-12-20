@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.ai-trading-intelligence]
 verify_jwt = false
+
+[functions.market-intelligence]
+verify_jwt = false

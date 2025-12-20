@@ -22,6 +22,7 @@ import { AntiLossMonitor } from "./AntiLossMonitor";
 import { useDataDrivenStrategy } from "@/hooks/useDataDrivenStrategy";
 import { useArmedOrders } from "@/hooks/useArmedOrders";
 import { useAITradingIntelligence } from "@/hooks/useAITradingIntelligence";
+import { useMarketIntelligence } from "@/hooks/useMarketIntelligence";
 
 interface Trade {
   symbol: string;
@@ -94,6 +95,19 @@ export const MultiAssetTrader = () => {
     analyzeWhales,
     analyzeSentiment
   } = useAITradingIntelligence();
+  
+  // 🧠 Market Intelligence (Notícias, Whales, Fear & Greed)
+  const {
+    isLoading: isIntelLoading,
+    fearGreed,
+    whaleAlerts,
+    marketEvents,
+    lastUpdate: intelLastUpdate,
+    refreshAllIntelligence,
+    validateTradeWithIntelligence,
+    shouldAvoidTrading,
+    fetchFearGreed,
+  } = useMarketIntelligence();
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
@@ -425,6 +439,26 @@ export const MultiAssetTrader = () => {
       // 🆕 Buscar tendência do BTC para correlação com alts
       const btcTrend = await fetchBTCTrend();
       console.log(`🪙 BTC trend: ${btcTrend > 0 ? '+' : ''}${btcTrend.toFixed(2)}%`);
+
+      // 🧠 Atualizar Fear & Greed a cada ciclo (cache interno de 10min)
+      if (aiIntelligenceEnabled) {
+        const fg = await fetchFearGreed();
+        if (fg) {
+          console.log(`😱 Fear & Greed: ${fg.value} (${fg.sentiment}) - ${fg.tradingAdvice}`);
+          
+          // Verificar se deve evitar trading
+          const avoidCheck = shouldAvoidTrading();
+          if (avoidCheck.avoid) {
+            console.log(`🚫 TRADING PAUSADO: ${avoidCheck.reason}`);
+            toast({ 
+              title: "⚠️ Trading Pausado", 
+              description: avoidCheck.reason,
+              variant: "destructive" 
+            });
+            return; // Pular este ciclo
+          }
+        }
+      }
 
       // Verificar proteções
       if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
@@ -877,6 +911,42 @@ export const MultiAssetTrader = () => {
               const corrected = (currentPrice * (1 - minSlPct * rr)).toFixed(6);
               console.log(`⚠️ TP SELL corrigido: ${takeProfit} → ${corrected} (preço: ${currentPrice})`);
               takeProfit = corrected;
+            }
+          }
+
+          // 🧠 VALIDAÇÃO COM INTELIGÊNCIA DE MERCADO (Notícias, Whales, Fear & Greed)
+          if (aiIntelligenceEnabled) {
+            try {
+              const intelValidation = await validateTradeWithIntelligence(
+                symbol,
+                analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+                analysisResult.signalScore
+              );
+
+              // Log das razões e warnings
+              if (intelValidation.reasons.length > 0) {
+                console.log(`✅ ${symbol}: ${intelValidation.reasons.join(' | ')}`);
+              }
+              if (intelValidation.warnings.length > 0) {
+                console.log(`⚠️ ${symbol}: ${intelValidation.warnings.join(' | ')}`);
+              }
+
+              // Bloquear se inteligência recomendar AVOID
+              if (intelValidation.recommendation === 'AVOID') {
+                console.log(`🚫 ${symbol} BLOQUEADO por inteligência de mercado: ${intelValidation.warnings[0]}`);
+                continue;
+              }
+
+              // Reduzir score/confiança se CAUTION
+              if (intelValidation.recommendation === 'CAUTION') {
+                if (intelValidation.adjustedConfidence < 40) {
+                  console.log(`⚠️ ${symbol}: Confiança muito baixa após inteligência (${intelValidation.adjustedConfidence}%)`);
+                  continue;
+                }
+              }
+            } catch (intelErr) {
+              console.log(`⚠️ Erro na validação de inteligência para ${symbol}:`, intelErr);
+              // Continuar mesmo com erro - não bloquear trade
             }
           }
 
@@ -1685,6 +1755,78 @@ export const MultiAssetTrader = () => {
             </>
           )}
         </Card>
+
+        {/* 😱 Market Intelligence (Fear & Greed, Events, Whales) */}
+        {aiIntelligenceEnabled && (
+          <Card className="p-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">😱</span>
+                <span className="text-sm font-medium">Market Intelligence</span>
+                {intelLastUpdate && (
+                  <Badge variant="outline" className="text-[10px] text-amber-400">
+                    {new Date(intelLastUpdate).toLocaleTimeString()}
+                  </Badge>
+                )}
+              </div>
+              {isIntelLoading && <span className="text-xs text-muted-foreground animate-pulse">Atualizando...</span>}
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {/* Fear & Greed */}
+              <div className={`p-2 rounded border text-center ${
+                fearGreed?.sentiment === 'EXTREME_FEAR' || fearGreed?.sentiment === 'FEAR' 
+                  ? 'bg-red-500/10 border-red-500/30' 
+                  : fearGreed?.sentiment === 'EXTREME_GREED' || fearGreed?.sentiment === 'GREED'
+                    ? 'bg-green-500/10 border-green-500/30'
+                    : 'bg-background/50'
+              }`}>
+                <div className="text-[10px] text-muted-foreground">Fear & Greed</div>
+                <div className={`font-bold text-lg ${
+                  (fearGreed?.value || 50) <= 30 ? 'text-red-400' : 
+                  (fearGreed?.value || 50) >= 70 ? 'text-green-400' : 'text-yellow-400'
+                }`}>
+                  {fearGreed?.value || '--'}
+                </div>
+                <div className="text-[9px] text-muted-foreground">{fearGreed?.sentiment || 'N/A'}</div>
+              </div>
+              
+              {/* Eventos */}
+              <div className="p-2 bg-background/50 rounded border text-center">
+                <div className="text-[10px] text-muted-foreground">Eventos</div>
+                <div className="font-bold">{marketEvents.length}</div>
+                <div className="text-[9px] text-muted-foreground">
+                  {marketEvents.filter(e => e.impact === 'HIGH').length} alto impacto
+                </div>
+              </div>
+              
+              {/* Whale Alerts */}
+              <div className="p-2 bg-background/50 rounded border text-center">
+                <div className="text-[10px] text-muted-foreground">Whales</div>
+                <div className="font-bold">{whaleAlerts.length}</div>
+                <div className="text-[9px] text-muted-foreground">alertas ativos</div>
+              </div>
+            </div>
+            
+            {/* Trading Advice */}
+            {fearGreed && (
+              <div className="text-xs p-2 bg-background/30 rounded border-l-2 border-amber-500/50">
+                <span className="text-amber-400 font-medium">💡 Conselho: </span>
+                {fearGreed.tradingAdvice}
+              </div>
+            )}
+            
+            {/* High Impact Events Warning */}
+            {marketEvents.filter(e => e.impact === 'HIGH').length > 0 && (
+              <div className="mt-2 text-xs p-2 bg-red-500/10 rounded border border-red-500/20">
+                <div className="text-red-400 font-medium mb-1">⚠️ Eventos de Alto Impacto:</div>
+                {marketEvents.filter(e => e.impact === 'HIGH').slice(0, 2).map((e, i) => (
+                  <div key={i} className="text-[10px] text-muted-foreground">• {e.title}</div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Opções Avançadas */}
         <Card className="p-4 bg-background/50 mb-4">
