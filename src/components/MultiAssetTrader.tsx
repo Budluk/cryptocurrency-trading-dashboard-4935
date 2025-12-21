@@ -56,7 +56,7 @@ export const MultiAssetTrader = () => {
   const {
     currentBalance, availableBalance, openPositionsCount,
     lastSyncTime, top10VolatileAssets, syncBybitBalance, syncOpenPositions, fetchTop10VolatileAssets
-  } = useBybitSync();
+  } = useBybitSync(isTestnet);
   const { analyzeSignal, fetchComprehensiveAI, fetchBTCTrend } = useSignalAnalysis();
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
   const { 
@@ -295,7 +295,7 @@ export const MultiAssetTrader = () => {
       const { data: bybitPnL, error: apiError } = await supabase.functions.invoke('bybit-trading', {
         body: { 
           action: 'get_closed_pnl', 
-          isTestnet: false, 
+          isTestnet,
           params: { category: 'linear', limit: 200 } 
         }
       });
@@ -402,7 +402,7 @@ export const MultiAssetTrader = () => {
     
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_positions', isTestnet: false, params: { category: 'linear', settleCoin: 'USDT' } }
+        body: { action: 'get_positions', isTestnet, params: { category: 'linear', settleCoin: 'USDT' } }
       });
 
       if (error || !data?.success) return;
@@ -499,7 +499,7 @@ export const MultiAssetTrader = () => {
 
       // Buscar instrumentos
       const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', limit: 1000, status: 'Trading' } }
+        body: { action: 'get_instruments', isTestnet, params: { category: 'linear', limit: 1000, status: 'Trading' } }
       });
 
       if (instrumentsError || !instrumentsData?.success) {
@@ -513,7 +513,7 @@ export const MultiAssetTrader = () => {
       console.log(`📊 ${tradableAssets.length} ativos tradáveis`);
 
       const { data: tickerData, error: tickerError } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_ticker', isTestnet: false, params: { category: 'linear' } }
+        body: { action: 'get_ticker', isTestnet, params: { category: 'linear' } }
       });
 
       if (tickerError || !tickerData?.success) {
@@ -566,35 +566,39 @@ export const MultiAssetTrader = () => {
         const isInTop10 = topVolNow.includes(a.instrument.symbol);
         const symbol = a.instrument.symbol;
         
-        // 🆕 PRIMEIRO: Verificar BLACKLIST GLOBAL (baseado em dados históricos reais)
-        if (GLOBAL_BLACKLIST.has(symbol)) {
-          return false; // Nunca operar símbolos que historicamente perdem
+        // Em TESTNET liberamos a lista (para treinar) sem mexer no modo REAL
+        if (!isTestnet) {
+          // 🆕 PRIMEIRO: Verificar BLACKLIST GLOBAL (baseado em dados históricos reais)
+          if (GLOBAL_BLACKLIST.has(symbol)) {
+            return false; // Nunca operar símbolos que historicamente perdem
+          }
         }
         
-        // === CRITÉRIOS PARA SCALPING LUCRATIVO ===
+        // === CRITÉRIOS PARA SCALPING LUCRATIVO (mais flexíveis em TESTNET) ===
         
-        // 1. Spread máximo de 0.05% para scalping (muito importante!)
-        if (a.spread > 0.05) return false;
+        // 1. Spread máximo
+        const maxSpread = isTestnet ? 0.20 : 0.05;
+        if (a.spread > maxSpread) return false;
         
-        // 2. Volume mínimo mais alto para liquidez
-        const minVolume = isInTop10 ? 500000 : 1000000; // $500k ou $1M
+        // 2. Volume mínimo
+        const minVolume = isTestnet ? 100000 : (isInTop10 ? 500000 : 1000000);
         if (a.volume24h < minVolume) return false;
         
-        // 3. Faixa de volatilidade ideal para scalping: 2-8%
-        // Muito baixa = sem movimento, muito alta = risco de reversão
-        const minVol = isInTop10 ? 1.5 : 2.0;
-        const maxVol = 10; // Evitar ativos extremamente voláteis
+        // 3. Faixa de volatilidade
+        const minVol = isTestnet ? 0.5 : (isInTop10 ? 1.5 : 2.0);
+        const maxVol = isTestnet ? 25 : 10;
         if (a.volatility < minVol || a.volatility > maxVol) return false;
         
         // 4. Preço mínimo para evitar dust trades
         if (a.lastPrice < 0.001) return false;
         
-        // 5. Priorizar majors e ativos conhecidos
+        // 5. Priorizar majors e ativos conhecidos (no REAL), mas sem travar o treino em TESTNET
         const majorSymbols = ['ETHUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT'];
         const isMajor = majorSymbols.includes(symbol);
         
-        // Se não é major, exigir volume ainda maior
-        if (!isMajor && a.volume24h < 2000000) return false;
+        // Se não é major, exigir volume maior
+        const nonMajorMinVol = isTestnet ? 500000 : 2000000;
+        if (!isMajor && a.volume24h < nonMajorMinVol) return false;
         
         return true;
       });
@@ -716,13 +720,14 @@ export const MultiAssetTrader = () => {
         const isOptimalForHour = symbolAnalysis.isOptimalForHour;
         const isPremiumSymbol = symbolAnalysis.isPremium;
         
-        // 🆕 FILTRO: Priorizar ativos ideais para esta hora
-        if (!isOptimalForHour && !isPremiumSymbol) {
-          // Se não é ativo ideal nem premium, pular (opera 24h com precisão)
-          const reason = `Não é ativo ideal para ${currentHourUTC}h UTC`;
-          skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
-          continue;
-        }
+          // 🆕 FILTRO: Priorizar ativos ideais para esta hora
+          // No TESTNET liberamos para gerar operações e treinar.
+          if (!isTestnet && !isOptimalForHour && !isPremiumSymbol) {
+            // Se não é ativo ideal nem premium, pular (opera 24h com precisão)
+            const reason = `Não é ativo ideal para ${currentHourUTC}h UTC (modo REAL)`;
+            skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+            continue;
+          }
         
         try {
           const currentPrice = parseFloat(ticker.lastPrice);
@@ -980,13 +985,13 @@ export const MultiAssetTrader = () => {
             continue;
           }
           
-          for (let attempts = 0; attempts < 3 && !leverageSuccess; attempts++) {
-            const { data: leverageData, error } = await supabase.functions.invoke('bybit-trading', {
-              body: {
-                action: 'set_leverage', isTestnet: false,
-                params: { category: 'linear', symbol: symbol.trim(), buyLeverage: finalLeverage.toString(), sellLeverage: finalLeverage.toString() }
-              }
-            });
+            for (let attempts = 0; attempts < 3 && !leverageSuccess; attempts++) {
+              const { data: leverageData, error } = await supabase.functions.invoke('bybit-trading', {
+                body: {
+                  action: 'set_leverage', isTestnet,
+                  params: { category: 'linear', symbol: symbol.trim(), buyLeverage: finalLeverage.toString(), sellLeverage: finalLeverage.toString() }
+                }
+              });
             
             // Success if no error OR if response indicates leverage already set
             if (!error || leverageData?.data?.success || leverageData?.data?.retCode === 110043) {
@@ -999,25 +1004,8 @@ export const MultiAssetTrader = () => {
           
           if (!leverageSuccess) continue;
 
-          // Executar ordem - MODO ARMADO usa Limit, senão Market
-          let orderType: 'Market' | 'Limit' = 'Market';
-          let limitPrice: string | undefined;
-          
-          if (armedModeEnabled) {
-            // 🎯 MODO ARMADO: Ordem Limit em nível melhor que preço atual
-            // Para BUY: entrada abaixo do preço (esperar pullback)
-            // Para SELL: entrada acima do preço (esperar pullback)
-            const pullbackPct = 0.0008; // 0.08% pullback para melhor entrada
-            
-            if (analysisResult.action === 'BUY') {
-              limitPrice = (currentPrice * (1 - pullbackPct)).toFixed(6);
-            } else {
-              limitPrice = (currentPrice * (1 + pullbackPct)).toFixed(6);
-            }
-            
-            orderType = 'Limit';
-            console.log(`🎯 ORDEM LIMITE ARMADA: ${symbol} ${analysisResult.action} @ ${limitPrice} (atual: ${currentPrice.toFixed(4)})`);
-          }
+          // Executar ordem - sempre Market (o switch "Ordens Armadas S/R" fica só para o sistema S/R)
+          const orderType: 'Market' = 'Market';
           
           const orderParams: Record<string, any> = {
             category: 'linear', symbol,
@@ -1027,13 +1015,8 @@ export const MultiAssetTrader = () => {
             timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
           };
           
-          // Adicionar preço limite se modo armado
-          if (orderType === 'Limit' && limitPrice) {
-            orderParams.price = limitPrice;
-          }
-          
           const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
-            body: { action: 'place_order', isTestnet: false, params: orderParams }
+            body: { action: 'place_order', isTestnet, params: orderParams }
           });
 
           if (!orderError && orderData?.success) {
@@ -1042,9 +1025,8 @@ export const MultiAssetTrader = () => {
             if (analysisResult.action === 'BUY') buyCountThisCycle++;
             if (analysisResult.action === 'SELL') sellCountThisCycle++;
             
-            // 🎯 Status diferente para ordens limite vs market
-            const orderStatus = orderType === 'Limit' ? 'PENDING' : 'OPEN';
-            const entryPrice = orderType === 'Limit' && limitPrice ? parseFloat(limitPrice) : currentPrice;
+            const orderStatus: 'OPEN' = 'OPEN';
+            const entryPrice = currentPrice;
             
             const tradeLog = {
               timestamp: new Date().toISOString(),
@@ -1055,9 +1037,8 @@ export const MultiAssetTrader = () => {
               exposure: exposureData.exposurePercent.toFixed(1),
               volRisk: volRisk.riskLevel,
               orderType,
-              limitPrice: limitPrice || null
             };
-            console.log(`✅ ${orderType === 'Limit' ? '🎯 LIMITE ARMADA' : 'TRADE'}:`, JSON.stringify(tradeLog));
+            console.log(`✅ TRADE:`, JSON.stringify(tradeLog));
             
             const saveUserId = await getUserId();
             await supabase.from('auto_trader_positions').insert({
@@ -1070,8 +1051,9 @@ export const MultiAssetTrader = () => {
               partial_tp_executed: false, original_quantity: qty,
               confidence: analysisResult.signalScore, 
               status: orderStatus,
-              order_source: orderType === 'Limit' ? 'armed_limit' : 'market',
+              order_source: 'market',
               exchange_order_id: orderData.data?.orderId
+            });
             });
             
             if (trailingStopEnabled) {
@@ -1199,7 +1181,7 @@ export const MultiAssetTrader = () => {
           
           // Buscar instrumento para obter qtyStep
           const { data: instData } = await supabase.functions.invoke('bybit-trading', {
-            body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
+            body: { action: 'get_instruments', isTestnet, params: { category: 'linear', symbol: position.symbol } }
           });
           
           const instrument = instData?.data?.list?.[0];
@@ -1218,7 +1200,7 @@ export const MultiAssetTrader = () => {
           
           const { data: addOrder, error } = await supabase.functions.invoke('bybit-trading', {
             body: {
-              action: 'place_order', isTestnet: false,
+              action: 'place_order', isTestnet,
               params: {
                 category: 'linear', symbol: position.symbol, side: position.side,
                 orderType: 'Market', qty: addQtyStr,
@@ -1240,7 +1222,7 @@ export const MultiAssetTrader = () => {
             
             await supabase.functions.invoke('bybit-trading', {
               body: {
-                action: 'set_trading_stop', isTestnet: false,
+                action: 'set_trading_stop', isTestnet,
                 params: { category: 'linear', symbol: position.symbol, stopLoss: position.entry_price.toString(), positionIdx: 0 }
               }
             });
@@ -1263,7 +1245,7 @@ export const MultiAssetTrader = () => {
 
       // Buscar posições reais do Bybit
       const { data: bybitData } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_positions', isTestnet: false, params: { category: 'linear', settleCoin: 'USDT' } }
+        body: { action: 'get_positions', isTestnet, params: { category: 'linear', settleCoin: 'USDT' } }
       });
 
       const realPositions = (bybitData?.data || []).filter((p: any) => parseFloat(p.size || '0') > 0);

@@ -20,11 +20,16 @@ export interface BybitSyncState {
   scoredAssets: AssetScore[];
 }
 
-const syncCache: {
+type SyncCache = {
   balance?: { data: number; available?: number; timestamp: number };
   positions?: { data: number; timestamp: number };
   volatileAssets?: { data: string[]; scoredAssets: AssetScore[]; timestamp: number };
-} = {};
+};
+
+const syncCache: Record<'real' | 'testnet', SyncCache> = {
+  real: {},
+  testnet: {},
+};
 
 const CACHE_TTL = 5000;
 const VOLATILE_CACHE_TTL = 30000;
@@ -36,39 +41,42 @@ const EXCLUDED_ASSETS = [
   'USTCUSDT', 'LUNAUSDT', // Collapsed tokens
 ];
 
-export function useBybitSync() {
+export function useBybitSync(isTestnet: boolean) {
   const [currentBalance, setCurrentBalance] = useState<number>(0);
   const [availableBalance, setAvailableBalance] = useState<number>(0);
   const [openPositionsCount, setOpenPositionsCount] = useState<number>(0);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [top10VolatileAssets, setTop10VolatileAssets] = useState<string[]>([]);
   const [scoredAssets, setScoredAssets] = useState<AssetScore[]>([]);
-  
+
   const pendingRequests = useRef<Set<string>>(new Set());
+  const modeKey: 'real' | 'testnet' = isTestnet ? 'testnet' : 'real';
+  const cache = syncCache[modeKey];
+  const reqKey = (name: 'balance' | 'positions' | 'volatile') => `${modeKey}:${name}`;
 
   const syncBybitBalance = useCallback(async (): Promise<number> => {
-    if (syncCache.balance && Date.now() - syncCache.balance.timestamp < CACHE_TTL) {
-      setCurrentBalance(syncCache.balance.data);
-      // Também atualizar available do cache se disponível
-      return syncCache.balance.available ?? syncCache.balance.data;
+    if (cache.balance && Date.now() - cache.balance.timestamp < CACHE_TTL) {
+      setCurrentBalance(cache.balance.data);
+      setAvailableBalance(cache.balance.available ?? cache.balance.data);
+      return cache.balance.available ?? cache.balance.data;
     }
 
-    if (pendingRequests.current.has('balance')) {
+    if (pendingRequests.current.has(reqKey('balance'))) {
       return availableBalance || currentBalance;
     }
 
-    pendingRequests.current.add('balance');
+    pendingRequests.current.add(reqKey('balance'));
 
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_balance', isTestnet: false, params: { accountType: 'UNIFIED' } }
+        body: { action: 'get_balance', isTestnet, params: { accountType: 'UNIFIED' } },
       });
 
       if (error) {
         console.error('❌ Erro API balance:', error);
         throw error;
       }
-      
+
       if (!data?.success) {
         console.warn('⚠️ Bybit API error:', data?.error || data?.message);
         return currentBalance;
@@ -77,59 +85,60 @@ export function useBybitSync() {
       const balanceData = data?.data;
       let balance = 0;
       let available = 0;
-      
+
       // Extrair dados do balance - priorizar list[0] para conta UNIFIED
       const accountData = balanceData?.list?.[0] || balanceData;
-      
+
       if (accountData?.totalWalletBalance) {
         balance = parseFloat(String(accountData.totalWalletBalance));
       } else if (balanceData?.totalEquity) {
         balance = parseFloat(String(balanceData.totalEquity));
       }
-      
+
       // CRÍTICO: Usar availableBalance para saber quanto pode abrir novas posições
       if (accountData?.totalAvailableBalance) {
         available = parseFloat(String(accountData.totalAvailableBalance));
       } else {
-        available = balance; // Fallback se não tiver available
+        available = balance;
       }
 
       if (isNaN(balance)) balance = 0;
       if (isNaN(available)) available = 0;
 
-      syncCache.balance = { data: balance, available, timestamp: Date.now() };
+      cache.balance = { data: balance, available, timestamp: Date.now() };
       setCurrentBalance(balance);
       setAvailableBalance(available);
       setLastSyncTime(new Date());
-      console.log(`💰 Saldo: $${balance.toFixed(2)} | Disponível: $${available.toFixed(2)}`);
-      return available; // Retornar saldo disponível (não total)
+
+      console.log(`💰 [${modeKey.toUpperCase()}] Saldo: $${balance.toFixed(2)} | Disponível: $${available.toFixed(2)}`);
+      return available;
     } catch (error) {
       console.error('❌ Erro sync saldo:', error);
       return availableBalance;
     } finally {
-      pendingRequests.current.delete('balance');
+      pendingRequests.current.delete(reqKey('balance'));
     }
-  }, [currentBalance, availableBalance]);
+  }, [isTestnet, modeKey, cache, availableBalance, currentBalance]);
 
   const syncOpenPositions = useCallback(async (): Promise<number> => {
-    if (syncCache.positions && Date.now() - syncCache.positions.timestamp < CACHE_TTL) {
-      setOpenPositionsCount(syncCache.positions.data);
-      return syncCache.positions.data;
+    if (cache.positions && Date.now() - cache.positions.timestamp < CACHE_TTL) {
+      setOpenPositionsCount(cache.positions.data);
+      return cache.positions.data;
     }
 
-    if (pendingRequests.current.has('positions')) {
+    if (pendingRequests.current.has(reqKey('positions'))) {
       return openPositionsCount;
     }
 
-    pendingRequests.current.add('positions');
+    pendingRequests.current.add(reqKey('positions'));
 
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_positions', isTestnet: false, params: { category: 'linear', settleCoin: 'USDT' } }
+        body: { action: 'get_positions', isTestnet, params: { category: 'linear', settleCoin: 'USDT' } },
       });
 
       if (error) throw error;
-      
+
       if (data?.code || data?.error || data?.success === false) {
         console.warn('Bybit API error (positions):', data?.message || data?.error);
         return openPositionsCount;
@@ -139,59 +148,59 @@ export function useBybitSync() {
       const activePositions = positions.filter((p: any) => parseFloat(p.size || '0') > 0);
       const count = activePositions.length;
 
-      syncCache.positions = { data: count, timestamp: Date.now() };
+      cache.positions = { data: count, timestamp: Date.now() };
       setOpenPositionsCount(count);
       setLastSyncTime(new Date());
-      if (count > 0) console.log('📈 Posições Bybit:', count);
+      if (count > 0) console.log(`📈 [${modeKey.toUpperCase()}] Posições Bybit:`, count);
       return count;
     } catch (error) {
       console.error('Erro ao sincronizar posições:', error);
       return openPositionsCount;
     } finally {
-      pendingRequests.current.delete('positions');
+      pendingRequests.current.delete(reqKey('positions'));
     }
-  }, [openPositionsCount]);
+  }, [isTestnet, modeKey, cache, openPositionsCount]);
 
   const fetchTop10VolatileAssets = useCallback(async (): Promise<string[]> => {
-    if (syncCache.volatileAssets && Date.now() - syncCache.volatileAssets.timestamp < VOLATILE_CACHE_TTL) {
-      setTop10VolatileAssets(syncCache.volatileAssets.data);
-      setScoredAssets(syncCache.volatileAssets.scoredAssets);
-      return syncCache.volatileAssets.data;
+    if (cache.volatileAssets && Date.now() - cache.volatileAssets.timestamp < VOLATILE_CACHE_TTL) {
+      setTop10VolatileAssets(cache.volatileAssets.data);
+      setScoredAssets(cache.volatileAssets.scoredAssets);
+      return cache.volatileAssets.data;
     }
 
-    if (pendingRequests.current.has('volatile')) {
+    if (pendingRequests.current.has(reqKey('volatile'))) {
       return top10VolatileAssets;
     }
 
-    pendingRequests.current.add('volatile');
+    pendingRequests.current.add(reqKey('volatile'));
 
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_tickers', isTestnet: false, params: { category: 'linear' } }
+        body: { action: 'get_tickers', isTestnet, params: { category: 'linear' } },
       });
 
       if (error) throw error;
-      
+
       if (data?.code || data?.error || data?.success === false) {
         console.warn('Bybit API error (tickers):', data?.message || data?.error);
         return top10VolatileAssets;
       }
 
       const tickers = Array.isArray(data?.data) ? data.data : (data?.data?.list || []);
-      
+
       if (tickers.length === 0) {
         console.warn('Sem dados de tickers disponíveis');
         return top10VolatileAssets;
       }
-      
+
       // Algoritmo de scoring avançado
       const scoredList: AssetScore[] = tickers
         .filter((t: any) => {
           const symbol = t.symbol || '';
           // Apenas USDT perpétuos, excluir stablecoins e tokens problemáticos
-          return symbol.endsWith('USDT') && 
-                 !EXCLUDED_ASSETS.includes(symbol) &&
-                 !symbol.includes('1000000'); // Tokens com muitos zeros geralmente são memecoins de baixa liquidez
+          return symbol.endsWith('USDT') &&
+            !EXCLUDED_ASSETS.includes(symbol) &&
+            !symbol.includes('1000000');
         })
         .map((t: any) => {
           const symbol = t.symbol;
@@ -201,30 +210,24 @@ export function useBybitSync() {
           const priceChange = parseFloat(t.price24hPcnt || '0') * 100;
           const lastPrice = parseFloat(t.lastPrice || '0');
           const prevPrice1h = parseFloat(t.prevPrice1h || lastPrice);
-          
+
           // Momentum 1h - movimento recente
-          const momentum1h = lastPrice > 0 && prevPrice1h > 0 
-            ? ((lastPrice - prevPrice1h) / prevPrice1h) * 100 
+          const momentum1h = lastPrice > 0 && prevPrice1h > 0
+            ? ((lastPrice - prevPrice1h) / prevPrice1h) * 100
             : 0;
-          
+
           // Determinar tendência
           let trend: 'bullish' | 'bearish' | 'neutral' = 'neutral';
           if (priceChange > 2 && momentum1h > 0.3) trend = 'bullish';
           else if (priceChange < -2 && momentum1h < -0.3) trend = 'bearish';
-          
-          // Score composto:
-          // - Volatilidade alta = bom para scalping (peso 40%)
-          // - Volume alto = liquidez (peso 25%)
-          // - Momentum forte = tendência clara (peso 20%)
-          // - Funding rate extremo = possível reversão (peso 15%)
-          
-          const volScore = Math.min(volatility / 15, 1) * 40; // Max 40 pts
-          const volumeScore = Math.min(Math.log10(volume24h + 1) / 8, 1) * 25; // Max 25 pts
-          const momentumScore = Math.min(Math.abs(momentum1h) / 2, 1) * 20; // Max 20 pts
-          const fundingScore = Math.abs(fundingRate) > 0.01 ? 15 : Math.abs(fundingRate) * 1500; // Max 15 pts
-          
+
+          const volScore = Math.min(volatility / 15, 1) * 40;
+          const volumeScore = Math.min(Math.log10(volume24h + 1) / 8, 1) * 25;
+          const momentumScore = Math.min(Math.abs(momentum1h) / 2, 1) * 20;
+          const fundingScore = Math.abs(fundingRate) > 0.01 ? 15 : Math.abs(fundingRate) * 1500;
+
           const totalScore = volScore + volumeScore + momentumScore + fundingScore;
-          
+
           return {
             symbol,
             volatility,
@@ -232,43 +235,44 @@ export function useBybitSync() {
             momentum: momentum1h,
             fundingRate,
             score: totalScore,
-            trend
+            trend,
           };
         })
         .filter((t: AssetScore) => {
-          // Filtros mínimos de qualidade
-          return t.volatility > 2 && // Min 2% volatilidade 24h
-                 t.volume24h > 500000 && // Min $500k volume
-                 t.score > 20; // Score mínimo
+          // Filtros mínimos de qualidade (um pouco mais flexível em TESTNET)
+          const minVol = isTestnet ? 0.5 : 2;
+          const minVolume = isTestnet ? 100000 : 500000;
+          const minScore = isTestnet ? 10 : 20;
+          return t.volatility > minVol && t.volume24h > minVolume && t.score > minScore;
         })
         .sort((a: AssetScore, b: AssetScore) => b.score - a.score)
-        .slice(0, 20); // Top 20 para análise
-      
+        .slice(0, 20);
+
       const topSymbols = scoredList.slice(0, 10).map(t => t.symbol);
 
       if (topSymbols.length > 0) {
-        syncCache.volatileAssets = { 
-          data: topSymbols, 
+        cache.volatileAssets = {
+          data: topSymbols,
           scoredAssets: scoredList,
-          timestamp: Date.now() 
+          timestamp: Date.now(),
         };
         setTop10VolatileAssets(topSymbols);
         setScoredAssets(scoredList);
-        
-        console.log('🎯 Top ativos por score:');
+
+        console.log(`🎯 [${modeKey.toUpperCase()}] Top ativos por score:`);
         scoredList.slice(0, 5).forEach((a, i) => {
-          console.log(`  ${i+1}. ${a.symbol}: Score ${a.score.toFixed(1)} | Vol ${a.volatility.toFixed(1)}% | Vol24h $${(a.volume24h/1000000).toFixed(1)}M | ${a.trend}`);
+          console.log(`  ${i + 1}. ${a.symbol}: Score ${a.score.toFixed(1)} | Vol ${a.volatility.toFixed(1)}% | Vol24h $${(a.volume24h / 1000000).toFixed(1)}M | ${a.trend}`);
         });
       }
-      
+
       return topSymbols;
     } catch (error) {
       console.error('Erro ao buscar ativos voláteis:', error);
       return top10VolatileAssets;
     } finally {
-      pendingRequests.current.delete('volatile');
+      pendingRequests.current.delete(reqKey('volatile'));
     }
-  }, [top10VolatileAssets]);
+  }, [isTestnet, modeKey, cache, top10VolatileAssets]);
 
   return {
     currentBalance,
@@ -279,6 +283,6 @@ export function useBybitSync() {
     scoredAssets,
     syncBybitBalance,
     syncOpenPositions,
-    fetchTop10VolatileAssets
+    fetchTop10VolatileAssets,
   };
 }
