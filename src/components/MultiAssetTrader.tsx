@@ -1054,7 +1054,6 @@ export const MultiAssetTrader = () => {
               order_source: 'market',
               exchange_order_id: orderData.data?.orderId
             });
-            });
             
             if (trailingStopEnabled) {
               setPositionTracking(prev => {
