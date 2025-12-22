@@ -680,8 +680,14 @@ export const MultiAssetTrader = () => {
       const hourAssets = getAssetsForCurrentHour();
       const hasGoodAssets = hourAssets.length > 0;
       
+      // 🆕 FALLBACK: Se não tem ativos ideais, permitir os TOP 5 por score
+      const topNFallbackSymbols = new Set(
+        topVolatileAssets.slice(0, 5).map(a => a.instrument.symbol)
+      );
+      const useFallbackMode = !hasGoodAssets;
+      
       if (!hasGoodAssets) {
-        console.log(`⚠️ Hora ${currentHourUTC}h UTC sem ativos lucrativos específicos - usando premium symbols`);
+        console.log(`⚠️ Hora ${currentHourUTC}h UTC sem ativos ideais - FALLBACK ativado com Top 5: ${[...topNFallbackSymbols].join(', ')}`);
       } else {
         console.log(`✅ Hora ${currentHourUTC}h UTC: ${hourAssets.length} ativos ideais: ${hourAssets.map(a => a.symbol).join(', ')}`);
       }
@@ -720,14 +726,19 @@ export const MultiAssetTrader = () => {
         const isOptimalForHour = symbolAnalysis.isOptimalForHour;
         const isPremiumSymbol = symbolAnalysis.isPremium;
         
-          // 🆕 FILTRO: Priorizar ativos ideais para esta hora
-          // No TESTNET liberamos para gerar operações e treinar.
-          if (!isTestnet && !isOptimalForHour && !isPremiumSymbol) {
-            // Se não é ativo ideal nem premium, pular (opera 24h com precisão)
+        // 🆕 FILTRO: Priorizar ativos ideais para esta hora
+        // No TESTNET liberamos para gerar operações e treinar.
+        // No REAL: se não houver ativos ideais, usar FALLBACK com Top 5
+        if (!isTestnet && !isOptimalForHour && !isPremiumSymbol) {
+          // Verificar se está no fallback (Top 5 por score)
+          if (!useFallbackMode || !topNFallbackSymbols.has(symbol)) {
             const reason = `Não é ativo ideal para ${currentHourUTC}h UTC (modo REAL)`;
             skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
             continue;
           }
+          // Se está no fallback, permitir mas com log
+          console.log(`🔄 FALLBACK: ${symbol} permitido (Top 5 por score)`);
+        }
         
         try {
           const currentPrice = parseFloat(ticker.lastPrice);
