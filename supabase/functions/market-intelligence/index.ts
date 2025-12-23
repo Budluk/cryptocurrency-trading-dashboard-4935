@@ -5,7 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY');
+// 🔧 Usando LOVABLE_API_KEY (gratuito) em vez de PERPLEXITY_API_KEY
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
 serve(async (req) => {
@@ -50,55 +50,64 @@ serve(async (req) => {
   }
 });
 
-// 📰 Buscar notícias e sentimento via Perplexity
+// 📰 Buscar análise de sentimento via Lovable AI (Gemini)
 async function getNewsSentiment(symbol: string) {
-  if (!PERPLEXITY_API_KEY) {
-    console.log('PERPLEXITY_API_KEY not configured, using simulated data');
+  if (!LOVABLE_API_KEY) {
+    console.log('LOVABLE_API_KEY not configured, using simulated data');
     return getSimulatedSentiment(symbol);
   }
 
   try {
     const cleanSymbol = symbol.replace('USDT', '').replace('USD', '');
     
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+    console.log(`📰 Analisando sentimento para ${cleanSymbol} via Lovable AI...`);
+    
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'google/gemini-2.5-flash',
         messages: [
           { 
             role: 'system', 
-            content: 'Você é um analista de criptomoedas. Responda APENAS em JSON válido, sem markdown ou explicações.' 
+            content: `Você é um analista experiente de criptomoedas. Analise o mercado de ${cleanSymbol} com base em seu conhecimento geral do mercado cripto. Responda APENAS em JSON válido, sem markdown ou explicações.` 
           },
           { 
             role: 'user', 
-            content: `Analise as últimas notícias (últimas 24h) sobre ${cleanSymbol} criptomoeda. 
-            
+            content: `Forneça uma análise de sentimento para ${cleanSymbol} criptomoeda considerando:
+- Tendências gerais do mercado cripto
+- Fundamentos do projeto
+- Situação macroeconômica
+- Padrões típicos de comportamento
+
 Retorne JSON: {
   "sentiment": "BULLISH" ou "BEARISH" ou "NEUTRAL",
   "confidence": 0-100,
-  "keyNews": ["notícia 1", "notícia 2", "notícia 3"],
-  "catalysts": ["catalisador positivo/negativo"],
+  "keyNews": ["análise 1", "análise 2", "análise 3"],
+  "catalysts": ["fator positivo/negativo"],
   "riskLevel": "LOW" ou "MEDIUM" ou "HIGH",
   "recommendation": "LONG" ou "SHORT" ou "WAIT",
-  "reasoning": "explicação curta"
+  "reasoning": "explicação curta baseada em análise geral"
 }`
           }
         ],
-        search_recency_filter: 'day',
+        max_tokens: 600,
       }),
     });
 
     if (!response.ok) {
-      console.error('Perplexity API error:', response.status);
+      const errorText = await response.text();
+      console.error('Lovable AI API error:', response.status, errorText);
       return getSimulatedSentiment(symbol);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
+    
+    console.log(`📊 Resposta Lovable AI para ${cleanSymbol}:`, content.substring(0, 200));
     
     // Extrair JSON
     const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -107,8 +116,7 @@ Retorne JSON: {
       return {
         ...parsed,
         symbol,
-        source: 'perplexity',
-        citations: data.citations || [],
+        source: 'lovable-ai',
         analyzedAt: new Date().toISOString()
       };
     }
@@ -120,37 +128,39 @@ Retorne JSON: {
   }
 }
 
-// 🌐 Buscar eventos de mercado importantes
+// 🌐 Buscar eventos de mercado via Lovable AI
 async function getMarketEvents() {
-  if (!PERPLEXITY_API_KEY) {
+  if (!LOVABLE_API_KEY) {
     return { events: [], source: 'simulated' };
   }
 
   try {
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+    console.log('🌐 Buscando eventos de mercado via Lovable AI...');
+    
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'google/gemini-2.5-flash',
         messages: [
           { 
             role: 'system', 
-            content: 'Você é um analista de mercado cripto. Responda APENAS em JSON válido.' 
+            content: 'Você é um analista de mercado cripto experiente. Forneça análise de eventos que tipicamente afetam o mercado. Responda APENAS em JSON válido.' 
           },
           { 
             role: 'user', 
-            content: `Liste os 5 eventos mais importantes que podem afetar o mercado cripto nas próximas 24 horas.
+            content: `Liste 5 tipos de eventos/fatores importantes que geralmente afetam o mercado cripto, com exemplos de como traders devem reagir.
             
 Retorne JSON: {
   "events": [
     {
-      "title": "título do evento",
+      "title": "tipo de evento",
       "type": "FOMC" ou "CPI" ou "NFP" ou "EARNINGS" ou "CRYPTO_SPECIFIC" ou "OTHER",
       "impact": "HIGH" ou "MEDIUM" ou "LOW",
-      "expectedTime": "horário aproximado",
+      "expectedTime": "frequência típica",
       "affectedAssets": ["BTC", "ETH", etc],
       "expectedDirection": "BULLISH" ou "BEARISH" ou "UNCERTAIN",
       "tradingAdvice": "dica curta"
@@ -160,11 +170,12 @@ Retorne JSON: {
 }`
           }
         ],
-        search_recency_filter: 'day',
+        max_tokens: 800,
       }),
     });
 
     if (!response.ok) {
+      console.error('Lovable AI error for market events:', response.status);
       return { events: [], source: 'error' };
     }
 
@@ -175,7 +186,7 @@ Retorne JSON: {
     if (jsonMatch) {
       return {
         ...JSON.parse(jsonMatch[0]),
-        source: 'perplexity',
+        source: 'lovable-ai',
         analyzedAt: new Date().toISOString()
       };
     }
@@ -196,7 +207,9 @@ async function analyzeSymbolNews(symbol: string) {
   const cleanSymbol = symbol.replace('USDT', '').replace('USD', '');
 
   try {
-    // Primeiro buscar notícias via Perplexity
+    console.log(`📊 Análise profunda para ${cleanSymbol}...`);
+    
+    // Primeiro buscar sentimento
     const newsData = await getNewsSentiment(symbol);
     
     // Depois usar Gemini para análise mais profunda
@@ -219,7 +232,7 @@ async function analyzeSymbolNews(symbol: string) {
             
 Sentimento: ${newsData.sentiment}
 Confiança: ${newsData.confidence}%
-Notícias: ${JSON.stringify(newsData.keyNews)}
+Análises: ${JSON.stringify(newsData.keyNews)}
 Nível de Risco: ${newsData.riskLevel}
 
 Forneça uma análise de trading:
@@ -253,7 +266,7 @@ Forneça uma análise de trading:
       return {
         ...newsData,
         analysis: JSON.parse(jsonMatch[0]),
-        source: 'gemini',
+        source: 'lovable-ai',
         analyzedAt: new Date().toISOString()
       };
     }
@@ -265,31 +278,38 @@ Forneça uma análise de trading:
   }
 }
 
-// 🐋 Buscar alertas de whales (grandes movimentações)
+// 🐋 Buscar alertas de whales via Lovable AI
 async function getWhaleAlerts(symbols: string[]) {
-  if (!PERPLEXITY_API_KEY) {
+  if (!LOVABLE_API_KEY) {
     return getSimulatedWhaleAlerts(symbols);
   }
 
   try {
     const symbolList = symbols.slice(0, 5).map(s => s.replace('USDT', '')).join(', ');
     
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+    console.log(`🐋 Analisando atividade de whales para: ${symbolList}...`);
+    
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'google/gemini-2.5-flash',
         messages: [
           { 
             role: 'system', 
-            content: 'Você é um analista on-chain de criptomoedas. Responda APENAS em JSON válido.' 
+            content: 'Você é um analista on-chain de criptomoedas. Forneça análise típica de comportamento de whales. Responda APENAS em JSON válido.' 
           },
           { 
             role: 'user', 
-            content: `Busque movimentações de whales (grandes carteiras) nas últimas 24h para: ${symbolList}.
+            content: `Analise padrões típicos de movimentação de whales (grandes carteiras) para: ${symbolList}.
+
+Considere:
+- Padrões de acumulação/distribuição típicos
+- Impacto de grandes movimentações em exchanges
+- Comportamento histórico de grandes investidores
             
 Retorne JSON: {
   "alerts": [
@@ -307,11 +327,12 @@ Retorne JSON: {
 }`
           }
         ],
-        search_recency_filter: 'day',
+        max_tokens: 800,
       }),
     });
 
     if (!response.ok) {
+      console.error('Lovable AI error for whale alerts:', response.status);
       return getSimulatedWhaleAlerts(symbols);
     }
 
@@ -322,7 +343,7 @@ Retorne JSON: {
     if (jsonMatch) {
       return {
         ...JSON.parse(jsonMatch[0]),
-        source: 'perplexity',
+        source: 'lovable-ai',
         analyzedAt: new Date().toISOString()
       };
     }
@@ -334,7 +355,7 @@ Retorne JSON: {
   }
 }
 
-// 😱 Fear & Greed Index
+// 😱 Fear & Greed Index (API pública gratuita)
 async function getFearGreedIndex() {
   try {
     // API pública do Fear & Greed Index
@@ -393,7 +414,7 @@ async function getFearGreedIndex() {
 // === SIMULAÇÕES (fallback quando APIs não disponíveis) ===
 
 function getSimulatedSentiment(symbol: string) {
-  // 🔧 CORRIGIDO: Dados simulados NÃO devem bloquear operações
+  // 🔧 Dados simulados NÃO devem bloquear operações
   // Retornar NEUTRAL com baixa confiança para não interferir no trading
   return {
     sentiment: 'NEUTRAL',
