@@ -393,15 +393,14 @@ async function getFearGreedIndex() {
 // === SIMULAÇÕES (fallback quando APIs não disponíveis) ===
 
 function getSimulatedSentiment(symbol: string) {
-  const sentiments = ['BULLISH', 'BEARISH', 'NEUTRAL'];
-  const randomSentiment = sentiments[Math.floor(Math.random() * 3)];
-  
+  // 🔧 CORRIGIDO: Dados simulados NÃO devem bloquear operações
+  // Retornar NEUTRAL com baixa confiança para não interferir no trading
   return {
-    sentiment: randomSentiment,
-    confidence: 50 + Math.floor(Math.random() * 30),
-    keyNews: ['Mercado em consolidação', 'Volume estável'],
+    sentiment: 'NEUTRAL',
+    confidence: 40, // Baixa confiança = não bloqueia
+    keyNews: ['Dados simulados - APIs indisponíveis'],
     catalysts: [],
-    riskLevel: 'MEDIUM',
+    riskLevel: 'LOW', // LOW para não bloquear
     recommendation: 'WAIT',
     reasoning: 'Dados simulados - APIs indisponíveis',
     symbol,
