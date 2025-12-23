@@ -10,7 +10,7 @@ interface NewsSentiment {
   recommendation: 'LONG' | 'SHORT' | 'WAIT';
   reasoning: string;
   symbol: string;
-  source: string;
+  source: string; // 'simulated' | 'perplexity' | etc
   analyzedAt: string;
 }
 
@@ -258,24 +258,32 @@ export const useMarketIntelligence = () => {
       const cachedNews = newsSentiment.get(symbol);
       const news = cachedNews || await fetchNewsSentiment(symbol);
       if (news) {
-        const newsAligned = 
-          (side === 'Buy' && news.sentiment === 'BULLISH') ||
-          (side === 'Sell' && news.sentiment === 'BEARISH');
+        // 🔧 CORRIGIDO: Ignorar dados simulados para não bloquear operações
+        const isSimulated = news.source === 'simulated';
         
-        const newsContra =
-          (side === 'Buy' && news.sentiment === 'BEARISH') ||
-          (side === 'Sell' && news.sentiment === 'BULLISH');
+        if (isSimulated) {
+          // Apenas log informativo, não afeta decisão
+          console.log(`📰 ${symbol}: Sentimento simulado (ignorado para decisão)`);
+        } else {
+          const newsAligned = 
+            (side === 'Buy' && news.sentiment === 'BULLISH') ||
+            (side === 'Sell' && news.sentiment === 'BEARISH');
+          
+          const newsContra =
+            (side === 'Buy' && news.sentiment === 'BEARISH') ||
+            (side === 'Sell' && news.sentiment === 'BULLISH');
 
-        if (newsContra && news.confidence >= 70) {
-          adjustedConfidence -= 20;
-          warnings.push(`🚨 Notícias ${news.sentiment} (${news.confidence}%): ${news.keyNews[0] || 'Ver detalhes'}`);
-          if (news.riskLevel === 'HIGH') {
-            approved = false;
-            warnings.push('❌ BLOQUEADO: Risco alto por notícias');
+          if (newsContra && news.confidence >= 70) {
+            adjustedConfidence -= 20;
+            warnings.push(`🚨 Notícias ${news.sentiment} (${news.confidence}%): ${news.keyNews[0] || 'Ver detalhes'}`);
+            if (news.riskLevel === 'HIGH') {
+              approved = false;
+              warnings.push('❌ BLOQUEADO: Risco alto por notícias');
+            }
+          } else if (newsAligned) {
+            adjustedConfidence += 15;
+            reasons.push(`✅ Notícias ${news.sentiment}: ${news.reasoning || 'Alinhado'}`);
           }
-        } else if (newsAligned) {
-          adjustedConfidence += 15;
-          reasons.push(`✅ Notícias ${news.sentiment}: ${news.reasoning || 'Alinhado'}`);
         }
       }
 
