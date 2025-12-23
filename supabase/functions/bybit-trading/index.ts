@@ -265,7 +265,7 @@ async function getLotSizeMeta(symbol: string): Promise<LotSizeMeta | null> {
   }
 }
 
-function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boolean): string {
+function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boolean): string | null {
   let q = floorToStep(rawQty, meta.qtyStep);
 
   if (meta.minOrderQty && q < meta.minOrderQty) {
@@ -273,9 +273,11 @@ function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boole
     if (rawQty >= meta.minOrderQty) {
       q = meta.minOrderQty;
     } else {
-      // For reduceOnly, never increase qty beyond what caller requested.
+      // For reduceOnly, return null instead of throwing error
+      // This allows the caller to handle gracefully (skip the order)
       if (reduceOnly) {
-        throw new Error(`Qty ${rawQty} below minOrderQty ${meta.minOrderQty} for ${meta.qtyStepRaw} step`);
+        console.log(`⚠️ Qty ${rawQty} below minOrderQty ${meta.minOrderQty} for reduceOnly - skipping order`);
+        return null;
       }
       q = meta.minOrderQty;
     }
@@ -327,10 +329,25 @@ async function placeOrder(params: any) {
   }
 
   // Normalize qty to instrument filters (prevents Bybit retCode=10001 "Qty invalid")
-  let qtyStr = String(qty);
+  let qtyStr: string | null = String(qty);
   const lotMeta = await getLotSizeMeta(symbol);
   if (lotMeta) {
     qtyStr = normalizeQtyString(rawQty, lotMeta, !!reduceOnly);
+    
+    // 🔧 CORRIGIDO: Se qty é insuficiente para reduceOnly, retornar sucesso com aviso
+    if (qtyStr === null) {
+      console.log(`⚠️ Ordem ${symbol} ignorada: qty insuficiente para reduceOnly`);
+      return {
+        retCode: 0,
+        retMsg: 'SKIPPED',
+        result: { 
+          orderId: null, 
+          reason: `Qty ${rawQty} below minOrderQty ${lotMeta.minOrderQty} - order skipped`,
+          skipped: true
+        }
+      };
+    }
+    
     console.log(
       `Qty normalized for ${symbol}: raw=${rawQty} -> ${qtyStr} (step=${lotMeta.qtyStepRaw}, min=${lotMeta.minOrderQtyRaw}) reduceOnly=${!!reduceOnly}`
     );
