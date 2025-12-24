@@ -31,7 +31,7 @@ interface Config {
   is_active: boolean;
 }
 
-export const AutoTraderSettings = () => {
+const AutoTraderSettings = () => {
   const { toast } = useToast();
   const [config, setConfig] = useState<Config>({
     min_confidence: 85,
@@ -290,3 +290,6 @@ export const AutoTraderSettings = () => {
     </Card>
   );
 };
+
+export { AutoTraderSettings };
+export default AutoTraderSettings;

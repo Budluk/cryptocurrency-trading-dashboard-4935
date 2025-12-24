@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 
-export const TraderProfileSettings = () => {
+const TraderProfileSettings = () => {
   const { toast } = useToast();
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
@@ -164,3 +164,6 @@ export const TraderProfileSettings = () => {
     </div>
   );
 };
+
+export { TraderProfileSettings };
+export default TraderProfileSettings;
