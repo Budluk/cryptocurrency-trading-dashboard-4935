@@ -17,7 +17,7 @@ interface TrainingStatus {
   details: string;
 }
 
-export function MLAdaptiveSettings() {
+function MLAdaptiveSettings() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState<TrainingStatus | null>(null);
   const [trainingLog, setTrainingLog] = useState<string[]>([]);
@@ -437,3 +437,6 @@ export function MLAdaptiveSettings() {
     </Card>
   );
 }
+
+export { MLAdaptiveSettings };
+export default MLAdaptiveSettings;
