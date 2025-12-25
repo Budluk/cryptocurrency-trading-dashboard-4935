@@ -68,33 +68,55 @@ async function getNewsSentiment(symbol: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'sonar-pro', // 🔥 Upgrade para sonar-pro (multi-step reasoning, 2x mais citações)
         messages: [
           { 
             role: 'system', 
-            content: `Você é um analista experiente de criptomoedas. Analise as notícias mais recentes sobre ${cleanSymbol}. Responda APENAS em JSON válido, sem markdown ou explicações.` 
+            content: `Você é um analista sênior de criptomoedas com 10+ anos de experiência. 
+Analise TODAS as notícias recentes sobre ${cleanSymbol} com precisão institucional.
+Sua análise influencia decisões de trading REAIS. Seja preciso e conservador.
+Responda APENAS em JSON válido, sem markdown ou explicações.` 
           },
           { 
             role: 'user', 
-            content: `Pesquise e analise as notícias mais recentes sobre ${cleanSymbol} criptomoeda nas últimas 24 horas. Considere:
-- Notícias de exchanges e regulamentação
-- Atualizações de desenvolvimento do projeto
-- Movimentações de whales
-- Sentimento das redes sociais
-- Eventos macroeconômicos que afetam cripto
+            content: `Pesquise e analise TODAS as notícias sobre ${cleanSymbol} nas últimas 12 horas com foco em:
 
-Retorne JSON: {
+📊 FUNDAMENTAIS:
+- Listagens/delistagens em exchanges (Binance, Coinbase, etc)
+- Atualizações de protocolo, forks, upgrades
+- Parcerias estratégicas e integrações
+- Hacks, exploits, ou problemas de segurança
+
+🐋 FLUXO INSTITUCIONAL:
+- Movimentações de whales (entradas/saídas de exchanges)
+- Compras/vendas de fundos e instituições
+- Desbloqueios de tokens (vesting, airdrops)
+
+📈 SENTIMENTO:
+- Análises de influenciadores (>100k seguidores)
+- Trending topics no Twitter/X
+- Discussões relevantes no Reddit/Discord
+
+⚠️ RISCOS:
+- Ações regulatórias
+- Processos judiciais
+- Problemas técnicos
+
+Retorne JSON VÁLIDO e PRECISO:
+{
   "sentiment": "BULLISH" ou "BEARISH" ou "NEUTRAL",
   "confidence": 0-100,
-  "keyNews": ["notícia 1", "notícia 2", "notícia 3"],
-  "catalysts": ["fator positivo/negativo"],
+  "keyNews": ["notícia importante 1", "notícia 2", "notícia 3"],
+  "catalysts": ["catalisador positivo/negativo com impacto estimado"],
   "riskLevel": "LOW" ou "MEDIUM" ou "HIGH",
   "recommendation": "LONG" ou "SHORT" ou "WAIT",
-  "reasoning": "explicação curta baseada nas notícias encontradas"
+  "reasoning": "análise fundamentada em 2-3 frases",
+  "urgentAlerts": ["alerta crítico se houver"],
+  "nextEvents": ["evento futuro relevante"]
 }`
           }
         ],
-        max_tokens: 600,
+        max_tokens: 1000, // Mais tokens para análise completa
         search_recency_filter: 'day',
       }),
     });
@@ -147,38 +169,59 @@ async function getMarketEvents() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'sonar-pro', // 🔥 Upgrade para sonar-pro
         messages: [
           { 
             role: 'system', 
-            content: 'Você é um analista de mercado cripto experiente. Pesquise eventos importantes que podem afetar o mercado. Responda APENAS em JSON válido.' 
+            content: `Você é um estrategista macro de mercados globais com especialização em cripto.
+Pesquise TODOS os eventos importantes que podem afetar o mercado.
+Sua análise é usada por traders profissionais. Seja preciso sobre datas e impactos.
+Responda APENAS em JSON válido.` 
           },
           { 
             role: 'user', 
-            content: `Pesquise os próximos eventos econômicos e de criptomoedas que podem impactar o mercado nos próximos 7 dias:
-- Decisões do FOMC/Fed
-- Relatórios de CPI/inflação
-- Halvings, airdrops, unlocks de tokens
-- Atualizações de protocolos importantes (Ethereum, etc)
-- Eventos regulatórios
+            content: `Pesquise TODOS os eventos econômicos e de criptomoedas que podem impactar o mercado nos próximos 7 dias:
+
+📅 EVENTOS MACROECONÔMICOS:
+- Decisões do FOMC/Fed (taxa de juros)
+- Relatórios de CPI/inflação (EUA, Europa)
+- NFP (Non-Farm Payrolls)
+- Discursos de banqueiros centrais
+- PIB e dados de emprego
+
+🔗 EVENTOS CRIPTO-ESPECÍFICOS:
+- Bitcoin/Ethereum: upgrades, ETFs, halvings
+- Desbloqueios de tokens grandes (>$10M)
+- Airdrops significativos
+- Lançamentos de mainnet/testnet
+- Conferências (TOKEN2049, etc)
+
+⚖️ REGULATÓRIO:
+- Decisões da SEC
+- Regulamentações da UE (MiCA)
+- Ações contra exchanges/projetos
              
-Retorne JSON: {
+Retorne JSON DETALHADO:
+{
   "events": [
     {
-      "title": "nome do evento",
-      "type": "FOMC" ou "CPI" ou "NFP" ou "EARNINGS" ou "CRYPTO_SPECIFIC" ou "OTHER",
-      "impact": "HIGH" ou "MEDIUM" ou "LOW",
-      "expectedTime": "data/hora aproximada",
-      "affectedAssets": ["BTC", "ETH", etc],
-      "expectedDirection": "BULLISH" ou "BEARISH" ou "UNCERTAIN",
-      "tradingAdvice": "dica curta"
+      "title": "nome exato do evento",
+      "type": "FOMC|CPI|NFP|EARNINGS|CRYPTO_UNLOCK|UPGRADE|REGULATORY|OTHER",
+      "impact": "HIGH|MEDIUM|LOW",
+      "expectedTime": "data/hora (UTC se possível)",
+      "affectedAssets": ["BTC", "ETH", "símbolos afetados"],
+      "expectedDirection": "BULLISH|BEARISH|UNCERTAIN",
+      "tradingAdvice": "como posicionar-se antes/depois",
+      "historicalImpact": "como eventos similares afetaram no passado"
     }
   ],
-  "overallMarketSentiment": "RISK_ON" ou "RISK_OFF" ou "NEUTRAL"
+  "overallMarketSentiment": "RISK_ON|RISK_OFF|NEUTRAL",
+  "weeklyOutlook": "perspectiva geral da semana",
+  "keyRisks": ["risco principal 1", "risco 2"]
 }`
           }
         ],
-        max_tokens: 800,
+        max_tokens: 1200,
         search_recency_filter: 'week',
       }),
     });
@@ -310,39 +353,64 @@ async function getWhaleAlerts(symbols: string[]) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
+        model: 'sonar-pro', // 🔥 Upgrade para sonar-pro
         messages: [
           { 
             role: 'system', 
-            content: 'Você é um analista on-chain de criptomoedas. Pesquise movimentações de whales recentes. Responda APENAS em JSON válido.' 
+            content: `Você é um analista on-chain especializado em rastrear baleias e fluxos institucionais.
+Pesquise movimentações de grandes carteiras com precisão de dados blockchain.
+Sua análise ajuda traders a posicionar-se antes de grandes movimentos.
+Responda APENAS em JSON válido.` 
           },
           { 
             role: 'user', 
-            content: `Pesquise movimentações recentes de whales (grandes carteiras) para: ${symbolList}.
+            content: `Pesquise TODAS as movimentações significativas de whales nas últimas 24h para: ${symbolList}.
 
-Busque em fontes como Whale Alert, on-chain data, e notícias sobre:
-- Grandes transferências para/de exchanges
-- Acumulação por carteiras institucionais
-- Movimentações suspeitas
-- Desbloqueios de tokens
+🐋 WHALE ALERT (prioridade):
+- Transferências > $1M para/de exchanges
+- Movimentações entre carteiras desconhecidas
+- Ativação de carteiras dormentes (>1 ano)
+
+🏦 FLUXO INSTITUCIONAL:
+- Compras/vendas de fundos (Grayscale, BlackRock, etc)
+- Movimentações de carteiras de exchanges (cold wallets)
+- Fluxos de staking/unstaking
+
+📊 MÉTRICAS ON-CHAIN:
+- Exchange netflow (entradas - saídas)
+- Acumulação vs distribuição
+- Mudanças em addresses com >1000 BTC/ETH
+
+⚠️ ALERTAS:
+- Movimentações suspeitas (possível hack/exploit)
+- Desbloqueios de tokens próximos
+- Transferências para endereços de mixing
              
-Retorne JSON: {
+Retorne JSON DETALHADO:
+{
   "alerts": [
     {
       "symbol": "BTC",
-      "type": "ACCUMULATION" ou "DISTRIBUTION" ou "EXCHANGE_INFLOW" ou "EXCHANGE_OUTFLOW",
-      "amount": "valor em USD",
-      "impact": "BULLISH" ou "BEARISH" ou "NEUTRAL",
+      "type": "ACCUMULATION|DISTRIBUTION|EXCHANGE_INFLOW|EXCHANGE_OUTFLOW|DORMANT_ACTIVATION|STAKING",
+      "amount": "$XXM (valor exato se disponível)",
+      "impact": "BULLISH|BEARISH|NEUTRAL",
       "confidence": 0-100,
-      "details": "descrição curta"
+      "details": "descrição com detalhes da transação",
+      "txHash": "hash se disponível",
+      "timing": "há X horas"
     }
   ],
-  "overallWhaleDirection": "ACCUMULATING" ou "DISTRIBUTING" ou "MIXED",
-  "tradingImplication": "o que isso significa para traders"
+  "exchangeNetflow24h": {
+    "BTC": "+/- $XXM",
+    "ETH": "+/- $XXM"
+  },
+  "overallWhaleDirection": "ACCUMULATING|DISTRIBUTING|MIXED",
+  "institutionalActivity": "descrição de atividade institucional",
+  "tradingImplication": "como posicionar-se baseado nos dados"
 }`
           }
         ],
-        max_tokens: 800,
+        max_tokens: 1200,
         search_recency_filter: 'day',
       }),
     });
