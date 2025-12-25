@@ -800,11 +800,20 @@ JSON: {"action":"buy"|"sell"|"wait","confidence":0-100,"reason":"motivo principa
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemini-2.5-pro', // 🔥 Upgrade para modelo mais potente
           messages: [
-            { role: 'system', content: 'Scalper conservador. JSON curto. Priorize WAIT se duvidoso.' },
+            { 
+              role: 'system', 
+              content: `Você é um trader quantitativo de elite especializado em scalping de criptomoedas. 
+Sua análise é usada para decisões REAIS com dinheiro real.
+Seja EXTREMAMENTE preciso e conservador. Priorize preservação de capital.
+WAIT é sempre preferível a um trade duvidoso.
+Responda APENAS em JSON válido, sem markdown.` 
+            },
             { role: 'user', content: aiPrompt }
           ],
+          max_tokens: 1000,
+          temperature: 0.2, // Mais determinístico
         }),
       });
 
@@ -814,11 +823,11 @@ JSON: {"action":"buy"|"sell"|"wait","confidence":0-100,"reason":"motivo principa
         const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           aiInsights = JSON.parse(jsonMatch[0]);
-          console.log('✅ AI insights recebidos');
+          console.log('✅ AI insights recebidos (modelo: gemini-2.5-pro)');
         }
       }
     } catch (e) {
-      console.log('⚠️ AI skipped');
+      console.log('⚠️ AI skipped:', e);
     }
     
     // ========================
