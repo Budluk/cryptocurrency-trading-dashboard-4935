@@ -494,6 +494,64 @@ async function getLastPrice(symbol: string): Promise<number | null> {
 async function setTradingStop(params: { symbol: string; stopLoss?: string; takeProfit?: string }) {
   const { symbol, stopLoss, takeProfit } = params;
 
+  // 🔧 CORREÇÃO: Buscar posição aberta para saber o side e validar SL/TP
+  const positions = await getPositionsBySymbol(symbol);
+  const openPosition = positions.find((p: any) => Number(p.size || 0) > 0);
+  
+  if (!openPosition) {
+    console.log(`⚠️ No open position for ${symbol} - skipping trading stop`);
+    return { retCode: 0, retMsg: 'No position to set stop for', result: {} };
+  }
+  
+  const side = openPosition.side as 'Buy' | 'Sell';
+  const markPrice = Number(openPosition.markPrice || 0);
+  const avgPrice = Number(openPosition.avgPrice || 0);
+  const refPrice = markPrice > 0 ? markPrice : avgPrice;
+  
+  console.log(`📊 Position ${symbol} ${side}: markPrice=${markPrice}, avgPrice=${avgPrice}`);
+
+  let validatedSL = stopLoss ? Number(stopLoss) : undefined;
+  let validatedTP = takeProfit ? Number(takeProfit) : undefined;
+  
+  // 🛡️ VALIDAÇÃO: SL deve estar no lado correto
+  if (validatedSL !== undefined && Number.isFinite(validatedSL) && refPrice > 0) {
+    if (side === 'Buy') {
+      // Para BUY, SL deve ser ABAIXO do preço atual (mark price)
+      if (validatedSL >= refPrice) {
+        // SL inválido - recalcular como 0.3% abaixo do preço
+        const correctedSL = refPrice * 0.997;
+        console.log(`⚠️ SL ${validatedSL} >= markPrice ${refPrice} para BUY. Corrigindo para ${correctedSL.toFixed(6)}`);
+        validatedSL = correctedSL;
+      }
+    } else {
+      // Para SELL, SL deve ser ACIMA do preço atual
+      if (validatedSL <= refPrice) {
+        const correctedSL = refPrice * 1.003;
+        console.log(`⚠️ SL ${validatedSL} <= markPrice ${refPrice} para SELL. Corrigindo para ${correctedSL.toFixed(6)}`);
+        validatedSL = correctedSL;
+      }
+    }
+  }
+  
+  // 🛡️ VALIDAÇÃO: TP deve estar no lado correto
+  if (validatedTP !== undefined && Number.isFinite(validatedTP) && refPrice > 0) {
+    if (side === 'Buy') {
+      // Para BUY, TP deve ser ACIMA do preço atual
+      if (validatedTP <= refPrice) {
+        const correctedTP = refPrice * 1.008;
+        console.log(`⚠️ TP ${validatedTP} <= markPrice ${refPrice} para BUY. Corrigindo para ${correctedTP.toFixed(6)}`);
+        validatedTP = correctedTP;
+      }
+    } else {
+      // Para SELL, TP deve ser ABAIXO do preço atual
+      if (validatedTP >= refPrice) {
+        const correctedTP = refPrice * 0.992;
+        console.log(`⚠️ TP ${validatedTP} >= markPrice ${refPrice} para SELL. Corrigindo para ${correctedTP.toFixed(6)}`);
+        validatedTP = correctedTP;
+      }
+    }
+  }
+
   const body: Record<string, any> = {
     category: 'linear',
     symbol,
@@ -501,14 +559,15 @@ async function setTradingStop(params: { symbol: string; stopLoss?: string; takeP
     positionIdx: 0,
   };
 
-  if (stopLoss) {
-    body.stopLoss = String(stopLoss);
-    // Usar MarkPrice reduz stops por wick/spread em scalping (menos "stop hunt" no LastPrice)
+  if (validatedSL !== undefined && Number.isFinite(validatedSL)) {
+    const decimals = refPrice < 1 ? 6 : refPrice < 100 ? 4 : 2;
+    body.stopLoss = validatedSL.toFixed(decimals);
     body.slTriggerBy = 'MarkPrice';
   }
 
-  if (takeProfit) {
-    body.takeProfit = String(takeProfit);
+  if (validatedTP !== undefined && Number.isFinite(validatedTP)) {
+    const decimals = refPrice < 1 ? 6 : refPrice < 100 ? 4 : 2;
+    body.takeProfit = validatedTP.toFixed(decimals);
     body.tpTriggerBy = 'LastPrice';
   }
 
