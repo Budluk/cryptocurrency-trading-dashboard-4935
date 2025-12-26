@@ -196,17 +196,30 @@ export const MultiAssetTrader = () => {
     }
   }, [closedPositions, addTradeToBuffer]);
 
-  // Carregar saldo inicial
+  // Carregar saldo inicial e treinar IA
   useEffect(() => {
     const init = async () => {
       console.log('🔄 Inicializando trader...');
       await syncBybitBalance();
       await syncOpenPositions();
       await fetchTop10VolatileAssets();
+      
+      // 🤖 Treinar IA automaticamente com histórico Bybit
+      try {
+        console.log('🧠 Iniciando treinamento automático da IA...');
+        await trainOnWinningPatterns();
+        console.log('✅ IA treinada com sucesso');
+      } catch (err) {
+        console.log('⚠️ Falha no treinamento inicial da IA (não crítico)');
+      }
+      
+      // 🔄 Carregar padrões perdedores históricos
+      await loadHistoricalPatterns();
+      
       console.log('✅ Inicialização completa');
     };
     init();
-  }, []);
+  }, [trainOnWinningPatterns, loadHistoricalPatterns]);
 
   // Restaurar estado e garantir config existe
   useEffect(() => {
@@ -697,16 +710,16 @@ export const MultiAssetTrader = () => {
       const skipCounts = new Map<string, number>();
       const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
-      // === SCALPING: LIMITES MAIS FLEXÍVEIS ===
+      // === 🔧 LIMITES MAIS CONSERVADORES ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 4; // Aumentado para scalping
-      const MAX_TRADES_PER_CYCLE = 6; // Mais trades por ciclo para scalping
+      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // 🔧 REDUZIDO de 4
+      const MAX_TRADES_PER_CYCLE = 3; // 🔧 REDUZIDO de 6 - menos trades mas melhores
       
       // Contar posições abertas por direção
       const existingBuys = openPositions.filter(p => p.side === 'Buy').length;
       const existingSells = openPositions.filter(p => p.side === 'Sell').length;
-      const MAX_IMBALANCE = 8; // Mais flexível para scalping
+      const MAX_IMBALANCE = 4; // 🔧 REDUZIDO de 8
       
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
@@ -745,24 +758,24 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS AJUSTADOS POR ANÁLISE DE HORA ===
-          let scoreThreshold = isOptimalForHour ? 30 : (isPremiumSymbol ? 35 : 45);
-          let minConfirmations = isOptimalForHour ? 1 : 2;
+          // === 🔧 THRESHOLDS MAIS RIGOROSOS ===
+          let scoreThreshold = isOptimalForHour ? 45 : (isPremiumSymbol ? 50 : 55);
+          let minConfirmations = isOptimalForHour ? 2 : 3;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 5;
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 3;
             const currentHour = new Date().getUTCHours();
-            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
+            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 2;
           }
           
-          // 🆕 Bonus para ativo ideal da hora
+          // 🔧 Bonus menor para ativo ideal da hora
           if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
-            scoreThreshold -= 10; // Alta confiança
+            scoreThreshold -= 5; // Menos bonus
           }
           
-          // Mínimo score
-          scoreThreshold = Math.max(isOptimalForHour ? 20 : 30, scoreThreshold);
+          // 🔧 Mínimo score MUITO MAIOR
+          scoreThreshold = Math.max(isOptimalForHour ? 40 : 50, scoreThreshold);
           
           // 🆕 Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -826,6 +839,32 @@ export const MultiAssetTrader = () => {
           if (patternCheck.blocked) {
             console.log(`🚫 BLOQUEADO: ${symbol} - ${patternCheck.reason}`);
             continue;
+          }
+
+          // 🤖 VALIDAÇÃO COM AI TRADING INTELLIGENCE (NOVO)
+          if (aiIntelligenceEnabled && tradingSignal) {
+            try {
+              const aiValidation = await validateTradeWithAI(
+                symbol,
+                analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+                analysisResult.signalScore
+              );
+              
+              if (!aiValidation.approved) {
+                console.log(`🤖 IA BLOQUEOU ${symbol}: ${aiValidation.reason}`);
+                continue;
+              }
+              
+              // Se AI ajustou score muito para baixo, pular
+              if (aiValidation.adjustedScore < 40) {
+                console.log(`🤖 ${symbol}: Score ajustado pela IA muito baixo (${aiValidation.adjustedScore})`);
+                continue;
+              }
+              
+              console.log(`🤖 ${symbol}: ${aiValidation.reason} | Score: ${analysisResult.signalScore} → ${aiValidation.adjustedScore}`);
+            } catch (aiErr) {
+              console.log(`⚠️ Erro validação IA ${symbol}, continuando...`);
+            }
           }
 
           // 🆕 Verificar correlação AVANÇADA
@@ -919,10 +958,11 @@ export const MultiAssetTrader = () => {
             takeProfit = sltp.takeProfit;
           }
           
-          // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço (sem distorcer estratégia) 
+          // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
           const slNum = parseFloat(stopLoss);
           const tpNum = parseFloat(takeProfit);
-          const minSlPct = 0.001; // 0.10%
+          // 🔧 AUMENTADO: SL mínimo de 0.3% (era 0.1%)
+          const minSlPct = 0.003; // 0.30%
           const rr = 2.5; // 1:2.5
 
           if (analysisResult.action === 'BUY') {
@@ -931,6 +971,11 @@ export const MultiAssetTrader = () => {
               const corrected = (currentPrice * (1 - minSlPct)).toFixed(6);
               console.log(`⚠️ SL BUY corrigido: ${stopLoss} → ${corrected} (preço: ${currentPrice})`);
               stopLoss = corrected;
+            }
+            // Verificar se SL está pelo menos 0.3% abaixo
+            const slDist = (currentPrice - parseFloat(stopLoss)) / currentPrice;
+            if (slDist < minSlPct) {
+              stopLoss = (currentPrice * (1 - minSlPct)).toFixed(6);
             }
             if (!Number.isFinite(tpNum) || tpNum <= currentPrice) {
               const corrected = (currentPrice * (1 + minSlPct * rr)).toFixed(6);
@@ -943,6 +988,11 @@ export const MultiAssetTrader = () => {
               const corrected = (currentPrice * (1 + minSlPct)).toFixed(6);
               console.log(`⚠️ SL SELL corrigido: ${stopLoss} → ${corrected} (preço: ${currentPrice})`);
               stopLoss = corrected;
+            }
+            // Verificar se SL está pelo menos 0.3% acima
+            const slDist = (parseFloat(stopLoss) - currentPrice) / currentPrice;
+            if (slDist < minSlPct) {
+              stopLoss = (currentPrice * (1 + minSlPct)).toFixed(6);
             }
             if (!Number.isFinite(tpNum) || tpNum >= currentPrice) {
               const corrected = (currentPrice * (1 - minSlPct * rr)).toFixed(6);
