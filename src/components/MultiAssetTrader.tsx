@@ -710,16 +710,16 @@ export const MultiAssetTrader = () => {
       const skipCounts = new Map<string, number>();
       const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
-      // === 🔧 LIMITES MAIS CONSERVADORES ===
+      // === LIMITES POR CICLO ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // 🔧 REDUZIDO de 4
-      const MAX_TRADES_PER_CYCLE = 3; // 🔧 REDUZIDO de 6 - menos trades mas melhores
+      const MAX_SAME_DIRECTION_PER_CYCLE = 3;
+      const MAX_TRADES_PER_CYCLE = 5;
       
       // Contar posições abertas por direção
       const existingBuys = openPositions.filter(p => p.side === 'Buy').length;
       const existingSells = openPositions.filter(p => p.side === 'Sell').length;
-      const MAX_IMBALANCE = 4; // 🔧 REDUZIDO de 8
+      const MAX_IMBALANCE = 6;
       
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
@@ -758,31 +758,31 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === 🔧 THRESHOLDS MAIS RIGOROSOS ===
-          let scoreThreshold = isOptimalForHour ? 45 : (isPremiumSymbol ? 50 : 55);
-          let minConfirmations = isOptimalForHour ? 2 : 3;
+          // === THRESHOLDS BALANCEADOS ===
+          let scoreThreshold = isOptimalForHour ? 35 : (isPremiumSymbol ? 40 : 45);
+          let minConfirmations = isOptimalForHour ? 1 : 2;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 3;
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 5;
             const currentHour = new Date().getUTCHours();
-            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 2;
+            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
           }
           
-          // 🔧 Bonus menor para ativo ideal da hora
+          // Bonus para ativo ideal da hora
           if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
-            scoreThreshold -= 5; // Menos bonus
+            scoreThreshold -= 8;
           }
           
-          // 🔧 Mínimo score MUITO MAIOR
-          scoreThreshold = Math.max(isOptimalForHour ? 40 : 50, scoreThreshold);
+          // Mínimo score
+          scoreThreshold = Math.max(isOptimalForHour ? 30 : 35, scoreThreshold);
           
-          // 🆕 Passar symbol e BTC trend para análise
+          // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
             currentPrice, highPrice, lowPrice, priceChange, volume24h, volatility,
             scoreThreshold, minConfirmations, currentBalance: balanceNow,
-            symbol, // Para tracking de pullback
-            btcPriceChange: btcTrend, // Para correlação BTC
+            symbol,
+            btcPriceChange: btcTrend,
           });
 
           if (!analysisResult.shouldTrade || !analysisResult.action) {
@@ -841,8 +841,8 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // 🤖 VALIDAÇÃO COM AI TRADING INTELLIGENCE (NOVO)
-          if (aiIntelligenceEnabled && tradingSignal) {
+          // 🤖 VALIDAÇÃO COM AI (apenas se tiver tradingSignal disponível)
+          if (aiIntelligenceEnabled && tradingSignal && tradingSignal.confidence >= 60) {
             try {
               const aiValidation = await validateTradeWithAI(
                 symbol,
@@ -850,19 +850,23 @@ export const MultiAssetTrader = () => {
                 analysisResult.signalScore
               );
               
-              if (!aiValidation.approved) {
+              // Só bloquear se AI reprovar COM ALTA CONFIANÇA
+              if (!aiValidation.approved && tradingSignal.confidence >= 75) {
                 console.log(`🤖 IA BLOQUEOU ${symbol}: ${aiValidation.reason}`);
                 continue;
               }
               
-              // Se AI ajustou score muito para baixo, pular
-              if (aiValidation.adjustedScore < 40) {
-                console.log(`🤖 ${symbol}: Score ajustado pela IA muito baixo (${aiValidation.adjustedScore})`);
+              // Se AI ajustou score MUITO para baixo E confiança alta, pular
+              if (aiValidation.adjustedScore < 30 && tradingSignal.confidence >= 70) {
+                console.log(`🤖 ${symbol}: Score muito baixo após IA (${aiValidation.adjustedScore})`);
                 continue;
               }
               
-              console.log(`🤖 ${symbol}: ${aiValidation.reason} | Score: ${analysisResult.signalScore} → ${aiValidation.adjustedScore}`);
+              if (aiValidation.approved) {
+                console.log(`🤖 ${symbol}: ${aiValidation.reason}`);
+              }
             } catch (aiErr) {
+              // Erro na AI não bloqueia trade
               console.log(`⚠️ Erro validação IA ${symbol}, continuando...`);
             }
           }
