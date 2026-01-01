@@ -508,19 +508,19 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    // === DETERMINAR AÇÃO ===
+    // === DETERMINAR AÇÃO (SWING: mais rigoroso) ===
     const scoreDiff = Math.abs(buyScore - sellScore);
-    const minDiff = 8; // Diferença mínima entre buy/sell
+    const minDiff = 12; // SWING: diferença maior para evitar sinais fracos
     
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     
-    // Threshold dinâmico baseado em volatilidade (mais leve)
+    // Threshold dinâmico baseado em volatilidade (SWING: mais rigoroso)
     const volatilityAdjustedThreshold = volatility > 10 
-      ? scoreThreshold + 10 
+      ? scoreThreshold + 15 
       : volatility > 6 
-        ? scoreThreshold + 5 
-        : scoreThreshold;
+        ? scoreThreshold + 8 
+        : scoreThreshold + 3;
     
     if (scoreDiff >= minDiff) {
       if (buyScore > sellScore && buyScore >= volatilityAdjustedThreshold) {
@@ -578,28 +578,28 @@ export const useSignalAnalysis = () => {
     
     const positionOk = !inMiddle || scoreDiff >= 15 || isReversal || isMomentumTrade || signalScore >= 50;
     
-    // === CLASSIFICAÇÃO DE QUALIDADE ===
+    // === CLASSIFICAÇÃO DE QUALIDADE (SWING: mais rigoroso) ===
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     
-    // Premium: sinais excepcionais
-    if (signalScore >= 75 && hasVolumeSpike && (isReversal || isMomentumTrade) && scoreDiff >= 20) {
+    // Premium: sinais excepcionais (SWING: requer mais)
+    if (signalScore >= 80 && hasVolumeSpike && (isReversal || isMomentumTrade) && scoreDiff >= 25) {
       signalQuality = 'premium';
     }
-    // High: sinais bons
-    else if (signalScore >= 60 && hasStrongVolume && scoreDiff >= 15) {
+    // High: sinais bons (SWING: requer mais)
+    else if (signalScore >= 65 && hasStrongVolume && scoreDiff >= 18) {
       signalQuality = 'high';
     }
-    else if (signalScore >= 55 && hasVolumeSpike && scoreDiff >= 12) {
+    else if (signalScore >= 60 && hasVolumeSpike && scoreDiff >= 15) {
       signalQuality = 'high';
     }
-    // Medium: sinais decentes
-    else if (signalScore >= 45 && hasGoodVolume && scoreDiff >= 10) {
+    // Medium: sinais decentes (SWING: requer mais)
+    else if (signalScore >= 50 && hasGoodVolume && scoreDiff >= 14) {
       signalQuality = 'medium';
     }
-    else if (signalScore >= 40 && hasStrongVolume && scoreDiff >= 8) {
+    else if (signalScore >= 48 && hasStrongVolume && scoreDiff >= 12) {
       signalQuality = 'medium';
     }
-    else if (signalScore >= 35 && (isReversal || isMomentumTrade)) {
+    else if (signalScore >= 45 && (isReversal || isMomentumTrade) && hasVolumeSpike) {
       signalQuality = 'medium';
     }
     
@@ -611,7 +611,7 @@ export const useSignalAnalysis = () => {
     // === BLOQUEIO DE RANGING (apenas se score baixo) ===
     const rangingBlocked = marketRegime === 'ranging' && !isReversal && signalScore < 50;
     
-    // === DECISÃO FINAL ===
+    // === DECISÃO FINAL (SWING: muito mais rigoroso) ===
     const shouldTrade = (
       action !== null &&
       signalScore >= volatilityAdjustedThreshold &&
@@ -619,17 +619,18 @@ export const useSignalAnalysis = () => {
       currentBalance > 2 &&
       confirmations.length >= minConfirmations &&
       volumeOk &&
-      (volatilityOk || isReversal || isMomentumTrade) &&
-      (atrOk || isReversal) &&
+      (volatilityOk || isReversal) && // SWING: sem bypass por momentum
+      atrOk && // SWING: sempre requer ATR ok
       priceMovementOk &&
-      (momentumOk || isReversal || signalScore >= 45) &&
-      (volumeDirectionOk || signalScore >= 50) &&
+      momentumOk && // SWING: sempre requer momentum
+      volumeDirectionOk && // SWING: sempre requer volume na direção
       positionOk &&
       signalQuality !== 'low' &&
-      (pullbackReady || isReversal || isMomentumTrade || signalScore >= 55) &&
-      (btcAligned || isReversal || isMomentumTrade || signalScore >= 60) &&
-      (isGoodHour || isReversal || isMomentumTrade || signalScore >= 50) &&
-      !rangingBlocked
+      pullbackReady && // SWING: sempre requer pullback
+      btcAligned && // SWING: sempre requer BTC alinhado
+      (isGoodHour || signalScore >= 65) && // SWING: mais rigoroso com hora
+      !rangingBlocked &&
+      tfAligned // SWING: requer timeframes alinhados
     );
 
     // Skip reason

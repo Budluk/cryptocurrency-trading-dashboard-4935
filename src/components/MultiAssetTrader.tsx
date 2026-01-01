@@ -710,16 +710,22 @@ export const MultiAssetTrader = () => {
       const skipCounts = new Map<string, number>();
       const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
-      // === LIMITES POR CICLO ===
+      // === LIMITES POR CICLO (SWING) ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 3;
-      const MAX_TRADES_PER_CYCLE = 5;
+      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // Swing: menos trades
+      const MAX_TRADES_PER_CYCLE = 3; // Swing: máximo 3 trades por ciclo
       
       // Contar posições abertas por direção
       const existingBuys = openPositions.filter(p => p.side === 'Buy').length;
       const existingSells = openPositions.filter(p => p.side === 'Sell').length;
-      const MAX_IMBALANCE = 6;
+      const MAX_IMBALANCE = 3; // Swing: menor imbalance
+      
+      // 🚫 BLOQUEAR HEDGE: símbolos já com posição aberta
+      const symbolsWithOpenPosition = new Set(openPositions.map(p => p.symbol));
+      
+      // 🎯 SWING TOP 5: Apenas BTC, ETH, SOL, BNB, XRP
+      const SWING_TOP5_SYMBOLS = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']);
       
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
@@ -739,18 +745,17 @@ export const MultiAssetTrader = () => {
         const isOptimalForHour = symbolAnalysis.isOptimalForHour;
         const isPremiumSymbol = symbolAnalysis.isPremium;
         
-        // 🆕 FILTRO: Priorizar ativos ideais para esta hora
-        // No TESTNET liberamos para gerar operações e treinar.
-        // No REAL: se não houver ativos ideais, usar FALLBACK com Top 5
-        if (!isTestnet && !isOptimalForHour && !isPremiumSymbol) {
-          // Verificar se está no fallback (Top 5 por score)
-          if (!useFallbackMode || !topNFallbackSymbols.has(symbol)) {
-            const reason = `Não é ativo ideal para ${currentHourUTC}h UTC (modo REAL)`;
-            skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
-            continue;
-          }
-          // Se está no fallback, permitir mas com log
-          console.log(`🔄 FALLBACK: ${symbol} permitido (Top 5 por score)`);
+        // 🎯 SWING REAL: APENAS Top 5 (BTC, ETH, SOL, BNB, XRP)
+        if (!isTestnet && !SWING_TOP5_SYMBOLS.has(symbol)) {
+          const reason = `Swing: apenas Top 5 ativos`;
+          skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+          continue;
+        }
+        
+        // 🚫 BLOQUEAR HEDGE: não abrir posição em símbolo que já tem posição aberta
+        if (symbolsWithOpenPosition.has(symbol)) {
+          console.log(`🚫 ${symbol}: HEDGE bloqueado - já existe posição aberta`);
+          continue;
         }
         
         try {
@@ -758,24 +763,24 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS BALANCEADOS ===
-          let scoreThreshold = isOptimalForHour ? 35 : (isPremiumSymbol ? 40 : 45);
-          let minConfirmations = isOptimalForHour ? 1 : 2;
+          // === THRESHOLDS SWING (mais rigorosos) ===
+          let scoreThreshold = 50; // Swing: score mínimo alto
+          let minConfirmations = 3; // Swing: mais confirmações
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 5;
+            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 3;
             const currentHour = new Date().getUTCHours();
-            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 3;
+            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 2;
           }
           
           // Bonus para ativo ideal da hora
           if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
-            scoreThreshold -= 8;
+            scoreThreshold -= 5;
           }
           
-          // Mínimo score
-          scoreThreshold = Math.max(isOptimalForHour ? 30 : 35, scoreThreshold);
+          // Mínimo score SWING (nunca abaixo de 45)
+          scoreThreshold = Math.max(45, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -965,8 +970,8 @@ export const MultiAssetTrader = () => {
           // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
           const slNum = parseFloat(stopLoss);
           const tpNum = parseFloat(takeProfit);
-          // 🔧 AUMENTADO: SL mínimo de 0.3% (era 0.1%)
-          const minSlPct = 0.003; // 0.30%
+          // 🔧 SWING: SL mínimo de 0.8% (mais amplo para não stopar em ruído)
+          const minSlPct = 0.008; // 0.80%
           const rr = 2.5; // 1:2.5
 
           if (analysisResult.action === 'BUY') {
