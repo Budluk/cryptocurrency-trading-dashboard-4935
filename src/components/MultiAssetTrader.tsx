@@ -23,6 +23,7 @@ import { useDataDrivenStrategy } from "@/hooks/useDataDrivenStrategy";
 import { useArmedOrders } from "@/hooks/useArmedOrders";
 import { useAITradingIntelligence } from "@/hooks/useAITradingIntelligence";
 import { useMarketIntelligence } from "@/hooks/useMarketIntelligence";
+import { useManualTradeTracker } from "@/hooks/useManualTradeTracker";
 
 interface Trade {
   symbol: string;
@@ -108,6 +109,9 @@ export const MultiAssetTrader = () => {
     shouldAvoidTrading,
     fetchFearGreed,
   } = useMarketIntelligence();
+  
+  // 🎓 Manual Trade Tracker - IA aprende com todas as suas operações
+  const { markAsBotOpened, manualTradesCount } = useManualTradeTracker(isTestnet, true);
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
@@ -1095,6 +1099,9 @@ export const MultiAssetTrader = () => {
             if (analysisResult.action === 'BUY') buyCountThisCycle++;
             if (analysisResult.action === 'SELL') sellCountThisCycle++;
             
+            // 🎓 Marcar como aberta pelo bot para distinguir de operações manuais
+            markAsBotOpened(symbol);
+            
             const orderStatus: 'OPEN' = 'OPEN';
             const entryPrice = currentPrice;
             
@@ -1121,7 +1128,7 @@ export const MultiAssetTrader = () => {
               partial_tp_executed: false, original_quantity: qty,
               confidence: analysisResult.signalScore, 
               status: orderStatus,
-              order_source: 'market',
+              order_source: 'BOT', // 🆕 Identificar como operação do bot
               exchange_order_id: orderData.data?.orderId
             });
             
