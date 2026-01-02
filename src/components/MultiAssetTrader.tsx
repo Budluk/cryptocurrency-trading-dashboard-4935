@@ -24,6 +24,7 @@ import { useArmedOrders } from "@/hooks/useArmedOrders";
 import { useAITradingIntelligence } from "@/hooks/useAITradingIntelligence";
 import { useMarketIntelligence } from "@/hooks/useMarketIntelligence";
 import { useManualTradeTracker } from "@/hooks/useManualTradeTracker";
+import { useAutoMLSync } from "@/hooks/useAutoMLSync";
 
 interface Trade {
   symbol: string;
@@ -112,6 +113,14 @@ export const MultiAssetTrader = () => {
   
   // 🎓 Manual Trade Tracker - IA aprende com todas as suas operações
   const { markAsBotOpened, manualTradesCount } = useManualTradeTracker(isTestnet, true);
+  
+  // 🔄 Auto ML Sync - Sincroniza automaticamente com histórico Bybit
+  const { 
+    syncMLWithBybit, 
+    getMLRecommendations: getAutoMLRecommendations, 
+    shouldBlockTrade: shouldMLBlockTrade,
+    getOptimizedTradeParams 
+  } = useAutoMLSync(isTestnet, true);
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
@@ -848,6 +857,19 @@ export const MultiAssetTrader = () => {
           if (patternCheck.blocked) {
             console.log(`🚫 BLOQUEADO: ${symbol} - ${patternCheck.reason}`);
             continue;
+          }
+          
+          // 🧠 VERIFICAR ML AUTO SYNC - Bloqueio baseado em aprendizado contínuo
+          if (mlDecisionsEnabled) {
+            try {
+              const mlBlockCheck = await shouldMLBlockTrade(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
+              if (mlBlockCheck.blocked) {
+                console.log(`🧠 ML BLOQUEOU: ${symbol} - ${mlBlockCheck.reason}`);
+                continue;
+              }
+            } catch (mlErr) {
+              // Erro no ML não bloqueia trade
+            }
           }
 
           // 🤖 VALIDAÇÃO COM AI (apenas se tiver tradingSignal disponível)
@@ -1611,34 +1633,69 @@ export const MultiAssetTrader = () => {
                 {mlConfig?.is_enabled ? `${mlConfig.trades_analyzed} trades | ${mlConfig.confidence_score?.toFixed(0)}% confiança` : 'Analise seu histórico'}
               </p>
             </div>
-            <Button
-              variant="outline" size="sm"
-              onClick={async () => {
-                const userId = await getUserId();
-                const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', { body: { userId } });
-                if (error) {
-                  toast({ title: "❌ Erro no ML", description: error.message, variant: "destructive" });
-                  return;
-                }
-                if (data?.success) {
-                  setMlConfig(data.config);
-                  const lev = data.config?.recommended_leverage ?? data.leverage?.optimal;
-                  toast({ title: "🧠 ML Configurado!", description: `Leverage: ${lev ?? '—'}x` });
-                }
-              }}
-              disabled={isRunning}
-            >
-              {mlConfig?.is_enabled ? 'Reanalisar' : 'Ativar ML'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline" size="sm"
+                onClick={async () => {
+                  toast({ title: "🔄 Sincronizando ML", description: "Buscando histórico da Bybit..." });
+                  const data = await syncMLWithBybit(true);
+                  if (data?.success) {
+                    setMlConfig(data.config);
+                  }
+                }}
+                disabled={isRunning}
+              >
+                🔄 Sync Bybit
+              </Button>
+              <Button
+                variant="outline" size="sm"
+                onClick={async () => {
+                  const userId = await getUserId();
+                  const { data, error } = await supabase.functions.invoke('ml-adaptive-learning', { body: { userId } });
+                  if (error) {
+                    toast({ title: "❌ Erro no ML", description: error.message, variant: "destructive" });
+                    return;
+                  }
+                  if (data?.success) {
+                    setMlConfig(data.config);
+                    const lev = data.config?.recommended_leverage ?? data.leverage?.optimal;
+                    toast({ title: "🧠 ML Configurado!", description: `Leverage: ${lev ?? '—'}x` });
+                  }
+                }}
+                disabled={isRunning}
+              >
+                {mlConfig?.is_enabled ? 'Reanalisar' : 'Ativar ML'}
+              </Button>
+            </div>
           </div>
           
           {mlConfig?.is_enabled && (
-            <div className="grid grid-cols-4 gap-2 text-xs">
-              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Lev</div><div className="font-bold text-purple-400">{mlConfig.recommended_leverage}x</div></div>
-              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">SL</div><div className="font-bold text-red-400">{mlConfig.recommended_stop_loss_pct}%</div></div>
-              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">TP</div><div className="font-bold text-green-400">{mlConfig.recommended_take_profit_pct}%</div></div>
-              <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Pyram</div><div className="font-bold text-yellow-400">{mlConfig.optimal_patterns?.pyramiding?.maxLevels || 2}x</div></div>
-            </div>
+            <>
+              <div className="grid grid-cols-4 gap-2 text-xs mb-3">
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Lev</div><div className="font-bold text-purple-400">{mlConfig.recommended_leverage}x</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">SL</div><div className="font-bold text-red-400">{mlConfig.recommended_stop_loss_pct?.toFixed(2)}%</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">TP</div><div className="font-bold text-green-400">{mlConfig.recommended_take_profit_pct?.toFixed(2)}%</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Conf</div><div className="font-bold text-yellow-400">{mlConfig.confidence_score?.toFixed(0)}%</div></div>
+              </div>
+              
+              {/* Alertas críticos do ML */}
+              {mlConfig?.optimal_patterns?.criticalWarnings?.length > 0 && (
+                <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-lg mb-2">
+                  <div className="text-xs font-medium text-red-400 mb-1">⚠️ Alertas Críticos</div>
+                  {mlConfig.optimal_patterns.criticalWarnings.slice(0, 2).map((warning: string, i: number) => (
+                    <div key={i} className="text-xs text-red-300/80 line-clamp-2">{warning}</div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Símbolos a evitar */}
+              {mlConfig?.optimal_patterns?.symbolsToAvoid?.length > 0 && (
+                <div className="p-2 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+                  <div className="text-xs font-medium text-orange-400 mb-1">🚫 Símbolos Bloqueados</div>
+                  <div className="text-xs text-orange-300/80">{mlConfig.optimal_patterns.symbolsToAvoid.join(', ')}</div>
+                </div>
+              )}
+            </>
           )}
         </Card>
 
