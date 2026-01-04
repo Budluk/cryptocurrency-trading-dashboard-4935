@@ -49,21 +49,22 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
   // 🔍 Detectar novas posições que NÃO foram abertas pelo bot
   const detectManualTrades = useCallback(async (currentPositions: BybitPosition[]) => {
     const userId = await getUserId();
-    const currentSymbols = new Set(currentPositions.map(p => p.symbol));
-    const previousSymbols = new Set(lastBybitSnapshot.current.keys());
-    
+
+    const currentKeys = new Set(currentPositions.map(p => `${p.symbol}_${p.side}`));
+    const previousKeys = new Set(lastBybitSnapshot.current.keys());
+
     for (const position of currentPositions) {
-      const { symbol, side, avgPrice, size, leverage, unrealisedPnl, createdTime } = position;
+      const { symbol, side, avgPrice, size, leverage, createdTime } = position;
       const positionKey = `${symbol}_${side}`;
-      
+
       // Posição já existia no snapshot anterior?
-      const wasKnown = previousSymbols.has(symbol);
+      const wasKnown = previousKeys.has(positionKey);
       const wasBotOpened = botOpenedPositions.current.has(symbol);
-      
+
       // Nova posição detectada!
       if (!wasKnown && parseFloat(size) > 0) {
         const isManual = !wasBotOpened;
-        
+
         const trackedPosition: TrackedPosition = {
           symbol,
           side,
@@ -73,12 +74,12 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
           openedAt: createdTime || new Date().toISOString(),
           isManual,
         };
-        
+
         knownPositions.current.set(positionKey, trackedPosition);
-        
+
         if (isManual) {
           console.log(`🎯 OPERAÇÃO MANUAL DETECTADA: ${symbol} ${side} @ ${avgPrice}`);
-          
+
           // Registrar no banco para a IA rastrear
           try {
             const { error } = await supabase
@@ -92,10 +93,10 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
                 leverage: parseFloat(leverage),
                 status: 'OPEN',
                 opened_at: new Date().toISOString(),
-                order_source: 'MANUAL', // 🆕 Identificar como operação manual
-                confidence: 0, // Operação manual, sem confiança do bot
+                order_source: 'MANUAL',
+                confidence: 0,
               });
-            
+
             if (!error) {
               toast({
                 title: "🎓 Aprendendo com você",
@@ -109,30 +110,30 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
         }
       }
     }
-    
-    // Detectar posições que fecharam
-    for (const [symbol, prevPosition] of lastBybitSnapshot.current) {
-      if (!currentSymbols.has(symbol)) {
-        const positionKey = `${symbol}_${prevPosition.side}`;
+
+    // Detectar posições que fecharam (por chave symbol_side)
+    for (const [positionKey, prevPosition] of lastBybitSnapshot.current) {
+      if (!currentKeys.has(positionKey)) {
         const tracked = knownPositions.current.get(positionKey);
-        
+
         if (tracked) {
+          const symbol = tracked.symbol;
           console.log(`📕 Posição fechada: ${symbol} (manual: ${tracked.isManual})`);
-          
+
           // Buscar PnL real da Bybit
           try {
             const { data: closedPnlData } = await supabase.functions.invoke('bybit-trading', {
-              body: { 
-                action: 'get_closed_pnl', 
-                isTestnet, 
-                params: { category: 'linear', symbol, limit: 1 } 
+              body: {
+                action: 'get_closed_pnl',
+                isTestnet,
+                params: { category: 'linear', symbol, limit: 1 }
               }
             });
-            
+
             const closedTrade = closedPnlData?.data?.list?.[0];
             const realizedPnl = closedTrade ? parseFloat(closedTrade.closedPnl) : 0;
             const exitPrice = closedTrade ? parseFloat(closedTrade.avgExitPrice) : parseFloat(prevPosition.markPrice);
-            
+
             // 🧠 Adicionar ao buffer de treinamento da IA
             addTradeToBuffer({
               symbol,
@@ -142,13 +143,13 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
               realized_pnl: realizedPnl,
               leverage: tracked.leverage,
               volatility: 0,
-              confidence: tracked.isManual ? 100 : 50, // Operações manuais têm alta "confiança" do usuário
+              confidence: tracked.isManual ? 100 : 50,
               close_reason: tracked.isManual ? 'MANUAL_CLOSE' : 'AUTO_CLOSE',
               opened_at: tracked.openedAt,
               closed_at: new Date().toISOString(),
             });
-            
-            // Atualizar no banco
+
+            // Atualizar no banco (fechar apenas esse símbolo+lado)
             await supabase
               .from('auto_trader_positions')
               .update({
@@ -160,9 +161,10 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
                 close_reason: tracked.isManual ? 'MANUAL_CLOSE' : 'AUTO_CLOSE',
               })
               .eq('symbol', symbol)
+              .eq('side', tracked.side)
               .eq('status', 'OPEN')
               .eq('user_id', userId);
-            
+
             if (tracked.isManual) {
               const emoji = realizedPnl >= 0 ? '✅' : '❌';
               toast({
@@ -173,19 +175,19 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
           } catch (err) {
             console.error('Erro ao processar fechamento:', err);
           }
-          
+
           // Limpar tracking
           knownPositions.current.delete(positionKey);
           botOpenedPositions.current.delete(symbol);
         }
       }
     }
-    
+
     // Atualizar snapshot
     lastBybitSnapshot.current.clear();
     for (const pos of currentPositions) {
       if (parseFloat(pos.size) > 0) {
-        lastBybitSnapshot.current.set(pos.symbol, pos);
+        lastBybitSnapshot.current.set(`${pos.symbol}_${pos.side}`, pos);
       }
     }
   }, [isTestnet, addTradeToBuffer, toast]);

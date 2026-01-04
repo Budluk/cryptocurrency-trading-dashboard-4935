@@ -422,10 +422,10 @@ export const MultiAssetTrader = () => {
     }
   }, [recordTradeResult]);
 
-  // Smart exits
-  const updateSmartExits = async () => {
+  // Smart exits + sync de preços/PnL no banco
+  const updateSmartExits = useCallback(async () => {
     if (!smartExitEnabled && !trailingStopEnabled) return;
-    
+
     try {
       const { data, error } = await supabase.functions.invoke('bybit-trading', {
         body: { action: 'get_positions', isTestnet, params: { category: 'linear', settleCoin: 'USDT' } }
@@ -437,6 +437,51 @@ export const MultiAssetTrader = () => {
       const positionsList = Array.isArray(data.data) ? data.data : (data.data?.list || []);
       const openPositionsData = positionsList.filter((p: any) => parseFloat(p.size) > 0);
       const volatilityMap = (window as any).assetVolatility || new Map();
+
+      // ✅ Atualizar current_price/unrealized_pnl no banco (para dashboard e IA)
+      if (openPositionsData.length > 0) {
+        const userId = await getUserId();
+        const symbols: string[] = Array.from(
+          new Set<string>(openPositionsData.map((p: any) => String(p.symbol)))
+        );
+
+        const { data: dbRows, error: dbErr } = await supabase
+          .from('auto_trader_positions')
+          .select('id, symbol, side, opened_at')
+          .eq('user_id', userId)
+          .eq('status', 'OPEN')
+          .in('symbol', symbols)
+          .order('opened_at', { ascending: false })
+          .limit(1000);
+
+        if (!dbErr && dbRows?.length) {
+          const latestIdByKey = new Map<string, string>();
+          for (const r of dbRows) {
+            const key = `${r.symbol}-${r.side}`;
+            if (!latestIdByKey.has(key)) latestIdByKey.set(key, r.id);
+          }
+
+          await Promise.all(
+            openPositionsData.map(async (p: any) => {
+              const key = `${p.symbol}-${p.side}`;
+              const id = latestIdByKey.get(key);
+              if (!id) return;
+
+              const currentPrice = parseFloat(p.markPrice);
+              const unrealized = parseFloat(p.unrealisedPnl);
+              if (!isFinite(currentPrice)) return;
+
+              await supabase
+                .from('auto_trader_positions')
+                .update({
+                  current_price: currentPrice,
+                  unrealized_pnl: isFinite(unrealized) ? unrealized : 0,
+                })
+                .eq('id', id);
+            })
+          );
+        }
+      }
 
       if (smartExitEnabled && mlConfig?.is_enabled) {
         const positionsData = openPositionsData.map((p: any) => ({
@@ -455,7 +500,7 @@ export const MultiAssetTrader = () => {
       const openSymbols = new Set(openPositionsData.map((p: any) => p.symbol));
       const previousSymbols = Array.from(positionTracking.keys());
       const closedSymbols = previousSymbols.filter(s => !openSymbols.has(s));
-      
+
       if (closedSymbols.length > 0) {
         console.log(`🔄 Detectadas ${closedSymbols.length} posições fechadas, sincronizando PnL...`);
         await syncClosedPositionsPnL();
@@ -472,10 +517,15 @@ export const MultiAssetTrader = () => {
         }
         return newMap;
       });
+
+      // Recarregar contexto para refletir PnL atualizado no UI
+      if (openPositionsData.length > 0 || closedSymbols.length > 0) {
+        await refetch();
+      }
     } catch (error) {
       console.error('Erro ao atualizar smart exits:', error);
     }
-  };
+  }, [smartExitEnabled, trailingStopEnabled, isTestnet, mlConfig, processOpenPositions, positionTracking, syncClosedPositionsPnL, clearPositionState, refetch]);
 
   const analyzeAndTrade = async () => {
     try {
@@ -1223,30 +1273,34 @@ export const MultiAssetTrader = () => {
   // Loop principal - otimizado com intervalos maiores
   useEffect(() => {
     if (!isRunning) return;
-    
+
     // Executar imediatamente
     analyzeAndTrade();
-    
+
     // Intervalo principal: 45s (era 30s)
     const interval = setInterval(() => {
       if (isRunning) analyzeAndTrade();
     }, 45000);
 
     // Smart exits: 30s (era 15s)
-    const exitInterval = setInterval(updateSmartExits, 30000);
-    
+    const exitInterval = setInterval(() => {
+      void updateSmartExits();
+    }, 30000);
+
     // Sincronizar PnL a cada 60s para alimentar sistema anti-loss
-    const pnlSyncInterval = setInterval(syncClosedPositionsPnL, 60000);
-    
+    const pnlSyncInterval = setInterval(() => {
+      void syncClosedPositionsPnL();
+    }, 60000);
+
     // Sincronizar imediatamente ao iniciar
-    syncClosedPositionsPnL();
-    
+    void syncClosedPositionsPnL();
+
     return () => {
       clearInterval(interval);
       clearInterval(exitInterval);
       clearInterval(pnlSyncInterval);
     };
-  }, [isRunning, syncClosedPositionsPnL]);
+  }, [isRunning, syncClosedPositionsPnL, updateSmartExits]);
 
   // Pyramiding
   useEffect(() => {
@@ -1346,42 +1400,54 @@ export const MultiAssetTrader = () => {
         body: { action: 'get_positions', isTestnet, params: { category: 'linear', settleCoin: 'USDT' } }
       });
 
-      const realPositions = (bybitData?.data || []).filter((p: any) => parseFloat(p.size || '0') > 0);
+      const positionsList = Array.isArray((bybitData as any)?.data)
+        ? (bybitData as any).data
+        : ((bybitData as any)?.data?.list || []);
+
+      const realPositions = (positionsList || []).filter((p: any) => parseFloat(p.size || '0') > 0);
       const realSymbols = new Set(realPositions.map((p: any) => `${p.symbol}-${p.side}`));
       console.log(`📊 ${realPositions.length} posições reais no Bybit`);
-
-      // Buscar posições "OPEN" do usuário no banco (ordenar para manter só 1 por símbolo+lado)
-      const { data: dbOpenPositions, error: dbError } = await supabase
-        .from('auto_trader_positions')
-        .select('id, symbol, side, opened_at')
-        .eq('user_id', userId)
-        .eq('status', 'OPEN')
-        .order('opened_at', { ascending: false });
-
-      if (dbError) {
-        console.log('⚠️ Erro ao buscar posições no banco:', dbError);
-        return;
-      }
 
       const idsToClose: string[] = [];
       const seenRealKeys = new Set<string>();
 
-      for (const dbPos of (dbOpenPositions || [])) {
-        const key = `${dbPos.symbol}-${dbPos.side}`;
+      // Buscar posições "OPEN" do usuário no banco em páginas (limite Supabase = 1000)
+      const PAGE_SIZE = 1000;
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: page, error: dbError } = await supabase
+          .from('auto_trader_positions')
+          .select('id, symbol, side, opened_at')
+          .eq('user_id', userId)
+          .eq('status', 'OPEN')
+          .order('opened_at', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
 
-        // Não existe no Bybit -> órfã
-        if (!realSymbols.has(key)) {
-          idsToClose.push(dbPos.id);
-          continue;
+        if (dbError) {
+          console.log('⚠️ Erro ao buscar posições no banco:', dbError);
+          return;
         }
 
-        // Existe no Bybit, mas já temos 1 registro para esse símbolo+lado -> duplicata
-        if (seenRealKeys.has(key)) {
-          idsToClose.push(dbPos.id);
-          continue;
+        if (!page?.length) break;
+
+        for (const dbPos of page) {
+          const key = `${dbPos.symbol}-${dbPos.side}`;
+
+          // Não existe no Bybit -> órfã
+          if (!realSymbols.has(key)) {
+            idsToClose.push(dbPos.id);
+            continue;
+          }
+
+          // Existe no Bybit, mas já temos 1 registro para esse símbolo+lado -> duplicata
+          if (seenRealKeys.has(key)) {
+            idsToClose.push(dbPos.id);
+            continue;
+          }
+
+          seenRealKeys.add(key);
         }
 
-        seenRealKeys.add(key);
+        if (page.length < PAGE_SIZE) break;
       }
 
       if (idsToClose.length > 0) {
@@ -1401,7 +1467,7 @@ export const MultiAssetTrader = () => {
     } catch (err) {
       console.log('⚠️ Erro na sincronização:', err);
     }
-  }, [refetch]);
+  }, [refetch, isTestnet]);
 
   // Se o trader foi restaurado automaticamente, rodar a limpeza 1x para evitar "limite atingido" falso
   useEffect(() => {
