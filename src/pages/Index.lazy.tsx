@@ -11,6 +11,8 @@ const SentimentDashboard = lazy(() => import("@/components/SentimentDashboard").
 const PortfolioRebalancer = lazy(() => import("@/components/PortfolioRebalancer").then(m => ({ default: m.PortfolioRebalancer })));
 const OrderFlowDashboard = lazy(() => import("@/components/OrderFlowDashboard").then(m => ({ default: m.OrderFlowDashboard })));
 const TrailingStopVisual = lazy(() => import("@/components/TrailingStopVisual").then(m => ({ default: m.TrailingStopVisual })));
+const LiveMetricsPanel = lazy(() => import("@/components/LiveMetricsPanel").then(m => ({ default: m.LiveMetricsPanel })));
+const TradeHistoryTimeline = lazy(() => import("@/components/TradeHistoryTimeline").then(m => ({ default: m.TradeHistoryTimeline })));
 
 const AutoTraderSettings = lazy(() => import("@/components/AutoTraderSettings").then(m => ({ default: m.AutoTraderSettings })));
 const MLAdaptiveSettings = lazy(() => import("@/components/MLAdaptiveSettings").then(m => ({ default: m.MLAdaptiveSettings })));
@@ -88,5 +90,17 @@ export const LazyMLAdaptiveSettings = () => (
 export const LazyTraderProfileSettings = () => (
   <Suspense fallback={<ComponentSkeleton />}>
     <TraderProfileSettings />
+  </Suspense>
+);
+
+export const LazyLiveMetricsPanel = () => (
+  <Suspense fallback={<ComponentSkeleton />}>
+    <LiveMetricsPanel />
+  </Suspense>
+);
+
+export const LazyTradeHistoryTimeline = () => (
+  <Suspense fallback={<ComponentSkeleton />}>
+    <TradeHistoryTimeline />
   </Suspense>
 );

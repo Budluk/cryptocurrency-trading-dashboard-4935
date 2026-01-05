@@ -1,10 +1,11 @@
 import { BybitPositionsPanel } from "@/components/BybitPositionsPanel";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
+import { SystemStatusBar } from "@/components/SystemStatusBar";
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Activity, BarChart3, Settings, TrendingUp, Zap } from "lucide-react";
+import { Activity, BarChart3, Settings, TrendingUp, Zap, Clock } from "lucide-react";
 
 import {
   LazyAdvancedAISignals,
@@ -15,6 +16,8 @@ import {
   LazyPortfolioRebalancer,
   LazyOrderFlowDashboard,
   LazyTrailingStopVisual,
+  LazyLiveMetricsPanel,
+  LazyTradeHistoryTimeline,
   
   LazyAutoTraderSettings,
   LazyMLAdaptiveSettings,
@@ -57,6 +60,11 @@ const Index = () => {
             </div>
           </header>
       
+          {/* System Status Bar */}
+          <section className="mb-4">
+            <SystemStatusBar />
+          </section>
+
           {/* P&L Summary */}
           <section className="mb-5 sm:mb-8">
             <DailyPnLSummary />
@@ -64,13 +72,20 @@ const Index = () => {
           
           {/* Main Content - Mobile Optimized Tabs */}
           <Tabs defaultValue="trading" className="w-full">
-            <TabsList className="w-full grid grid-cols-4 mb-5 sm:mb-8 p-1 sm:p-1.5 bg-card/50 backdrop-blur-sm border border-border/40 rounded-lg sm:rounded-xl h-auto">
+            <TabsList className="w-full grid grid-cols-5 mb-5 sm:mb-8 p-1 sm:p-1.5 bg-card/50 backdrop-blur-sm border border-border/40 rounded-lg sm:rounded-xl h-auto">
               <TabsTrigger 
                 value="trading" 
                 className="py-2.5 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium rounded-md sm:rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-glow-sm transition-all flex flex-col sm:flex-row items-center gap-1"
               >
                 <TrendingUp className="h-4 w-4 sm:h-4 sm:w-4" />
                 <span className="text-[10px] sm:text-sm">Trading</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="history" 
+                className="py-2.5 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium rounded-md sm:rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-glow-sm transition-all flex flex-col sm:flex-row items-center gap-1"
+              >
+                <Clock className="h-4 w-4 sm:h-4 sm:w-4" />
+                <span className="text-[10px] sm:text-sm">Histórico</span>
               </TabsTrigger>
               <TabsTrigger 
                 value="analytics" 
@@ -105,9 +120,15 @@ const Index = () => {
                   <LazyTrailingStopVisual />
                 </div>
                 <div className="space-y-6">
+                  <LazyLiveMetricsPanel />
                   <LazyAdvancedAISignals />
                 </div>
               </div>
+            </TabsContent>
+
+            {/* History Tab */}
+            <TabsContent value="history" className="space-y-6 animate-fade-in">
+              <LazyTradeHistoryTimeline />
             </TabsContent>
 
             {/* Analytics Tab */}
