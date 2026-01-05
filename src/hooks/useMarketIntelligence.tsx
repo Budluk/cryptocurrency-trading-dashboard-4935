@@ -183,11 +183,44 @@ export const useMarketIntelligence = () => {
         return null;
       }
 
-      if (data?.success) {
-        setFearGreed(data.data);
-        cacheRef.current.set(cacheKey, { data: data.data, timestamp: Date.now() });
-        console.log(`😱 Fear & Greed: ${data.data.value} (${data.data.sentiment})`);
-        return data.data;
+      if (data?.success && data.data) {
+        // Handle both old and new API response structures
+        const rawData = data.data;
+        let fearGreedData: FearGreedData;
+        
+        // Check if new structure (sentiment is an object with fearGreedIndex)
+        if (rawData.sentiment && typeof rawData.sentiment === 'object' && 'fearGreedIndex' in rawData.sentiment) {
+          const sentimentObj = rawData.sentiment;
+          const value = sentimentObj.fearGreedIndex || 50;
+          let sentiment: FearGreedData['sentiment'] = 'NEUTRAL';
+          
+          if (value <= 20) sentiment = 'EXTREME_FEAR';
+          else if (value <= 40) sentiment = 'FEAR';
+          else if (value <= 60) sentiment = 'NEUTRAL';
+          else if (value <= 80) sentiment = 'GREED';
+          else sentiment = 'EXTREME_GREED';
+          
+          const recommendation = rawData.recommendation || {};
+          
+          fearGreedData = {
+            value,
+            classification: sentimentObj.fearGreedLabel || 'Neutral',
+            sentiment,
+            tradingAdvice: recommendation.reasons?.join('. ') || 'Mercado neutro - seguir sinais técnicos.',
+            longBias: recommendation.bias === 'bullish' ? 'FAVORABLE' : recommendation.bias === 'bearish' ? 'UNFAVORABLE' : 'NEUTRAL',
+            shortBias: recommendation.bias === 'bearish' ? 'FAVORABLE' : recommendation.bias === 'bullish' ? 'UNFAVORABLE' : 'NEUTRAL',
+            source: 'market-intelligence',
+            analyzedAt: rawData.timestamp || new Date().toISOString()
+          };
+        } else {
+          // Old structure (value and sentiment are direct properties)
+          fearGreedData = rawData as FearGreedData;
+        }
+        
+        setFearGreed(fearGreedData);
+        cacheRef.current.set(cacheKey, { data: fearGreedData, timestamp: Date.now() });
+        console.log(`😱 Fear & Greed: ${fearGreedData.value} (${fearGreedData.sentiment})`);
+        return fearGreedData;
       }
 
       return null;
