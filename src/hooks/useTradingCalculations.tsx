@@ -134,7 +134,8 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ Calcular Stop Loss e Take Profit - CORRIGIDO PARA VOLATILIDADE REAL
+  // 🛡️ Calcular Stop Loss e Take Profit - CORRIGIDO PARA REDUZIR STOP-OUTS
+  // ⚠️ Taxa de stop-out de 56% indica SL muito apertado
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -149,17 +150,18 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🔧 CORREÇÃO CRÍTICA: SL baseado em ATR/volatilidade REAL
-    // SL deve ser ~20-30% do ATR para não ser atingido por ruído normal
-    // Mínimo absoluto: 0.3% para cobrir spread + slippage
-    // Máximo: 1.5% para limitar risco
+    // 🔧 CORREÇÃO CRÍTICA: SL MUITO MAIOR para reduzir stop-outs
+    // Antes: SL = 0.3%-1.5% → Stop-out 56%
+    // Agora: SL = 0.8%-3.0% → Dar mais espaço para o trade respirar
     
-    const volatilityBasedSL = atrPercent * 0.25; // 25% do ATR
-    const minSL = 0.003; // 0.3% mínimo
-    const maxSL = 0.015; // 1.5% máximo
+    // SL baseado em ATR: usar 40-50% do ATR para dar espaço
+    const volatilityBasedSL = atrPercent * 0.45; // 45% do ATR (antes era 25%)
+    const minSL = 0.008; // 0.8% mínimo (antes era 0.3%)
+    const maxSL = 0.030; // 3.0% máximo (antes era 1.5%)
     
-    // 🎯 R:R 1:2.5+ PARA COMPENSAR WIN RATE (~38%)
-    const targetRR = 2.5;
+    // 🎯 R:R 1:2 para compensar win rate baixo
+    // Com SL maior, precisamos de TP proporcionalmente maior
+    const targetRR = 2.0;
 
     // USAR TOPOS/FUNDOS SE DISPONÍVEIS para stops estruturais
     if (highPrice && lowPrice && highPrice > lowPrice) {
@@ -168,26 +170,36 @@ export const useTradingCalculations = () => {
       const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
       const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
       
-      // Usar swing levels mas dentro dos limites
-      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct));
+      // Usar swing levels com margem extra (+20%)
+      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.2));
       // TP deve manter R:R mínimo
-      takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 3, swingTargetPct));
+      takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2.5, swingTargetPct));
     } else {
       // Fallback: usar ATR/volatilidade
       if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
-        // ML pode sugerir valores, mas limitados
-        stopLossPct = Math.max(minSL, Math.min(maxSL, mlConfig.recommended_stop_loss_pct / 100));
-        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 3, mlConfig.recommended_take_profit_pct / 100));
+        // ML pode sugerir valores, mas aplicar mínimo maior
+        const mlSL = mlConfig.recommended_stop_loss_pct / 100;
+        stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL * 1.5)); // +50% no ML sugerido
+        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2.5, mlConfig.recommended_take_profit_pct / 100));
       } else {
-        // Usar volatilidade
+        // Usar volatilidade com folga
         stopLossPct = Math.max(minSL, Math.min(maxSL, volatilityBasedSL / 100));
         takeProfitPct = stopLossPct * targetRR;
       }
     }
     
-    // Scalp assets podem ter stops menores (mas não menos que 0.25%)
+    // Alta volatilidade = SL ainda maior
+    if (atrPercent > 10) {
+      stopLossPct = Math.max(stopLossPct, 0.015); // Mínimo 1.5% em alta vol
+      takeProfitPct = stopLossPct * targetRR;
+    } else if (atrPercent > 5) {
+      stopLossPct = Math.max(stopLossPct, 0.01); // Mínimo 1% em vol média
+      takeProfitPct = stopLossPct * targetRR;
+    }
+    
+    // Scalp assets: SL um pouco menor mas ainda seguro
     if (isScalpAsset) {
-      stopLossPct = Math.max(0.0025, stopLossPct * 0.8); // 0.25% mínimo
+      stopLossPct = Math.max(0.006, stopLossPct * 0.85); // 0.6% mínimo (antes era 0.25%)
       takeProfitPct = stopLossPct * targetRR;
     }
     
