@@ -5,7 +5,7 @@ import { useCallback, useMemo } from 'react';
 const HOUR_ASSET_MAP: Record<number, { symbol: string; winRate: number; pnl: number }[]> = {
   0: [
     { symbol: 'HUSDT', winRate: 75.0, pnl: 0.74 },
-    { symbol: 'BTCUSDT', winRate: 66.7, pnl: 0.21 },
+    // BTCUSDT REMOVIDO - 27.8% win rate real, dreno de capital
   ],
   1: [
     { symbol: 'MERLUSDT', winRate: 100.0, pnl: 0.94 },
@@ -72,11 +72,11 @@ const HOUR_ASSET_MAP: Record<number, { symbol: string; winRate: number; pnl: num
     // REMOVIDO: LUNA2USDT pnl -0.11
   ],
   22: [
-    { symbol: 'BTCUSDT', winRate: 100.0, pnl: 0.35 },
+    // BTCUSDT REMOVIDO - 27.8% win rate real, dreno de capital
   ],
   23: [
     { symbol: 'FLUXUSDT', winRate: 66.7, pnl: 0.11 },
-    { symbol: 'BTCUSDT', winRate: 66.7, pnl: 0.05 },
+    // BTCUSDT REMOVIDO - 27.8% win rate real
   ],
 };
 
@@ -101,15 +101,18 @@ const GLOBAL_BLACKLIST = new Set([
   'PUMPFUNUSDT',   // -$1.13 em 44 trades Buy (contradiz dados de hora específica)
   'FARTCOINUSDT',  // -$1.05 em 3 trades Sell
   'ETHUSDT',       // -$1.97 - sem liquidez adequada para scalping
+  // 🚨 CRÍTICO: BTCUSDT - Dreno de performance
+  'BTCUSDT',       // 27.8% win rate, PnL negativo consistente - EVITAR
 ]);
 
 // 🟢 SÍMBOLOS PREMIUM - REVISADO COM DADOS REAIS (apenas PnL positivo)
+// ⚠️ BTCUSDT REMOVIDO - 27.8% win rate real, dreno de capital
 const PREMIUM_SYMBOLS = new Map([
   ['NIGHTUSDT', { avgWinRate: 84.4, totalPnl: 3.11 }],
   ['JELLYJELLYUSDT', { avgWinRate: 55, totalPnl: 3.36 }], // Bom apenas em horários específicos
-  ['BTCUSDT', { avgWinRate: 75, totalPnl: 0.61 }],
   ['HUSDT', { avgWinRate: 75, totalPnl: 0.74 }],
   ['FLUXUSDT', { avgWinRate: 66.7, totalPnl: 0.11 }],
+  ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }], // Bom em horários específicos
 ]);
 
 // 📊 Configurações otimizadas
