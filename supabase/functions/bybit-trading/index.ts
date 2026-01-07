@@ -23,11 +23,7 @@ serve(async (req) => {
     const params = nestedParams || restParams;
     
     console.log(`Bybit MAINNET - Action: ${action}`);
-    console.log(`Params received:`, JSON.stringify(params));
-    console.log(`API Key configured: ${BYBIT_API_KEY ? 'YES' : 'NO'}`);
-    console.log(`API Secret configured: ${BYBIT_API_SECRET ? 'YES' : 'NO'}`);
-    console.log(`API Key length: ${BYBIT_API_KEY.length}`);
-    console.log(`API Secret length: ${BYBIT_API_SECRET.length}`);
+    // Security: Do not log API key status or lengths
 
     let result;
 

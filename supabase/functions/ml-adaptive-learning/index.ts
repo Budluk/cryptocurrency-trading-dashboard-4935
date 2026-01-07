@@ -138,9 +138,8 @@ serve(async (req) => {
 
     const { userId, minTrades = 10 } = await req.json();
 
-    console.log(`🧠 Iniciando análise ML com dados BYBIT REAL para user ${userId}`);
-    console.log(`🔑 API Key configurada: ${BYBIT_API_KEY ? 'SIM' : 'NÃO'}`);
-    console.log(`🔑 API Secret configurada: ${BYBIT_API_SECRET ? 'SIM' : 'NÃO'}`);
+    console.log(`🧠 Iniciando análise ML para user ${userId}`);
+    // Security: Do not log API key configuration status
 
     // ========================
     // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 180 dias - limite Bybit)

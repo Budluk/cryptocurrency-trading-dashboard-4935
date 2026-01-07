@@ -102,60 +102,63 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // Webhook signature verification (CRITICAL SECURITY)
-    // NOTE: Requires TRADINGVIEW_WEBHOOK_SECRET to be configured
+    // ==========================================
+    // SECURITY: Webhook signature verification (REQUIRED)
+    // ==========================================
     const webhookSecret = Deno.env.get('TRADINGVIEW_WEBHOOK_SECRET');
-    let data: TradingViewAlert;
     
-    if (webhookSecret) {
-      const signature = req.headers.get('X-TradingView-Signature');
-      const body = await req.text();
-      
-      if (!signature) {
-        console.error('❌ Missing webhook signature');
-        return new Response(
-          JSON.stringify({ error: 'Missing signature' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      // Verify HMAC signature
-      const encoder = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(webhookSecret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['verify']
+    // CRITICAL: Reject all requests if secret not configured
+    if (!webhookSecret) {
+      console.error('❌ TRADINGVIEW_WEBHOOK_SECRET not configured - rejecting request');
+      return new Response(
+        JSON.stringify({ error: 'Webhook authentication not configured' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-      
-      const signatureBuffer = Uint8Array.from(
-        atob(signature),
-        c => c.charCodeAt(0)
-      );
-      
-      const isValid = await crypto.subtle.verify(
-        'HMAC',
-        key,
-        signatureBuffer,
-        encoder.encode(body)
-      );
-      
-      if (!isValid) {
-        console.error('❌ Invalid webhook signature');
-        return new Response(
-          JSON.stringify({ error: 'Invalid signature' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      data = JSON.parse(body);
-      console.log("✅ TradingView webhook received (signature verified):", data);
-    } else {
-      console.warn('⚠️ TRADINGVIEW_WEBHOOK_SECRET not configured - webhook signatures not verified! Add this secret immediately for production use.');
-      data = await req.json();
-      console.log("📨 TradingView webhook received (UNVERIFIED - INSECURE):", data);
     }
+    
+    const signature = req.headers.get('X-TradingView-Signature');
+    const body = await req.text();
+    
+    if (!signature) {
+      console.error('❌ Missing webhook signature');
+      return new Response(
+        JSON.stringify({ error: 'Missing signature' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Verify HMAC signature
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(webhookSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    
+    const signatureBuffer = Uint8Array.from(
+      atob(signature),
+      c => c.charCodeAt(0)
+    );
+    
+    const isValid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signatureBuffer,
+      encoder.encode(body)
+    );
+    
+    if (!isValid) {
+      console.error('❌ Invalid webhook signature');
+      return new Response(
+        JSON.stringify({ error: 'Invalid signature' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    const data: TradingViewAlert = JSON.parse(body);
+    console.log("✅ TradingView webhook received (verified)");
 
     // Validação básica
     if (!data.action || !data.symbol || !data.confidence || !data.price) {
