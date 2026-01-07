@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,12 +11,6 @@ const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 const RECV_WINDOW = "30000";
 const BASE_URL = "https://api.bybit.com";
-
-// UUID validation helper
-function isValidUUID(str: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(str);
-}
 
 interface BybitTrade {
   symbol: string;
@@ -131,7 +125,7 @@ async function fetchBybitClosedPnL(startTime: number, limit: number = 100, curso
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -140,37 +134,38 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
-    
+
     // Create client with service role for data access
     const supabase = createClient(supabaseUrl, supabaseKey);
-    
+
     // Parse request body
     const { userId: requestUserId, minTrades = 10 } = await req.json();
-    
-    // Try to get authenticated user from JWT, fall back to request body userId
-    let userId: string;
+
+    // Auth strategy:
+    // - If a real user JWT is present, use its user.id
+    // - Otherwise, only allow the dedicated anonymous user id
+    const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+    let userId: string | null = null;
+
     const authHeader = req.headers.get('Authorization');
-    
-    if (authHeader) {
-      const jwt = authHeader.replace('Bearer ', '');
+    if (authHeader?.startsWith('Bearer ')) {
+      const jwt = authHeader.slice('Bearer '.length);
       const { data: { user } } = await supabase.auth.getUser(jwt);
-      if (user) {
+      if (user?.id) {
         userId = user.id;
-      } else if (requestUserId && isValidUUID(requestUserId)) {
-        userId = requestUserId;
+      }
+    }
+
+    if (!userId) {
+      if (requestUserId === ANONYMOUS_USER_ID) {
+        userId = ANONYMOUS_USER_ID;
       } else {
         return new Response(
-          JSON.stringify({ error: 'Valid userId required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-    } else if (requestUserId && isValidUUID(requestUserId)) {
-      userId = requestUserId;
-    } else {
-      return new Response(
-        JSON.stringify({ error: 'Valid userId required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     console.log(`🧠 Iniciando análise ML...`);
