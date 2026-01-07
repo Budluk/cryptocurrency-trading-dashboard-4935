@@ -101,13 +101,11 @@ async function makeBybitRequest(
 }
 
 async function fetchBybitClosedPnL(startTime: number, limit: number = 100, cursor?: string): Promise<{ list: BybitTrade[], nextPageCursor: string | null }> {
-  // Bybit closed-pnl endpoint precisa de startTime em ms
   const params: Record<string, any> = { 
     category: 'linear', 
     limit,
   };
   
-  // Se não tiver cursor, buscar por tempo
   if (!cursor) {
     params.startTime = String(startTime);
   }
@@ -123,6 +121,175 @@ async function fetchBybitClosedPnL(startTime: number, limit: number = 100, curso
     console.error(`❌ Erro closed-pnl:`, error.message);
     return { list: [], nextPageCursor: null };
   }
+}
+
+// ========================
+// FUNÇÕES DE MERCADO EM TEMPO REAL
+// ========================
+
+interface MarketData {
+  symbol: string;
+  price: number;
+  priceChange24h: number;
+  volatility24h: number;
+  volume24h: number;
+  highPrice24h: number;
+  lowPrice24h: number;
+}
+
+interface LiveMarketState {
+  btcVolatility: number;
+  btcTrend: 'bullish' | 'bearish' | 'neutral';
+  marketSentiment: 'risk_on' | 'risk_off' | 'neutral';
+  avgMarketVolatility: number;
+  topMovers: MarketData[];
+  marketRegime: 'trending' | 'ranging' | 'volatile' | 'calm';
+}
+
+// Buscar dados de mercado ao vivo da Bybit (público, sem auth)
+async function fetchLiveMarketData(): Promise<LiveMarketState> {
+  const defaultState: LiveMarketState = {
+    btcVolatility: 2.0,
+    btcTrend: 'neutral',
+    marketSentiment: 'neutral',
+    avgMarketVolatility: 2.0,
+    topMovers: [],
+    marketRegime: 'ranging'
+  };
+
+  try {
+    // Buscar tickers de todos os pares USDT perpétuos
+    const tickerResponse = await fetch(`${BASE_URL}/v5/market/tickers?category=linear`);
+    const tickerData = await tickerResponse.json();
+    
+    if (tickerData.retCode !== 0 || !tickerData.result?.list) {
+      console.log('⚠️ Erro ao buscar tickers ao vivo');
+      return defaultState;
+    }
+    
+    const tickers = tickerData.result.list.filter((t: any) => t.symbol.endsWith('USDT'));
+    
+    // Calcular volatilidade e tendência do BTC
+    const btcTicker = tickers.find((t: any) => t.symbol === 'BTCUSDT');
+    let btcVolatility = 2.0;
+    let btcTrend: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+    
+    if (btcTicker) {
+      const high = parseFloat(btcTicker.highPrice24h) || 0;
+      const low = parseFloat(btcTicker.lowPrice24h) || 0;
+      const price = parseFloat(btcTicker.lastPrice) || 1;
+      btcVolatility = ((high - low) / price) * 100;
+      
+      const change24h = parseFloat(btcTicker.price24hPcnt) * 100 || 0;
+      btcTrend = change24h > 1 ? 'bullish' : change24h < -1 ? 'bearish' : 'neutral';
+    }
+    
+    // Calcular volatilidade média do mercado
+    let totalVol = 0;
+    let volCount = 0;
+    const marketData: MarketData[] = [];
+    
+    for (const t of tickers.slice(0, 50)) { // Top 50 por volume
+      const high = parseFloat(t.highPrice24h) || 0;
+      const low = parseFloat(t.lowPrice24h) || 0;
+      const price = parseFloat(t.lastPrice) || 1;
+      const vol = ((high - low) / price) * 100;
+      
+      if (vol > 0 && vol < 50) { // Filtrar outliers
+        totalVol += vol;
+        volCount++;
+      }
+      
+      marketData.push({
+        symbol: t.symbol,
+        price: parseFloat(t.lastPrice) || 0,
+        priceChange24h: parseFloat(t.price24hPcnt) * 100 || 0,
+        volatility24h: vol,
+        volume24h: parseFloat(t.volume24h) || 0,
+        highPrice24h: high,
+        lowPrice24h: low
+      });
+    }
+    
+    const avgVolatility = volCount > 0 ? totalVol / volCount : 2.0;
+    
+    // Determinar regime de mercado baseado em dados ao vivo
+    let marketRegime: 'trending' | 'ranging' | 'volatile' | 'calm' = 'ranging';
+    if (avgVolatility > 5) marketRegime = 'volatile';
+    else if (avgVolatility < 1.5) marketRegime = 'calm';
+    else if (Math.abs(parseFloat(btcTicker?.price24hPcnt || '0') * 100) > 2) marketRegime = 'trending';
+    
+    // Determinar sentimento (bullish/bearish count)
+    const bullishCount = marketData.filter(m => m.priceChange24h > 1).length;
+    const bearishCount = marketData.filter(m => m.priceChange24h < -1).length;
+    const marketSentiment = bullishCount > bearishCount * 1.5 ? 'risk_on' : 
+                            bearishCount > bullishCount * 1.5 ? 'risk_off' : 'neutral';
+    
+    // Top movers (maior volatilidade com volume)
+    const topMovers = marketData
+      .filter(m => m.volume24h > 1000000) // Mínimo $1M volume
+      .sort((a, b) => b.volatility24h - a.volatility24h)
+      .slice(0, 10);
+    
+    console.log(`📊 Mercado ao vivo: BTC Vol ${btcVolatility.toFixed(2)}% | Tendência ${btcTrend} | Regime ${marketRegime} | Sentimento ${marketSentiment}`);
+    
+    return {
+      btcVolatility,
+      btcTrend,
+      marketSentiment,
+      avgMarketVolatility: avgVolatility,
+      topMovers,
+      marketRegime
+    };
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar dados de mercado ao vivo:', error.message);
+    return defaultState;
+  }
+}
+
+// Calcular ajustes dinâmicos baseados no mercado ao vivo
+function calculateLiveAdjustments(
+  liveMarket: LiveMarketState, 
+  baseConfig: { stopLoss: number; takeProfit: number; leverage: number }
+): { stopLoss: number; takeProfit: number; leverage: number; reason: string } {
+  let { stopLoss, takeProfit, leverage } = baseConfig;
+  const reasons: string[] = [];
+  
+  // Ajustar baseado na volatilidade do BTC (líder do mercado)
+  if (liveMarket.btcVolatility > 5) {
+    stopLoss *= 1.3; // Stop mais largo em alta volatilidade
+    takeProfit *= 1.4; // TP também maior
+    leverage = Math.max(leverage * 0.6, 5); // Reduzir alavancagem
+    reasons.push(`Alta vol BTC (${liveMarket.btcVolatility.toFixed(1)}%): SL/TP maiores, lev menor`);
+  } else if (liveMarket.btcVolatility < 1.5) {
+    stopLoss *= 0.8; // Stop mais apertado em baixa vol
+    takeProfit *= 0.7; // TP também menor
+    leverage = Math.min(leverage * 1.2, 100); // Pode aumentar alavancagem
+    reasons.push(`Baixa vol BTC (${liveMarket.btcVolatility.toFixed(1)}%): parâmetros apertados`);
+  }
+  
+  // Ajustar baseado no regime de mercado
+  if (liveMarket.marketRegime === 'volatile') {
+    leverage = Math.max(leverage * 0.7, 5);
+    reasons.push('Mercado volátil: alavancagem reduzida');
+  } else if (liveMarket.marketRegime === 'trending') {
+    takeProfit *= 1.2; // Deixar lucro correr em tendência
+    reasons.push('Mercado em tendência: TP estendido');
+  }
+  
+  // Ajustar baseado no sentimento
+  if (liveMarket.marketSentiment === 'risk_off') {
+    leverage = Math.max(leverage * 0.8, 5);
+    stopLoss *= 1.1;
+    reasons.push('Sentimento risk-off: mais conservador');
+  }
+  
+  return {
+    stopLoss: Math.max(stopLoss, 0.3),
+    takeProfit: Math.max(takeProfit, stopLoss * 1.5),
+    leverage: Math.round(Math.max(leverage, 5)),
+    reason: reasons.join(' | ') || 'Parâmetros base mantidos'
+  };
 }
 
 Deno.serve(async (req) => {
@@ -169,7 +336,13 @@ Deno.serve(async (req) => {
     }
 
     console.log(`🧠 Iniciando análise ML...`);
-    // Security: Do not log user IDs or API key configuration status
+    
+    // ========================
+    // 0. BUSCAR DADOS DE MERCADO AO VIVO PRIMEIRO
+    // ========================
+    console.log('📡 Buscando dados de mercado ao vivo...');
+    const liveMarket = await fetchLiveMarketData();
+    console.log(`📊 Mercado: Regime ${liveMarket.marketRegime} | BTC Vol ${liveMarket.btcVolatility.toFixed(2)}% | Sentimento ${liveMarket.marketSentiment}`);
 
     // ========================
     // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 180 dias - limite Bybit)
@@ -775,14 +948,26 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
     }
 
     // ========================
-    // 11. CONSTRUIR CONFIGURAÇÃO FINAL COM TODOS OS NOVOS DADOS
+    // 11. APLICAR AJUSTES DE MERCADO AO VIVO
+    // ========================
+    const baseConfig = {
+      stopLoss: aiRecommendations.dynamicStopLoss?.base || optimizedStop,
+      takeProfit: aiRecommendations.dynamicTakeProfit?.base || optimizedTP,
+      leverage: aiRecommendations.leverageRecommendations?.optimal || bestLeverage
+    };
+    
+    const liveAdjustments = calculateLiveAdjustments(liveMarket, baseConfig);
+    console.log(`🔄 Ajustes ao vivo: ${liveAdjustments.reason}`);
+    
+    // ========================
+    // 12. CONSTRUIR CONFIGURAÇÃO FINAL COM TODOS OS NOVOS DADOS
     // ========================
     const mlConfig = {
       user_id: userId,
       is_enabled: true,
-      recommended_leverage: aiRecommendations.leverageRecommendations?.optimal || bestLeverage,
-      recommended_stop_loss_pct: aiRecommendations.dynamicStopLoss?.base || optimizedStop,
-      recommended_take_profit_pct: aiRecommendations.dynamicTakeProfit?.base || optimizedTP,
+      recommended_leverage: liveAdjustments.leverage,
+      recommended_stop_loss_pct: liveAdjustments.stopLoss,
+      recommended_take_profit_pct: liveAdjustments.takeProfit,
       win_rate_by_leverage: Object.fromEntries(leverageStats),
       optimal_patterns: {
         // Fonte dos dados
@@ -791,18 +976,51 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
           internalTrades: internalTrades?.length || 0,
           totalAnalyzed: allTrades.length,
         },
-        // Regime de mercado
+        // NOVO: Dados de mercado ao vivo
+        liveMarketData: {
+          btcVolatility: liveMarket.btcVolatility,
+          btcTrend: liveMarket.btcTrend,
+          marketSentiment: liveMarket.marketSentiment,
+          avgMarketVolatility: liveMarket.avgMarketVolatility,
+          liveRegime: liveMarket.marketRegime,
+          topMovers: liveMarket.topMovers.slice(0, 5).map(m => ({
+            symbol: m.symbol,
+            vol: m.volatility24h.toFixed(2),
+            change: m.priceChange24h.toFixed(2)
+          })),
+          liveAdjustments: {
+            appliedStopLoss: liveAdjustments.stopLoss.toFixed(2),
+            appliedTakeProfit: liveAdjustments.takeProfit.toFixed(2),
+            appliedLeverage: liveAdjustments.leverage,
+            baseStopLoss: baseConfig.stopLoss.toFixed(2),
+            baseTakeProfit: baseConfig.takeProfit.toFixed(2),
+            baseLeverage: baseConfig.leverage,
+            reason: liveAdjustments.reason
+          },
+          lastUpdate: new Date().toISOString()
+        },
+        // Regime de mercado (histórico + ao vivo)
         marketRegime: {
-          current: marketRegime,
+          current: liveMarket.marketRegime, // Usar regime ao vivo, não histórico
+          historical: marketRegime,
           recentWinRate: recentWinRate,
           recentVolatility: recentAvgVol,
           adaptations: aiRecommendations.marketRegimeAdaptations || {},
         },
         // Stops adaptativos
-        dynamicStops: aiRecommendations.dynamicStopLoss,
-        dynamicTP: aiRecommendations.dynamicTakeProfit,
+        dynamicStops: {
+          ...aiRecommendations.dynamicStopLoss,
+          liveAdjusted: liveAdjustments.stopLoss
+        },
+        dynamicTP: {
+          ...aiRecommendations.dynamicTakeProfit,
+          liveAdjusted: liveAdjustments.takeProfit
+        },
         // Alavancagem
-        leverageRecommendations: aiRecommendations.leverageRecommendations,
+        leverageRecommendations: {
+          ...aiRecommendations.leverageRecommendations,
+          liveAdjusted: liveAdjustments.leverage
+        },
         // Símbolos
         topSymbols: topSymbols,
         symbolsToFocus: aiRecommendations.symbolsToFocus,
@@ -817,7 +1035,7 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
         riskRewardRatio: riskRewardRatio,
         profitFactor: profitFactor,
         totalPnl: totalPnl,
-        // NOVO: Padrões de perda
+        // Padrões de perda
         lossPatterns: {
           consecutiveLosses: stopAnalysis.consecutiveLosses,
           maxLossStreak: Math.max(...stopAnalysis.consecutiveLosses, 0),
@@ -827,7 +1045,7 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
           highLeverageLosses: lossPatternAnalysis.highLeverageLosses,
           mitigation: aiRecommendations.lossPatternMitigation || {},
         },
-        // NOVO: Position sizing dinâmico
+        // Position sizing dinâmico
         positionSizing: aiRecommendations.positionSizing || {
           basePercent: 10,
           afterWinStreak: 15,
@@ -835,7 +1053,10 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
           highConfidence: 20,
         },
         // Insights
-        insights: aiRecommendations.insights || [],
+        insights: [
+          ...(aiRecommendations.insights || []),
+          liveAdjustments.reason ? `📡 Ao vivo: ${liveAdjustments.reason}` : null
+        ].filter(Boolean),
         criticalWarnings: aiRecommendations.criticalWarnings || [],
         actionPlan: aiRecommendations.actionPlan || '',
         // Métricas de aprendizado
@@ -874,11 +1095,30 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
 
     return new Response(JSON.stringify({
       success: true,
-      message: `ML treinado com ${allTrades.length} trades reais da Bybit!`,
+      message: `ML treinado com ${allTrades.length} trades + dados ao vivo!`,
       dataSource: {
         bybitTrades: bybitTrades.length,
         internalTrades: internalTrades?.length || 0,
         totalAnalyzed: allTrades.length,
+      },
+      // NOVO: Dados de mercado ao vivo
+      liveMarket: {
+        btcVolatility: liveMarket.btcVolatility.toFixed(2),
+        btcTrend: liveMarket.btcTrend,
+        marketSentiment: liveMarket.marketSentiment,
+        liveRegime: liveMarket.marketRegime,
+        avgVolatility: liveMarket.avgMarketVolatility.toFixed(2),
+        topMovers: liveMarket.topMovers.slice(0, 3).map(m => `${m.symbol}: ${m.priceChange24h.toFixed(1)}%`),
+      },
+      // Ajustes aplicados
+      liveAdjustments: {
+        originalStop: baseConfig.stopLoss.toFixed(2),
+        adjustedStop: liveAdjustments.stopLoss.toFixed(2),
+        originalTP: baseConfig.takeProfit.toFixed(2),
+        adjustedTP: liveAdjustments.takeProfit.toFixed(2),
+        originalLeverage: baseConfig.leverage,
+        adjustedLeverage: liveAdjustments.leverage,
+        reason: liveAdjustments.reason,
       },
       performance: {
         totalPnl: totalPnl.toFixed(2),
@@ -908,9 +1148,12 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
         best: bestHours.slice(0, 4),
         avoid: worstHours,
       },
-      insights: aiRecommendations.insights || [],
+      insights: [
+        ...(aiRecommendations.insights || []),
+        liveAdjustments.reason ? `📡 ${liveAdjustments.reason}` : null
+      ].filter(Boolean),
       criticalWarnings: aiRecommendations.criticalWarnings || [],
-      actionPlan: aiRecommendations.actionPlan || 'Parâmetros otimizados do seu histórico real',
+      actionPlan: aiRecommendations.actionPlan || 'Parâmetros otimizados + adaptação ao vivo',
       config: mlConfig,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
