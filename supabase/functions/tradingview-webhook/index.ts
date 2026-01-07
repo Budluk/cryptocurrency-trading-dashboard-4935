@@ -18,6 +18,7 @@ interface TradingViewAlert {
   ema_fast?: number;
   ema_slow?: number;
   rsi?: number;
+  leverage?: number;
 }
 
 // Proteção contra sinais duplicados
@@ -205,6 +206,37 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Signal validated: ${validation.adjustedConfidence}% - ${validation.reason}`);
 
+    // Calcular alavancagem baseada em volatilidade (ATR)
+    let leverage = data.leverage || 20; // Default 20x
+    if (data.atr && data.price) {
+      const volatilityPct = (data.atr / data.price) * 100;
+      if (volatilityPct > 3) leverage = 10;
+      else if (volatilityPct > 2) leverage = 15;
+      else if (volatilityPct > 1) leverage = 20;
+      else leverage = 25;
+    }
+    
+    console.log(`📊 Setting leverage: ${leverage}x`);
+
+    // Primeiro, setar a alavancagem
+    const { error: leverageError } = await supabase.functions.invoke('bybit-trading', {
+      body: {
+        action: 'set_leverage',
+        isTestnet: false,
+        params: {
+          category: 'linear',
+          symbol: data.symbol,
+          buyLeverage: leverage.toString(),
+          sellLeverage: leverage.toString()
+        }
+      }
+    });
+
+    if (leverageError) {
+      console.log('⚠️ Leverage warning:', leverageError.message);
+      // Continuar mesmo com erro de alavancagem (pode já estar setado)
+    }
+
     // Chamar edge function de trading do Bybit - MODO REAL ATIVADO
     const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('bybit-trading', {
       body: {
@@ -216,6 +248,7 @@ Deno.serve(async (req) => {
           side: data.action === 'buy' ? 'Buy' : 'Sell',
           orderType: 'Market',
           qty: data.qty.toString(),
+          leverage: leverage,
           stopLoss: data.stop_loss?.toString(),
           takeProfit: data.take_profit?.toString(),
           timeInForce: 'GTC'
