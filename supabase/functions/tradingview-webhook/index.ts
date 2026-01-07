@@ -230,10 +230,14 @@ serve(async (req) => {
 
     console.log("✅ Trade executed:", tradeResult);
 
-    // Salvar no histórico de learning (sem user_id pois webhook é público)
+    // System user ID for webhook-initiated logs (required by NOT NULL constraint)
+    // This is a dedicated UUID for system/webhook operations
+    const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+    
     const { error: logError } = await supabase
       .from('auto_trader_logs')
       .insert({
+        user_id: SYSTEM_USER_ID,
         log_type: 'TRADINGVIEW_SIGNAL' as any,
         symbol: data.symbol,
         message: `Signal from TradingView: ${data.action} @ ${data.price}`,
