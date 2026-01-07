@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// No external imports required
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,7 +10,7 @@ const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 const RECV_WINDOW = "30000";
 const BASE_URL = "https://api.bybit.com";
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
