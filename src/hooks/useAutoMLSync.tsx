@@ -13,8 +13,8 @@ export const useAutoMLSync = (isTestnet: boolean = false, enabled: boolean = tru
   const isSyncingRef = useRef<boolean>(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Sincronizar ML a cada 30 minutos
-  const SYNC_INTERVAL = 30 * 60 * 1000;
+  // Sincronizar ML a cada 10 minutos (antes era 30) para reagir ao mercado
+  const SYNC_INTERVAL = 10 * 60 * 1000;
   
   // 🔄 Sincronizar com histórico da Bybit e retreinar ML
   const syncMLWithBybit = useCallback(async (showToast: boolean = false) => {
@@ -103,15 +103,28 @@ export const useAutoMLSync = (isTestnet: boolean = false, enabled: boolean = tru
       if (error || !data) return null;
       
       const patterns = (data.optimal_patterns as any) || {};
+      const liveData = patterns.liveMarketData || {};
       
       return {
-        // Parâmetros básicos
+        // Parâmetros básicos (já ajustados ao vivo)
         stopLoss: data.recommended_stop_loss_pct,
         takeProfit: data.recommended_take_profit_pct,
         leverage: data.recommended_leverage,
         confidence: data.confidence_score,
         tradesAnalyzed: data.trades_analyzed,
         lastAnalysis: data.last_analysis_at,
+        
+        // NOVO: Dados de mercado ao vivo
+        liveMarket: {
+          btcVolatility: liveData.btcVolatility,
+          btcTrend: liveData.btcTrend,
+          marketSentiment: liveData.marketSentiment,
+          liveRegime: liveData.liveRegime,
+          avgVolatility: liveData.avgMarketVolatility,
+          topMovers: liveData.topMovers || [],
+          lastUpdate: liveData.lastUpdate,
+          adjustments: liveData.liveAdjustments || null,
+        },
         
         // Símbolos
         bestSymbols: patterns.symbolsToFocus || [],
@@ -121,9 +134,12 @@ export const useAutoMLSync = (isTestnet: boolean = false, enabled: boolean = tru
         bestHours: patterns.bestHours?.map((h: any) => h.hour || h) || [],
         worstHours: patterns.hoursToAvoid || [],
         
-        // Stops dinâmicos
+        // Stops dinâmicos (com ajuste ao vivo)
         dynamicStops: patterns.dynamicStops || null,
         dynamicTP: patterns.dynamicTP || null,
+        
+        // Regime de mercado (ao vivo)
+        marketRegime: patterns.marketRegime || null,
         
         // Padrões de perda
         lossPatterns: patterns.lossPatterns || null,
@@ -134,9 +150,6 @@ export const useAutoMLSync = (isTestnet: boolean = false, enabled: boolean = tru
         // Alertas
         criticalWarnings: patterns.criticalWarnings || [],
         insights: patterns.insights || [],
-        
-        // Regime de mercado
-        marketRegime: patterns.marketRegime || null,
       };
     } catch (error) {
       console.error('❌ Erro ao buscar recomendações ML:', error);
@@ -266,7 +279,7 @@ export const useAutoMLSync = (isTestnet: boolean = false, enabled: boolean = tru
   useEffect(() => {
     if (!enabled) return;
     
-    console.log('🤖 Auto ML Sync ativado - sincronizando a cada 30 min');
+    console.log('🤖 Auto ML Sync ativado - sincronizando a cada 10 min (adaptação ao vivo)');
     
     // Sincronizar ao iniciar (após 10 segundos para não sobrecarregar)
     const initialTimeout = setTimeout(() => {
