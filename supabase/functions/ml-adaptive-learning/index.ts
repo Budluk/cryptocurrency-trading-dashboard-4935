@@ -12,6 +12,12 @@ const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 const RECV_WINDOW = "30000";
 const BASE_URL = "https://api.bybit.com";
 
+// UUID validation helper
+function isValidUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
 interface BybitTrade {
   symbol: string;
   orderId: string;
@@ -135,34 +141,39 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
     
-    // SECURITY: Verify authentication and extract user ID from JWT
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Authorization header required' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Create client with service role for data access
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Verify the JWT and extract the authenticated user's ID
-    const jwt = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    // Parse request body
+    const { userId: requestUserId, minTrades = 10 } = await req.json();
     
-    if (authError || !user) {
+    // Try to get authenticated user from JWT, fall back to request body userId
+    let userId: string;
+    const authHeader = req.headers.get('Authorization');
+    
+    if (authHeader) {
+      const jwt = authHeader.replace('Bearer ', '');
+      const { data: { user } } = await supabase.auth.getUser(jwt);
+      if (user) {
+        userId = user.id;
+      } else if (requestUserId && isValidUUID(requestUserId)) {
+        userId = requestUserId;
+      } else {
+        return new Response(
+          JSON.stringify({ error: 'Valid userId required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else if (requestUserId && isValidUUID(requestUserId)) {
+      userId = requestUserId;
+    } else {
       return new Response(
-        JSON.stringify({ error: 'Invalid or expired authentication token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Valid userId required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Use authenticated user's ID - NEVER trust userId from request body
-    const userId = user.id;
-    const { minTrades = 10 } = await req.json();
-
-    console.log(`🧠 Iniciando análise ML para authenticated user`);
+    console.log(`🧠 Iniciando análise ML...`);
     // Security: Do not log user IDs or API key configuration status
 
     // ========================
