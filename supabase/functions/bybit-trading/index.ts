@@ -175,11 +175,21 @@ async function makeBybitRequest(
   const data = await response.json();
   
   // Handle non-critical Bybit errors that are actually success cases
-  const nonCriticalErrors = [110043]; // 110043 = leverage not modified (already set)
+  // 110043 = leverage not modified (already set)
+  // 110025 = position trading-stop not modified (SL/TP already set to same value)
+  // 110017 = position trading-stop not modified (alternative code)
+  const nonCriticalErrors = [110043, 110025, 110017];
   
   if (data.retCode !== 0) {
+    // Check if it's a non-critical error code
     if (nonCriticalErrors.includes(data.retCode)) {
       console.log(`Bybit non-critical response (${data.retCode}): ${data.retMsg}`);
+      return { success: true, message: data.retMsg, retCode: data.retCode };
+    }
+    // Also check for "not modified" in the message (catch-all for any "already set" scenarios)
+    const lowerMsg = (data.retMsg || '').toLowerCase();
+    if (lowerMsg.includes('not modified') || lowerMsg.includes('same value')) {
+      console.log(`Bybit non-critical response (msg match): ${data.retMsg}`);
       return { success: true, message: data.retMsg, retCode: data.retCode };
     }
     console.error(`Bybit API Error:`, JSON.stringify(data));
