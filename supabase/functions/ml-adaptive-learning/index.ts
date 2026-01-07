@@ -134,12 +134,36 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
+    
+    // SECURITY: Verify authentication and extract user ID from JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Authorization header required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Create client with service role for data access
     const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // Verify the JWT and extract the authenticated user's ID
+    const jwt = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid or expired authentication token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    const { userId, minTrades = 10 } = await req.json();
+    // Use authenticated user's ID - NEVER trust userId from request body
+    const userId = user.id;
+    const { minTrades = 10 } = await req.json();
 
-    console.log(`🧠 Iniciando análise ML para user ${userId}`);
-    // Security: Do not log API key configuration status
+    console.log(`🧠 Iniciando análise ML para authenticated user`);
+    // Security: Do not log user IDs or API key configuration status
 
     // ========================
     // 1. BUSCAR HISTÓRICO COMPLETO DA BYBIT (Últimos 180 dias - limite Bybit)
