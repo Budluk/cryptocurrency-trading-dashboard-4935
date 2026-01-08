@@ -34,6 +34,74 @@ function canExecute(key: string, cooldownMs: number = 5000): boolean {
   return true;
 }
 
+// 🔧 CORREÇÃO CRÍTICA: Calcular SL/TP com R:R mínimo de 2:1
+function calculateOptimalSLTP(
+  price: number,
+  action: string,
+  atr: number | undefined,
+  originalSL?: number,
+  originalTP?: number
+): { stopLoss: number; takeProfit: number; riskReward: number } {
+  const isBuy = action === 'buy';
+  
+  // Calcular volatilidade %
+  const volatilityPct = atr ? (atr / price) * 100 : 2.0;
+  
+  // 🎯 SL baseado em volatilidade: 40-50% do ATR para dar espaço
+  // Mínimo 0.8%, Máximo 2.5%
+  let slPercent = Math.max(0.8, Math.min(2.5, volatilityPct * 0.45));
+  
+  // Alta volatilidade = SL maior para não ser stopado por ruído
+  if (volatilityPct > 5) {
+    slPercent = Math.max(slPercent, 1.5);
+  } else if (volatilityPct > 3) {
+    slPercent = Math.max(slPercent, 1.0);
+  }
+  
+  // 🎯 R:R MÍNIMO de 2:1 - FORÇADO
+  const MIN_RR = 2.0;
+  let tpPercent = slPercent * MIN_RR;
+  
+  // Calcular valores absolutos
+  const slDecimal = slPercent / 100;
+  const tpDecimal = tpPercent / 100;
+  
+  let stopLoss: number;
+  let takeProfit: number;
+  
+  if (isBuy) {
+    stopLoss = price * (1 - slDecimal);
+    takeProfit = price * (1 + tpDecimal);
+  } else {
+    stopLoss = price * (1 + slDecimal);
+    takeProfit = price * (1 - tpDecimal);
+  }
+  
+  // Verificar se os valores originais do TradingView são melhores
+  if (originalSL && originalTP) {
+    const origSlDist = Math.abs(price - originalSL);
+    const origTpDist = Math.abs(originalTP - price);
+    const origRR = origTpDist / origSlDist;
+    
+    // Se o R:R original for >= 2:1, usar os valores originais
+    if (origRR >= MIN_RR) {
+      console.log(`✅ Using TradingView SL/TP: R:R ${origRR.toFixed(2)}:1`);
+      return {
+        stopLoss: originalSL,
+        takeProfit: originalTP,
+        riskReward: origRR
+      };
+    } else {
+      console.log(`⚠️ TradingView R:R ${origRR.toFixed(2)}:1 < 2:1, recalculando...`);
+    }
+  }
+  
+  const riskReward = tpPercent / slPercent;
+  console.log(`🎯 Calculated SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}% | R:R ${riskReward.toFixed(1)}:1`);
+  
+  return { stopLoss, takeProfit, riskReward };
+}
+
 // Validação conservadora adicional
 function scoreSignal(data: TradingViewAlert, minConfidence: number = 80): {
   shouldExecute: boolean;
@@ -181,9 +249,9 @@ Deno.serve(async (req) => {
     }
 
     // Proteção contra duplicatas
-    const key = `${data.symbol}:${data.action}`;
-    if (!canExecute(key)) {
-      console.log(`⚠️ Duplicate signal blocked: ${key}`);
+    const signalKey = `${data.symbol}:${data.action}`;
+    if (!canExecute(signalKey)) {
+      console.log(`⚠️ Duplicate signal blocked: ${signalKey}`);
       return new Response(
         JSON.stringify({ status: "ignored", reason: "duplicate" }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -237,6 +305,17 @@ Deno.serve(async (req) => {
       // Continuar mesmo com erro de alavancagem (pode já estar setado)
     }
 
+    // 🔧 CORREÇÃO CRÍTICA: Recalcular SL/TP para garantir R:R >= 2:1
+    const { stopLoss, takeProfit, riskReward } = calculateOptimalSLTP(
+      data.price,
+      data.action,
+      data.atr,
+      data.stop_loss,
+      data.take_profit
+    );
+
+    console.log(`📊 Final SL: ${stopLoss.toFixed(4)} | TP: ${takeProfit.toFixed(4)} | R:R: ${riskReward.toFixed(1)}:1`);
+
     // Chamar edge function de trading do Bybit - MODO REAL ATIVADO
     const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('bybit-trading', {
       body: {
@@ -249,8 +328,8 @@ Deno.serve(async (req) => {
           orderType: 'Market',
           qty: data.qty.toString(),
           leverage: leverage,
-          stopLoss: data.stop_loss?.toString(),
-          takeProfit: data.take_profit?.toString(),
+          stopLoss: stopLoss.toFixed(4),
+          takeProfit: takeProfit.toFixed(4),
           timeInForce: 'GTC'
         }
       }
@@ -264,7 +343,6 @@ Deno.serve(async (req) => {
     console.log("✅ Trade executed:", tradeResult);
 
     // System user ID for webhook-initiated logs (required by NOT NULL constraint)
-    // This is a dedicated UUID for system/webhook operations
     const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
     
     const { error: logError } = await supabase
@@ -278,6 +356,9 @@ Deno.serve(async (req) => {
           original_confidence: data.confidence,
           adjusted_confidence: validation.adjustedConfidence,
           validation_reason: validation.reason,
+          calculated_sl: stopLoss,
+          calculated_tp: takeProfit,
+          risk_reward: riskReward,
           indicators: {
             rsi: data.rsi,
             atr: data.atr,
@@ -296,7 +377,12 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         status: "success", 
         trade: tradeResult,
-        validation
+        validation,
+        riskManagement: {
+          stopLoss,
+          takeProfit,
+          riskReward
+        }
       }),
       { 
         status: 200, 
