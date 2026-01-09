@@ -419,14 +419,22 @@ Deno.serve(async (req) => {
     console.log(`📊 Análise: WR ${result.analysis.winRate}% | PF ${result.analysis.profitFactor} | R:R ${result.analysis.avgRR}`);
 
     // 6. Salvar configuração corrigida no banco
+    // IMPORTANTE: Armazenar TUDO no optimal_patterns já que min_confidence_threshold não existe na tabela
     const updatedPatterns = {
       ...(currentConfig?.optimal_patterns || {}),
       autoCorrections: result.corrections,
       blockedSymbols: result.newConfig.blockedSymbols,
       blockedHours: result.newConfig.blockedHours,
       positionSizeMultiplier: result.newConfig.positionSizeMultiplier,
+      minConfidence: result.newConfig.minConfidence,
       lastAutoCorrection: new Date().toISOString(),
-      criticalIssues: result.analysis.criticalIssues
+      criticalIssues: result.analysis.criticalIssues,
+      analysis: {
+        winRate: result.analysis.winRate,
+        profitFactor: result.analysis.profitFactor,
+        avgRR: result.analysis.avgRR,
+        consecutiveLosses: result.analysis.consecutiveLosses
+      }
     };
 
     const { error: updateError } = await supabase
@@ -437,8 +445,7 @@ Deno.serve(async (req) => {
         recommended_stop_loss_pct: result.newConfig.stopLossPct,
         recommended_take_profit_pct: result.newConfig.takeProfitPct,
         recommended_leverage: result.newConfig.maxLeverage,
-        min_confidence_threshold: result.newConfig.minConfidence,
-        confidence_score: 100 - (result.analysis.criticalIssues.length * 10),
+        confidence_score: Math.max(10, 100 - (result.analysis.criticalIssues.length * 15)),
         trades_analyzed: result.analysis.tradesAnalyzed,
         optimal_patterns: updatedPatterns,
         last_analysis_at: new Date().toISOString(),

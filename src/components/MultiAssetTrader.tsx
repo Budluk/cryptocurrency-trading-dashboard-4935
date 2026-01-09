@@ -908,8 +908,13 @@ export const MultiAssetTrader = () => {
             ? Math.min(getLeverageForScalping(volatility), maxLeverageInstrument)
             : Math.min(getLeverageForBalance(balanceNow, historicalWinRate), maxLeverageInstrument);
           
+          // 🔧 ML AUTO-CORRECTOR: Aplicar limite de alavancagem corrigido
+          if (mlAutoCorrectEnabled && mlAutoConfig?.maxLeverage) {
+            dynamicLeverage = Math.min(dynamicLeverage, mlAutoConfig.maxLeverage);
+          }
+          
           if (mlConfig?.is_enabled && mlConfig?.recommended_leverage) {
-            dynamicLeverage = Math.min(mlConfig.recommended_leverage, maxLeverageInstrument);
+            dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
           const leverage = Math.floor(dynamicLeverage);
@@ -919,6 +924,15 @@ export const MultiAssetTrader = () => {
           if (patternCheck.blocked) {
             console.log(`🚫 BLOQUEADO: ${symbol} - ${patternCheck.reason}`);
             continue;
+          }
+          
+          // 🔧 ML AUTO-CORRECTOR: Verificar bloqueio automático baseado em dados
+          if (mlAutoCorrectEnabled && mlAutoConfig) {
+            const mlAutoBlock = shouldMLAutoBlockTrade(symbol, leverage);
+            if (mlAutoBlock.blocked) {
+              console.log(`🔧 ML AUTO-CORRIGIU: ${symbol} - ${mlAutoBlock.reason}`);
+              continue;
+            }
           }
           
           // 🧠 VERIFICAR ML AUTO SYNC - Bloqueio baseado em aprendizado contínuo
@@ -1006,7 +1020,17 @@ export const MultiAssetTrader = () => {
           // 🆕 Usar limite de tamanho baseado em volatilidade E saldo disponível
           const maxPositionForVol = volRisk.maxPositionSize;
           // CRÍTICO: Usar no máximo 20% do saldo DISPONÍVEL (não total)
-          const maxMarginPerTrade = Math.min(freshBalance * 0.20, maxPositionForVol, 15);
+          let maxMarginPerTrade = Math.min(freshBalance * 0.20, maxPositionForVol, 15);
+          
+          // 🔧 ML AUTO-CORRECTOR: Aplicar multiplicador de posição (reduz tamanho após perdas)
+          if (mlAutoCorrectEnabled && mlAutoConfig?.positionSizeMultiplier) {
+            const multiplier = mlAutoConfig.positionSizeMultiplier;
+            if (multiplier < 1.0) {
+              maxMarginPerTrade = maxMarginPerTrade * multiplier;
+              console.log(`🔧 ML reduziu tamanho de posição: ${(multiplier * 100).toFixed(0)}%`);
+            }
+          }
+          
           const positionValue = maxMarginPerTrade * leverage;
           // Limitar USD size baseado no saldo disponível
           let usdSize = Math.min(positionValue, freshBalance * 0.8, 50);
@@ -1055,12 +1079,21 @@ export const MultiAssetTrader = () => {
             takeProfit = sltp.takeProfit;
           }
           
+          // 🔧 ML AUTO-CORRECTOR: Aplicar SL/TP corrigidos baseados em análise de dados
+          let minSlPct = 0.008; // 0.80% default
+          let rr = 2.5; // 1:2.5 default
+          
+          if (mlAutoCorrectEnabled && mlAutoConfig) {
+            // Usar parâmetros corrigidos pelo ML (já em percentual)
+            minSlPct = (mlAutoConfig.stopLossPct || 0.8) / 100;
+            const tpPct = (mlAutoConfig.takeProfitPct || 2.0) / 100;
+            rr = tpPct / minSlPct; // Calcular R:R real baseado nos parâmetros
+            console.log(`🔧 ML SL/TP: SL=${(minSlPct * 100).toFixed(2)}%, TP=${(tpPct * 100).toFixed(2)}%, R:R=${rr.toFixed(1)}`);
+          }
+          
           // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
           const slNum = parseFloat(stopLoss);
           const tpNum = parseFloat(takeProfit);
-          // 🔧 SWING: SL mínimo de 0.8% (mais amplo para não stopar em ruído)
-          const minSlPct = 0.008; // 0.80%
-          const rr = 2.5; // 1:2.5
 
           if (analysisResult.action === 'BUY') {
             // BUY: SL abaixo, TP acima

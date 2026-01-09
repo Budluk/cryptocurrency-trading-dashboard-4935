@@ -220,13 +220,14 @@ export const useMLAutoCorrector = () => {
 
       const patterns = data.optimal_patterns as any || {};
       
+      // Carregar configuração incluindo análise se disponível
       const config: AutoCorrectionConfig = {
         stopLossPct: data.recommended_stop_loss_pct || 1.5,
         takeProfitPct: data.recommended_take_profit_pct || 3.0,
         maxLeverage: data.recommended_leverage || 20,
         blockedSymbols: patterns.blockedSymbols || [],
         blockedHours: patterns.blockedHours || [],
-        minConfidence: (data as any).min_confidence_threshold || 80,
+        minConfidence: patterns.minConfidence || 80,
         positionSizeMultiplier: patterns.positionSizeMultiplier || 1.0
       };
 
@@ -234,18 +235,24 @@ export const useMLAutoCorrector = () => {
       setCurrentConfig(config);
       setLastCorrections(patterns.autoCorrections || []);
 
-      if (patterns.criticalIssues?.length > 0) {
+      // Carregar análise se disponível
+      if (patterns.analysis || patterns.criticalIssues?.length > 0) {
         setAnalysis({
           tradesAnalyzed: data.trades_analyzed || 0,
-          winRate: 0,
-          profitFactor: 0,
-          avgRR: 0,
-          consecutiveLosses: 0,
-          criticalIssues: patterns.criticalIssues
+          winRate: patterns.analysis?.winRate || 0,
+          profitFactor: patterns.analysis?.profitFactor || 0,
+          avgRR: patterns.analysis?.avgRR || 0,
+          consecutiveLosses: patterns.analysis?.consecutiveLosses || 0,
+          criticalIssues: patterns.criticalIssues || []
         });
       }
 
-      console.log('📊 Config ML carregada:', config);
+      console.log('📊 Config ML Auto-Corrector carregada:', config);
+      
+      // Se há problemas críticos, notificar
+      if (patterns.criticalIssues?.length > 0) {
+        console.warn('⚠️ Problemas críticos detectados:', patterns.criticalIssues);
+      }
     } catch (error) {
       console.error('❌ Erro ao carregar config ML:', error);
     }
