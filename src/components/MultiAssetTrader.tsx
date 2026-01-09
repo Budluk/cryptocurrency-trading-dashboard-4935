@@ -25,6 +25,7 @@ import { useAITradingIntelligence } from "@/hooks/useAITradingIntelligence";
 import { useMarketIntelligence } from "@/hooks/useMarketIntelligence";
 import { useManualTradeTracker } from "@/hooks/useManualTradeTracker";
 import { useAutoMLSync } from "@/hooks/useAutoMLSync";
+import { useMLAutoCorrector } from "@/hooks/useMLAutoCorrector";
 
 interface Trade {
   symbol: string;
@@ -121,6 +122,17 @@ export const MultiAssetTrader = () => {
     shouldBlockTrade: shouldMLBlockTrade,
     getOptimizedTradeParams 
   } = useAutoMLSync(isTestnet, true);
+  
+  // 🔧 ML Auto-Corrector - Correção automática de estratégia
+  const {
+    isEnabled: mlAutoCorrectEnabled,
+    runAutoCorrection,
+    shouldBlockTrade: shouldMLAutoBlockTrade,
+    getCorrectedParams,
+    currentConfig: mlAutoConfig,
+    analysis: mlAutoAnalysis,
+    lastCorrections
+  } = useMLAutoCorrector();
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
