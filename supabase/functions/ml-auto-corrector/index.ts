@@ -265,16 +265,17 @@ function analyzeAndCorrect(
     else stats.losses++;
   }
   
+  // CRITÉRIO RELAXADO: Bloquear APENAS símbolos com desempenho MUITO ruim
   for (const [symbol, stats] of symbolStats.entries()) {
     const totalTrades = stats.wins + stats.losses;
     const symbolWinRate = totalTrades > 0 ? (stats.wins / totalTrades) * 100 : 50;
     
-    // Bloquear símbolo com win rate < 30% e mais de 5 trades
-    if (symbolWinRate < 30 && totalTrades >= 5 && stats.pnl < 0) {
+    // Bloquear APENAS se: win rate < 20% E mais de 8 trades E PnL muito negativo
+    if (symbolWinRate < 20 && totalTrades >= 8 && stats.pnl < -5) {
       blockedSymbols.push(symbol);
       corrections.push({
         type: 'block_symbol',
-        reason: `${symbol} com ${symbolWinRate.toFixed(0)}% win rate e PnL $${stats.pnl.toFixed(2)}`,
+        reason: `${symbol} com ${symbolWinRate.toFixed(0)}% WR e PnL $${stats.pnl.toFixed(2)} (crítico)`,
         oldValue: 'ativo',
         newValue: 'bloqueado',
         confidence: 90
@@ -282,7 +283,7 @@ function analyzeAndCorrect(
     }
   }
   
-  // 6. IDENTIFICAR HORÁRIOS PROBLEMÁTICOS
+  // 6. IDENTIFICAR HORÁRIOS PROBLEMÁTICOS (critério mais relaxado)
   const hourStats = new Map<number, { wins: number; losses: number }>();
   for (const trade of trades) {
     const hour = new Date(trade.opened_at || trade.createdTime).getUTCHours();
@@ -298,12 +299,12 @@ function analyzeAndCorrect(
     const totalTrades = stats.wins + stats.losses;
     const hourWinRate = totalTrades > 0 ? (stats.wins / totalTrades) * 100 : 50;
     
-    // Bloquear hora com win rate < 25% e mais de 3 trades
-    if (hourWinRate < 25 && totalTrades >= 3) {
+    // Bloquear APENAS hora com win rate < 15% e mais de 6 trades (muito crítico)
+    if (hourWinRate < 15 && totalTrades >= 6) {
       blockedHours.push(hour);
       corrections.push({
         type: 'block_hour',
-        reason: `Hora ${hour}:00 UTC com apenas ${hourWinRate.toFixed(0)}% win rate`,
+        reason: `Hora ${hour}:00 UTC com ${hourWinRate.toFixed(0)}% WR - crítico`,
         oldValue: 'ativo',
         newValue: 'bloqueado',
         confidence: 85

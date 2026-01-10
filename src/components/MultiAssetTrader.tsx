@@ -799,8 +799,15 @@ export const MultiAssetTrader = () => {
       // 🚫 BLOQUEAR HEDGE: símbolos já com posição aberta
       const symbolsWithOpenPosition = new Set(openPositions.map(p => p.symbol));
       
-      // 🎯 SWING TOP 5: Apenas BTC, ETH, SOL, BNB, XRP
-      const SWING_TOP5_SYMBOLS = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']);
+      // 🎯 Símbolos permitidos: TOP LIQUIDEZ (expandido para ML poder filtrar)
+      const ALLOWED_SYMBOLS = new Set([
+        'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
+        'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
+        'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'NEARUSDT', 'APTUSDT'
+      ]);
+      
+      // 🔧 ML Auto-Corrector: Obter símbolos bloqueados pela correção automática
+      const mlBlockedSymbols = new Set(mlAutoConfig?.blockedSymbols || []);
       
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
@@ -820,10 +827,16 @@ export const MultiAssetTrader = () => {
         const isOptimalForHour = symbolAnalysis.isOptimalForHour;
         const isPremiumSymbol = symbolAnalysis.isPremium;
         
-        // 🎯 SWING REAL: APENAS Top 5 (BTC, ETH, SOL, BNB, XRP)
-        if (!isTestnet && !SWING_TOP5_SYMBOLS.has(symbol)) {
-          const reason = `Swing: apenas Top 5 ativos`;
+        // 🎯 Verificar se símbolo está na lista permitida (base)
+        if (!isTestnet && !ALLOWED_SYMBOLS.has(symbol)) {
+          const reason = `Fora da lista de símbolos permitidos`;
           skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+          continue;
+        }
+        
+        // 🔧 ML PRIMEIRO: Verificar se ML bloqueou este símbolo
+        if (mlAutoCorrectEnabled && mlBlockedSymbols.has(symbol)) {
+          console.log(`🔧 ML BLOQUEOU SÍMBOLO: ${symbol} (WR ruim)`);
           continue;
         }
         
