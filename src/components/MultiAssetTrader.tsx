@@ -159,7 +159,7 @@ export const MultiAssetTrader = () => {
   const [hedgeEnabled, setHedgeEnabled] = useState(false);
   const [mlDecisionsEnabled, setMlDecisionsEnabled] = useState(true);
   const [dynamicLeverageEnabled, setDynamicLeverageEnabled] = useState(false);
-  const [armedModeEnabled, setArmedModeEnabled] = useState(true); // 🎯 MODO ORDENS ARMADAS
+  const [armedModeEnabled, setArmedModeEnabled] = useState(false); // 🎯 MODO ORDENS ARMADAS - DESATIVADO
   const [aiIntelligenceEnabled, setAiIntelligenceEnabled] = useState(true); // 🤖 AI INTELLIGENCE
   
   // Tracking
