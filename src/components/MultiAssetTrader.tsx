@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet, Crosshair, Sparkles } from "lucide-react";
+import { Play, Square, Zap, DollarSign, TrendingUp, Target, Network, Brain, ShieldAlert, Clock, Wallet, Crosshair, Sparkles, FlaskConical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -26,6 +26,7 @@ import { useMarketIntelligence } from "@/hooks/useMarketIntelligence";
 import { useManualTradeTracker } from "@/hooks/useManualTradeTracker";
 import { useAutoMLSync } from "@/hooks/useAutoMLSync";
 import { useMLAutoCorrector } from "@/hooks/useMLAutoCorrector";
+import { useDemoTrading } from "@/hooks/useDemoTrading";
 
 interface Trade {
   symbol: string;
@@ -39,6 +40,7 @@ interface Trade {
 export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isTestnet, setIsTestnet] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false); // 🆕 MODO DEMO
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [totalPnL, setTotalPnL] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
@@ -46,6 +48,21 @@ export const MultiAssetTrader = () => {
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [mlConfig, setMlConfig] = useState<any>(null);
   const { toast } = useToast();
+  
+  // 🆕 Hook Demo Trading
+  const {
+    demoBalance,
+    demoPositions,
+    demoPnL,
+    unrealizedPnL: demoUnrealizedPnL,
+    demoPositionsCount,
+    openDemoPosition,
+    closeDemoPosition,
+    updateDemoPositions,
+    fetchCurrentPrice,
+    resetDemoAccount,
+    loadDemoAccount
+  } = useDemoTrading(isDemoMode);
   
   // Hooks customizados
   const { refetch } = usePositions();
@@ -1180,15 +1197,17 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          // Configurar alavancagem
+          // Configurar alavancagem (skip para modo demo)
           let finalLeverage = leverage;
-          let leverageSuccess = false;
+          let leverageSuccess = isDemoMode; // Demo sempre sucesso
           
           if (!symbol || symbol.trim() === '') {
             console.error('Invalid symbol for leverage setting:', symbol);
             continue;
           }
           
+          // Só configura alavancagem na Bybit se não for demo
+          if (!isDemoMode) {
             for (let attempts = 0; attempts < 3 && !leverageSuccess; attempts++) {
               const { data: leverageData, error } = await supabase.functions.invoke('bybit-trading', {
                 body: {
@@ -1197,42 +1216,81 @@ export const MultiAssetTrader = () => {
                 }
               });
             
-            // Success if no error OR if response indicates leverage already set
-            if (!error || leverageData?.data?.success || leverageData?.data?.retCode === 110043) {
-              leverageSuccess = true;
-            } else {
-              console.log(`Leverage attempt ${attempts + 1} failed for ${symbol}, reducing from ${finalLeverage}`);
-              finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10);
+              if (!error || leverageData?.data?.success || leverageData?.data?.retCode === 110043) {
+                leverageSuccess = true;
+              } else {
+                console.log(`Leverage attempt ${attempts + 1} failed for ${symbol}, reducing from ${finalLeverage}`);
+                finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10);
+              }
             }
           }
           
           if (!leverageSuccess) continue;
 
-          // Executar ordem - sempre Market (o switch "Ordens Armadas S/R" fica só para o sistema S/R)
+          // Executar ordem - sempre Market
           const orderType: 'Market' = 'Market';
           
-          const orderParams: Record<string, any> = {
-            category: 'linear', symbol,
-            side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
-            orderType, qty: qtyStr,
-            stopLoss, takeProfit,
-            timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
-          };
+          // 🆕 MODO DEMO: Simular trade localmente
+          let orderSuccess = false;
+          let orderId = '';
           
-          const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
-            body: { action: 'place_order', isTestnet, params: orderParams }
-          });
+          if (isDemoMode) {
+            // Verificar limite de posições demo (max 10)
+            if (demoPositionsCount >= 10) {
+              console.log(`🚫 [DEMO] Limite de posições atingido (10)`);
+              continue;
+            }
+            
+            const demoResult = await openDemoPosition({
+              symbol,
+              side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+              quantity: qty,
+              leverage: finalLeverage,
+              stopLoss: parseFloat(stopLoss),
+              takeProfit: parseFloat(takeProfit),
+              confidence: analysisResult.signalScore
+            });
+            
+            orderSuccess = demoResult.success;
+            orderId = demoResult.data?.orderId || '';
+            
+            if (!orderSuccess) {
+              console.log(`❌ [DEMO] Falha ao abrir posição: ${demoResult.error}`);
+            }
+          } else {
+            // Modo real - Bybit API
+            const orderParams: Record<string, any> = {
+              category: 'linear', symbol,
+              side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+              orderType, qty: qtyStr,
+              stopLoss, takeProfit,
+              timeInForce: 'GTC', positionIdx: 0, reduceOnly: false
+            };
+            
+            const { data: orderData, error: orderError } = await supabase.functions.invoke('bybit-trading', {
+              body: { action: 'place_order', isTestnet, params: orderParams }
+            });
+            
+            orderSuccess = !orderError && orderData?.success;
+            orderId = orderData?.data?.orderId || '';
+            
+            if (!orderSuccess) {
+              const errorMsg = orderData?.error || orderError?.message || '';
+              if (errorMsg.includes('ab not enough')) {
+                setIsRunning(false);
+                shouldStopTrading = true;
+                break;
+              }
+            }
+          }
 
-          if (!orderError && orderData?.success) {
+          if (orderSuccess) {
             openedThisCycle++;
-            // 🆕 Atualizar contadores de direção
             if (analysisResult.action === 'BUY') buyCountThisCycle++;
             if (analysisResult.action === 'SELL') sellCountThisCycle++;
             
-            // 🎓 Marcar como aberta pelo bot para distinguir de operações manuais
             markAsBotOpened(symbol);
             
-            const orderStatus: 'OPEN' = 'OPEN';
             const entryPrice = currentPrice;
             
             const tradeLog = {
@@ -1244,25 +1302,29 @@ export const MultiAssetTrader = () => {
               exposure: exposureData.exposurePercent.toFixed(1),
               volRisk: volRisk.riskLevel,
               orderType,
+              mode: isDemoMode ? 'DEMO' : (isTestnet ? 'TESTNET' : 'REAL')
             };
-            console.log(`✅ TRADE:`, JSON.stringify(tradeLog));
+            console.log(`✅ ${isDemoMode ? '[DEMO]' : ''} TRADE:`, JSON.stringify(tradeLog));
             
-            const saveUserId = await getUserId();
-            await supabase.from('auto_trader_positions').insert({
-              user_id: saveUserId, symbol,
-              side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
-              entry_price: entryPrice, qty, leverage: finalLeverage,
-              stop_loss: parseFloat(stopLoss), take_profit: parseFloat(takeProfit),
-              trailing_stop_percentage: calculateDynamicTrailingStop(volatility),
-              highest_price: entryPrice, volatility,
-              partial_tp_executed: false, original_quantity: qty,
-              confidence: analysisResult.signalScore, 
-              status: orderStatus,
-              order_source: 'BOT', // 🆕 Identificar como operação do bot
-              exchange_order_id: orderData.data?.orderId
-            });
+            // Só salvar em auto_trader_positions se não for demo
+            if (!isDemoMode) {
+              const saveUserId = await getUserId();
+              await supabase.from('auto_trader_positions').insert({
+                user_id: saveUserId, symbol,
+                side: analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
+                entry_price: entryPrice, qty, leverage: finalLeverage,
+                stop_loss: parseFloat(stopLoss), take_profit: parseFloat(takeProfit),
+                trailing_stop_percentage: calculateDynamicTrailingStop(volatility),
+                highest_price: entryPrice, volatility,
+                partial_tp_executed: false, original_quantity: qty,
+                confidence: analysisResult.signalScore, 
+                status: 'OPEN',
+                order_source: 'BOT',
+                exchange_order_id: orderId
+              });
+            }
             
-            if (trailingStopEnabled) {
+            if (trailingStopEnabled && !isDemoMode) {
               setPositionTracking(prev => {
                 const newMap = new Map(prev);
                 newMap.set(symbol, {
@@ -1274,7 +1336,7 @@ export const MultiAssetTrader = () => {
               });
             }
             
-            if (scaleInOutEnabled) {
+            if (scaleInOutEnabled && !isDemoMode) {
               setPyramidingTracking(prev => {
                 const newMap = new Map(prev);
                 newMap.set(symbol, { timesAdded: 0, lastAddPrice: currentPrice, originalQty: qty });
@@ -1288,25 +1350,19 @@ export const MultiAssetTrader = () => {
               symbol, action: analysisResult.action!, confidence: analysisResult.signalScore,
               leverage: finalLeverage, usdSize, timestamp: new Date().toISOString()
             }]);
-            // Position count will be updated on next sync
             
-            toast({ title: `${isScalpAsset ? '⚡ SCALP' : '✅ TRADE'} ${symbol}`, description: `${analysisResult.action} ${finalLeverage}x | $${usdSize.toFixed(0)}` });
+            toast({ 
+              title: `${isDemoMode ? '🧪 DEMO' : (isScalpAsset ? '⚡ SCALP' : '✅ TRADE')} ${symbol}`, 
+              description: `${analysisResult.action} ${finalLeverage}x | $${usdSize.toFixed(0)}` 
+            });
             
-            // 🆕 DELAY MAIOR após trade bem sucedido - deixar mercado respirar
-            await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos
+            await new Promise(resolve => setTimeout(resolve, isDemoMode ? 3000 : 5000));
           } else {
             if (martingaleEnabled) setLossStreak(prev => Math.min(prev + 1, 3));
             setConsecutiveLosses(prev => prev + 1);
-            
-            const errorMsg = orderData?.error || orderError?.message || '';
-            if (errorMsg.includes('ab not enough')) {
-              setIsRunning(false);
-              shouldStopTrading = true;
-              break;
-            }
           }
 
-          await new Promise(resolve => setTimeout(resolve, 1500)); // Delay padrão entre ativos
+          await new Promise(resolve => setTimeout(resolve, 1500));
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
@@ -1698,35 +1754,94 @@ export const MultiAssetTrader = () => {
         </div>
 
         {/* Margem */}
-        <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
+        <Card className={`p-4 mb-4 ${isDemoMode ? 'bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20' : 'bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20'}`}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-purple-400" />
-              <span className="text-sm font-medium">Gerenciamento de Margem</span>
+              {isDemoMode ? <FlaskConical className="h-5 w-5 text-blue-400" /> : <DollarSign className="h-5 w-5 text-purple-400" />}
+              <span className="text-sm font-medium">{isDemoMode ? 'Conta Demo' : 'Gerenciamento de Margem'}</span>
             </div>
-            <Badge variant="outline" className="text-purple-400 border-purple-400">{openPositionsCount}/{maxOpenPositions}</Badge>
+            <Badge variant="outline" className={isDemoMode ? "text-blue-400 border-blue-400" : "text-purple-400 border-purple-400"}>
+              {isDemoMode ? `${demoPositionsCount}/10` : `${openPositionsCount}/${maxOpenPositions}`}
+            </Badge>
           </div>
           
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Margem Total:</span>
-              <span className="font-mono text-purple-400">${currentBalance.toFixed(2)}</span>
+              <span className="text-muted-foreground">{isDemoMode ? 'Saldo Demo:' : 'Margem Total:'}</span>
+              <span className={`font-mono ${isDemoMode ? 'text-blue-400' : 'text-purple-400'}`}>
+                ${isDemoMode ? demoBalance.toFixed(2) : currentBalance.toFixed(2)}
+              </span>
             </div>
-            <Progress value={(openPositionsCount / maxOpenPositions) * 100} className="h-2 mt-2" />
+            {isDemoMode && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PnL Não Realizado:</span>
+                  <span className={`font-mono ${demoUnrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    ${demoUnrealizedPnL.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PnL Total:</span>
+                  <span className={`font-mono ${demoPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    ${demoPnL.toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
+            <Progress value={(isDemoMode ? demoPositionsCount / 10 : openPositionsCount / maxOpenPositions) * 100} className="h-2 mt-2" />
           </div>
         </Card>
 
         {/* Mode Toggle */}
-        <div className="flex items-center justify-between p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-4">
-          <div>
-            <Label className="text-sm font-medium">Modo de operação</Label>
-            <p className="text-xs text-muted-foreground">{isTestnet ? 'Testnet' : '⚠️ REAL'}</p>
+        <div className="space-y-3 mb-4">
+          {/* Demo Mode - NOVO */}
+          <div className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
+            isDemoMode 
+              ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400 shadow-lg shadow-blue-500/20' 
+              : 'bg-blue-500/10 border-blue-500/20'
+          }`}>
+            <div>
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <FlaskConical className={`h-4 w-4 ${isDemoMode ? 'text-blue-400 animate-pulse' : 'text-blue-400/60'}`} />
+                Modo Demo ($20)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {isDemoMode ? `Saldo: $${demoBalance.toFixed(2)} | PnL: $${demoPnL.toFixed(2)}` : 'Simular sem dinheiro real'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch 
+                checked={isDemoMode} 
+                onCheckedChange={(checked) => { 
+                  setIsDemoMode(checked); 
+                  setIsTestnet(false);
+                  setIsRunning(false); 
+                  if (checked) loadDemoAccount();
+                }} 
+                disabled={isRunning} 
+              />
+              {isDemoMode && (
+                <Button variant="ghost" size="sm" onClick={resetDemoAccount} disabled={isRunning} className="text-xs">
+                  Reset
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Label className="text-xs">Testnet</Label>
-            <Switch checked={!isTestnet} onCheckedChange={(checked) => { setIsTestnet(!checked); setIsRunning(false); }} disabled={isRunning} />
-            <Label className="text-xs">Real</Label>
-          </div>
+
+          {/* Real/Testnet Toggle - desabilitado no modo demo */}
+          {!isDemoMode && (
+            <div className="flex items-center justify-between p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+              <div>
+                <Label className="text-sm font-medium">Modo de operação</Label>
+                <p className="text-xs text-muted-foreground">{isTestnet ? 'Testnet' : '⚠️ REAL'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs">Testnet</Label>
+                <Switch checked={!isTestnet} onCheckedChange={(checked) => { setIsTestnet(!checked); setIsRunning(false); }} disabled={isRunning} />
+                <Label className="text-xs">Real</Label>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Controls */}
