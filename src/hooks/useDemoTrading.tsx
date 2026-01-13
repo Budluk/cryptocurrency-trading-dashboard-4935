@@ -37,17 +37,23 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     if (!isDemoMode) return null;
     
     const userId = await getUserId();
+    console.log(`🎮 [DEMO] Carregando conta demo para user: ${userId}`);
     
     // Buscar conta demo existente ou criar nova
-    let { data: account } = await supabase
+    let { data: account, error } = await supabase
       .from('demo_accounts')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
     
+    if (error) {
+      console.log(`⚠️ [DEMO] Erro ao buscar conta: ${error.message}`);
+    }
+    
     if (!account) {
       // Criar conta demo com $20
-      const { data: newAccount } = await supabase
+      console.log(`🆕 [DEMO] Criando nova conta demo...`);
+      const { data: newAccount, error: insertError } = await supabase
         .from('demo_accounts')
         .insert({
           user_id: userId,
@@ -58,6 +64,14 @@ export const useDemoTrading = (isDemoMode: boolean) => {
         .select()
         .single();
       
+      if (insertError) {
+        console.log(`❌ [DEMO] Erro ao criar conta: ${insertError.message}`);
+        // Fallback: usar conta local
+        setDemoBalance(20);
+        setDemoPnL(0);
+        return null;
+      }
+      
       account = newAccount;
     }
     
@@ -65,6 +79,32 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       setDemoAccount(account);
       setDemoBalance(account.current_balance);
       setDemoPnL(account.total_pnl);
+      console.log(`✅ [DEMO] Conta carregada: $${account.current_balance.toFixed(2)} | PnL: $${account.total_pnl.toFixed(2)}`);
+      
+      // Carregar posições demo abertas
+      const { data: positions } = await supabase
+        .from('demo_positions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'open');
+      
+      if (positions && positions.length > 0) {
+        const mappedPositions: DemoPosition[] = positions.map(p => ({
+          id: p.id,
+          symbol: p.symbol,
+          side: p.side as 'Buy' | 'Sell',
+          entry_price: p.entry_price,
+          current_price: p.current_price || p.entry_price,
+          quantity: p.quantity,
+          stop_loss: p.stop_loss,
+          take_profit: p.take_profit,
+          pnl: p.pnl || 0,
+          leverage: 10, // Default
+          opened_at: p.opened_at
+        }));
+        setDemoPositions(mappedPositions);
+        console.log(`📊 [DEMO] ${mappedPositions.length} posições carregadas`);
+      }
     }
     
     return account;
