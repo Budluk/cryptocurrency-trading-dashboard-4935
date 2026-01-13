@@ -558,9 +558,19 @@ export const MultiAssetTrader = () => {
 
   const analyzeAndTrade = async () => {
     try {
-      const balanceNow = await syncBybitBalance();
-      await syncOpenPositions();
-      const topVolNow = await fetchTop10VolatileAssets();
+      // 🆕 No modo demo, usar saldo demo e pular sincronização Bybit
+      let balanceNow: number;
+      let topVolNow: string[];
+      
+      if (isDemoMode) {
+        balanceNow = demoBalance;
+        topVolNow = []; // Demo não precisa top volatile da Bybit
+        console.log(`💰 [DEMO] Saldo: $${demoBalance.toFixed(2)} | Posições: ${demoPositionsCount}`);
+      } else {
+        balanceNow = await syncBybitBalance();
+        await syncOpenPositions();
+        topVolNow = await fetchTop10VolatileAssets();
+      }
       
       // 🆕 Buscar tendência do BTC para correlação com alts
       const btcTrend = await fetchBTCTrend();
@@ -800,7 +810,9 @@ export const MultiAssetTrader = () => {
       let shouldStopTrading = false;
       let openedThisCycle = 0;
       const skipCounts = new Map<string, number>();
-      const openPositionsLite = openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
+      const openPositionsLite = isDemoMode 
+        ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side }))
+        : openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
       // === LIMITES POR CICLO (SWING) ===
       let buyCountThisCycle = 0;
@@ -808,13 +820,14 @@ export const MultiAssetTrader = () => {
       const MAX_SAME_DIRECTION_PER_CYCLE = 2; // Swing: menos trades
       const MAX_TRADES_PER_CYCLE = 3; // Swing: máximo 3 trades por ciclo
       
-      // Contar posições abertas por direção
-      const existingBuys = openPositions.filter(p => p.side === 'Buy').length;
-      const existingSells = openPositions.filter(p => p.side === 'Sell').length;
+      // Contar posições abertas por direção (incluir demo se ativo)
+      const allOpenPositions = isDemoMode ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side })) : openPositions;
+      const existingBuys = allOpenPositions.filter(p => p.side === 'Buy').length;
+      const existingSells = allOpenPositions.filter(p => p.side === 'Sell').length;
       const MAX_IMBALANCE = 3; // Swing: menor imbalance
       
       // 🚫 BLOQUEAR HEDGE: símbolos já com posição aberta
-      const symbolsWithOpenPosition = new Set(openPositions.map(p => p.symbol));
+      const symbolsWithOpenPosition = new Set(allOpenPositions.map(p => p.symbol));
       
       // 🎯 Símbolos permitidos: TOP LIQUIDEZ (expandido para ML poder filtrar)
       const ALLOWED_SYMBOLS = new Set([
@@ -844,8 +857,8 @@ export const MultiAssetTrader = () => {
         const isOptimalForHour = symbolAnalysis.isOptimalForHour;
         const isPremiumSymbol = symbolAnalysis.isPremium;
         
-        // 🎯 Verificar se símbolo está na lista permitida (base)
-        if (!isTestnet && !ALLOWED_SYMBOLS.has(symbol)) {
+        // 🎯 Verificar se símbolo está na lista permitida (base) - Demo é mais flexível
+        if (!isTestnet && !isDemoMode && !ALLOWED_SYMBOLS.has(symbol)) {
           const reason = `Fora da lista de símbolos permitidos`;
           skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
           continue;
@@ -1033,9 +1046,12 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          const freshBalance = balanceNow;
-          if (freshBalance < 2) { // Reduzido para scalping com posições menores
-            console.log(`⚠️ Saldo disponível muito baixo: $${freshBalance.toFixed(2)}`);
+          // 🆕 Usar saldo demo ou real conforme o modo
+          const freshBalance = isDemoMode ? demoBalance : balanceNow;
+          const minBalance = isDemoMode ? 1 : 2; // Demo permite saldo menor
+          
+          if (freshBalance < minBalance) {
+            console.log(`⚠️ Saldo ${isDemoMode ? 'DEMO' : 'disponível'} muito baixo: $${freshBalance.toFixed(2)}`);
             shouldStopTrading = true;
             break;
           }
@@ -1077,8 +1093,9 @@ export const MultiAssetTrader = () => {
 
           // Verificar margem requerida vs saldo DISPONÍVEL (mais conservador)
           const requiredMargin = (parseFloat(orderValueUSD) / leverage) * 1.10; // 10% buffer para fees
-          if (requiredMargin > freshBalance * 0.35) {
-            console.log(`⚠️ Margem ${requiredMargin.toFixed(2)} > 35% disponível ${freshBalance.toFixed(2)} - pulando`);
+          const maxMarginPct = isDemoMode ? 0.50 : 0.35; // Demo permite margem maior
+          if (requiredMargin > freshBalance * maxMarginPct) {
+            console.log(`⚠️ Margem ${requiredMargin.toFixed(2)} > ${maxMarginPct * 100}% ${isDemoMode ? 'demo' : 'disponível'} ${freshBalance.toFixed(2)} - pulando`);
             continue;
           }
 
