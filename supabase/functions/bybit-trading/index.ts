@@ -31,19 +31,18 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Verify JWT token
-    const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
+    // Verify JWT token using getUser()
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
     
-    if (claimsError || !claimsData?.claims) {
-      console.error('Auth verification failed:', claimsError?.message);
+    if (userError || !userData?.user) {
+      console.error('Auth verification failed:', userError?.message);
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid or expired authentication token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = userData.user.id;
     console.log(`Authenticated user ${userId} - Bybit MAINNET request`);
 
     const body = await req.json();
