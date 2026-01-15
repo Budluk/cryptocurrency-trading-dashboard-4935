@@ -1,4 +1,4 @@
-// No external imports required
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,13 +16,43 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // SECURITY: Require authentication for all trading operations
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    // Verify JWT token
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
+    
+    if (claimsError || !claimsData?.claims) {
+      console.error('Auth verification failed:', claimsError?.message);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid or expired authentication token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`Authenticated user ${userId} - Bybit MAINNET request`);
+
     const body = await req.json();
     const { action, params: nestedParams, ...restParams } = body;
     
     // Handle both nested params: { action, params: {...} } and flat params: { action, symbol, leverage, ... }
     const params = nestedParams || restParams;
     
-    console.log(`Bybit MAINNET - Action: ${action}`);
+    console.log(`Bybit MAINNET - Action: ${action} - User: ${userId}`);
     // Security: Do not log API key status or lengths
 
     let result;
