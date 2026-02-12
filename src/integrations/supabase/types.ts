@@ -202,6 +202,48 @@ export type Database = {
         }
         Relationships: []
       }
+      asset_hour_performance: {
+        Row: {
+          avg_pnl: number | null
+          best_leverage: number | null
+          hour_utc: number
+          id: string
+          symbol: string
+          total_pnl: number | null
+          total_trades: number | null
+          updated_at: string
+          user_id: string
+          win_rate: number | null
+          winning_trades: number | null
+        }
+        Insert: {
+          avg_pnl?: number | null
+          best_leverage?: number | null
+          hour_utc: number
+          id?: string
+          symbol: string
+          total_pnl?: number | null
+          total_trades?: number | null
+          updated_at?: string
+          user_id: string
+          win_rate?: number | null
+          winning_trades?: number | null
+        }
+        Update: {
+          avg_pnl?: number | null
+          best_leverage?: number | null
+          hour_utc?: number
+          id?: string
+          symbol?: string
+          total_pnl?: number | null
+          total_trades?: number | null
+          updated_at?: string
+          user_id?: string
+          win_rate?: number | null
+          winning_trades?: number | null
+        }
+        Relationships: []
+      }
       auto_trader_config: {
         Row: {
           created_at: string
@@ -1177,6 +1219,57 @@ export type Database = {
           trend_strength?: number
           user_id?: string
           volatility?: number
+        }
+        Relationships: []
+      }
+      market_sentiment_cache: {
+        Row: {
+          avoid_trading: boolean | null
+          expires_at: string
+          fear_greed_index: number | null
+          fear_greed_label: string | null
+          fetched_at: string
+          funding_rate: number | null
+          funding_rate_trend: string | null
+          id: string
+          long_short_ratio: number | null
+          major_news_count: number | null
+          news_sentiment_score: number | null
+          open_interest: number | null
+          open_interest_change_pct: number | null
+          symbol: string
+        }
+        Insert: {
+          avoid_trading?: boolean | null
+          expires_at?: string
+          fear_greed_index?: number | null
+          fear_greed_label?: string | null
+          fetched_at?: string
+          funding_rate?: number | null
+          funding_rate_trend?: string | null
+          id?: string
+          long_short_ratio?: number | null
+          major_news_count?: number | null
+          news_sentiment_score?: number | null
+          open_interest?: number | null
+          open_interest_change_pct?: number | null
+          symbol: string
+        }
+        Update: {
+          avoid_trading?: boolean | null
+          expires_at?: string
+          fear_greed_index?: number | null
+          fear_greed_label?: string | null
+          fetched_at?: string
+          funding_rate?: number | null
+          funding_rate_trend?: string | null
+          id?: string
+          long_short_ratio?: number | null
+          major_news_count?: number | null
+          news_sentiment_score?: number | null
+          open_interest?: number | null
+          open_interest_change_pct?: number | null
+          symbol?: string
         }
         Relationships: []
       }
@@ -2493,7 +2586,9 @@ export type Database = {
       user_exchange_keys: {
         Row: {
           api_key: string
+          api_key_encrypted: string | null
           api_secret: string
+          api_secret_encrypted: string | null
           created_at: string | null
           exchange: string
           id: string
@@ -2502,7 +2597,9 @@ export type Database = {
         }
         Insert: {
           api_key: string
+          api_key_encrypted?: string | null
           api_secret: string
+          api_secret_encrypted?: string | null
           created_at?: string | null
           exchange: string
           id?: string
@@ -2511,7 +2608,9 @@ export type Database = {
         }
         Update: {
           api_key?: string
+          api_key_encrypted?: string | null
           api_secret?: string
+          api_secret_encrypted?: string | null
           created_at?: string | null
           exchange?: string
           id?: string
@@ -2619,9 +2718,80 @@ export type Database = {
         }
         Relationships: []
       }
+      whale_activity: {
+        Row: {
+          created_at: string
+          detected_at: string
+          id: string
+          impact_score: number | null
+          is_institutional: boolean | null
+          order_size_usd: number
+          price: number
+          side: string
+          source: string | null
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detected_at?: string
+          id?: string
+          impact_score?: number | null
+          is_institutional?: boolean | null
+          order_size_usd: number
+          price: number
+          side: string
+          source?: string | null
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detected_at?: string
+          id?: string
+          impact_score?: number | null
+          is_institutional?: boolean | null
+          order_size_usd?: number
+          price?: number
+          side?: string
+          source?: string | null
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
-      [_ in never]: never
+      user_exchange_keys_decrypted: {
+        Row: {
+          api_key: string | null
+          api_secret: string | null
+          created_at: string | null
+          exchange: string | null
+          id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          api_key?: never
+          api_secret?: never
+          created_at?: string | null
+          exchange?: string | null
+          id?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          api_key?: never
+          api_secret?: never
+          created_at?: string | null
+          exchange?: string | null
+          id?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       calculate_trading_performance: {
@@ -2636,6 +2806,19 @@ export type Database = {
         }[]
       }
       clean_old_football_cache: { Args: never; Returns: undefined }
+      cleanup_stale_positions: {
+        Args: { days_old?: number }
+        Returns: {
+          cleaned_id: string
+          opened_at: string
+          symbol: string
+        }[]
+      }
+      decrypt_exchange_key: {
+        Args: { encrypted_text: string }
+        Returns: string
+      }
+      encrypt_exchange_key: { Args: { plaintext: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -2643,6 +2826,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      mark_position_stale: { Args: { position_id: string }; Returns: boolean }
       reset_daily_loss: { Args: never; Returns: undefined }
     }
     Enums: {
