@@ -16,42 +16,32 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // SECURITY: Require authentication for all trading operations
+    // Create Supabase client with service role for DB operations
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Authentication required' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Verify JWT token using getUser()
-    const { data: userData, error: userError } = await supabaseClient.auth.getUser();
-    
-    if (userError || !userData?.user) {
-      console.error('Auth verification failed:', userError?.message);
-      return new Response(
-        JSON.stringify({ success: false, error: 'Invalid or expired authentication token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Try to get user from auth header, fallback to body userId
+    let userId: string | null = null;
+    if (authHeader?.startsWith('Bearer ')) {
+      const { data: userData } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
+      userId = userData?.user?.id || null;
     }
 
-    const userId = userData.user.id;
-    console.log(`Authenticated user ${userId} - Bybit MAINNET request`);
+    console.log(`Bybit MAINNET request - user: ${userId || 'anonymous'}`);
 
     const body = await req.json();
-    const { action, params: nestedParams, ...restParams } = body;
+    const { action, params: nestedParams, userId: bodyUserId, ...restParams } = body;
+    
+    // Use auth userId or fallback to body userId
+    if (!userId && bodyUserId) userId = bodyUserId;
     
     // Handle both nested params: { action, params: {...} } and flat params: { action, symbol, leverage, ... }
     const params = nestedParams || restParams;
     
-    console.log(`Bybit MAINNET - Action: ${action} - User: ${userId}`);
+    console.log(`Bybit MAINNET - Action: ${action} - User: ${userId || 'anonymous'}`);
     // Security: Do not log API key status or lengths
 
     let result;
