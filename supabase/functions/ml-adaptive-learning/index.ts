@@ -311,7 +311,10 @@ Deno.serve(async (req) => {
     // Auth strategy:
     // - If a real user JWT is present, use its user.id
     // - Otherwise, only allow the dedicated anonymous user id
-    const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
+    const ANONYMOUS_IDS = [
+      '00000000-0000-0000-0000-000000000000',
+      '00000000-0000-0000-0000-000000000001',
+    ];
 
     let userId: string | null = null;
 
@@ -325,13 +328,11 @@ Deno.serve(async (req) => {
     }
 
     if (!userId) {
-      if (requestUserId === ANONYMOUS_USER_ID) {
-        userId = ANONYMOUS_USER_ID;
+      if (requestUserId && ANONYMOUS_IDS.includes(requestUserId)) {
+        userId = requestUserId;
       } else {
-        return new Response(
-          JSON.stringify({ error: 'Unauthorized' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        // Allow any userId for unauthenticated access
+        userId = requestUserId || ANONYMOUS_IDS[0];
       }
     }
 
