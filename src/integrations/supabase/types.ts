@@ -246,6 +246,7 @@ export type Database = {
       }
       auto_trader_config: {
         Row: {
+          allow_hedging: boolean | null
           created_at: string
           drawdown_limit_percent: number | null
           id: string
@@ -253,19 +254,26 @@ export type Database = {
           last_activity_at: string | null
           learning_mode: boolean | null
           leverage_max: number
+          max_concurrent_positions: number | null
           max_consecutive_losses: number
           min_balance: number
           min_confidence: number
           min_qty: number
+          partial_exit_percent: number | null
+          position_size_multiplier: number | null
           reinvest_profit_pct: number
           risk_per_trade: number
           trader_is_running: boolean
+          trailing_stop_percent: number | null
           updated_at: string
           use_dynamic_sizing: boolean | null
           use_multi_timeframe: boolean | null
+          use_partial_exits: boolean | null
+          use_trailing_stops: boolean | null
           user_id: string
         }
         Insert: {
+          allow_hedging?: boolean | null
           created_at?: string
           drawdown_limit_percent?: number | null
           id?: string
@@ -273,19 +281,26 @@ export type Database = {
           last_activity_at?: string | null
           learning_mode?: boolean | null
           leverage_max?: number
+          max_concurrent_positions?: number | null
           max_consecutive_losses?: number
           min_balance?: number
           min_confidence?: number
           min_qty?: number
+          partial_exit_percent?: number | null
+          position_size_multiplier?: number | null
           reinvest_profit_pct?: number
           risk_per_trade?: number
           trader_is_running?: boolean
+          trailing_stop_percent?: number | null
           updated_at?: string
           use_dynamic_sizing?: boolean | null
           use_multi_timeframe?: boolean | null
+          use_partial_exits?: boolean | null
+          use_trailing_stops?: boolean | null
           user_id: string
         }
         Update: {
+          allow_hedging?: boolean | null
           created_at?: string
           drawdown_limit_percent?: number | null
           id?: string
@@ -293,16 +308,22 @@ export type Database = {
           last_activity_at?: string | null
           learning_mode?: boolean | null
           leverage_max?: number
+          max_concurrent_positions?: number | null
           max_consecutive_losses?: number
           min_balance?: number
           min_confidence?: number
           min_qty?: number
+          partial_exit_percent?: number | null
+          position_size_multiplier?: number | null
           reinvest_profit_pct?: number
           risk_per_trade?: number
           trader_is_running?: boolean
+          trailing_stop_percent?: number | null
           updated_at?: string
           use_dynamic_sizing?: boolean | null
           use_multi_timeframe?: boolean | null
+          use_partial_exits?: boolean | null
+          use_trailing_stops?: boolean | null
           user_id?: string
         }
         Relationships: []
