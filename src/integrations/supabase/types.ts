@@ -1857,6 +1857,42 @@ export type Database = {
         }
         Relationships: []
       }
+      real_accounts: {
+        Row: {
+          account_type: string | null
+          api_key_encrypted: string
+          created_at: string | null
+          exchange: string
+          id: string
+          is_active: boolean | null
+          secret_key_encrypted: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          account_type?: string | null
+          api_key_encrypted: string
+          created_at?: string | null
+          exchange?: string
+          id?: string
+          is_active?: boolean | null
+          secret_key_encrypted: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          account_type?: string | null
+          api_key_encrypted?: string
+          created_at?: string | null
+          exchange?: string
+          id?: string
+          is_active?: boolean | null
+          secret_key_encrypted?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       risk_management_settings: {
         Row: {
           created_at: string | null
