@@ -1331,15 +1331,11 @@ export const MultiAssetTrader = () => {
             if (!orderSuccess) {
               const errorMsg = orderData?.error || orderError?.message || '';
               if (errorMsg.includes('ab not enough')) {
-                console.log(`⚠️ Saldo insuficiente para ${symbol} (balanceNow: $${balanceNow.toFixed(2)}) - reduzindo saldo local`);
-                // Reduzir saldo local para evitar repetir erro nos próximos ativos
-                balanceNow = Math.max(balanceNow * 0.5, 0);
-                if (balanceNow < 3) {
-                  console.log(`🛑 Saldo estimado muito baixo ($${balanceNow.toFixed(2)}) - parando ciclo`);
-                  shouldStopTrading = true;
-                  break;
-                }
-                continue;
+                console.log(`🛑 Saldo insuficiente na Bybit para ${symbol} - PARANDO ciclo imediatamente`);
+                // Saldo real da Bybit é $0 - não adianta tentar outros ativos
+                balanceNow = 0;
+                shouldStopTrading = true;
+                break;
               }
               if (errorMsg.includes('Rate Limit') || errorMsg.includes('Too many visits')) {
                 console.log(`⏳ Rate limit atingido - aguardando 5s antes do próximo ativo...`);
