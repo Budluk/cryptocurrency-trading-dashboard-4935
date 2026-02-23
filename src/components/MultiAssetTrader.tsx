@@ -39,6 +39,7 @@ interface Trade {
 
 export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
+  const tradingLockRef = useRef(false);
   const [isTestnet, setIsTestnet] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false); // 🆕 MODO DEMO
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
@@ -557,6 +558,12 @@ export const MultiAssetTrader = () => {
   }, [smartExitEnabled, trailingStopEnabled, isTestnet, mlConfig, processOpenPositions, positionTracking, syncClosedPositionsPnL, clearPositionState, refetch]);
 
   const analyzeAndTrade = async () => {
+    // 🔒 Mutex: impedir execuções concorrentes
+    if (tradingLockRef.current) {
+      console.log('🔒 Ciclo anterior ainda em execução - pulando');
+      return;
+    }
+    tradingLockRef.current = true;
     try {
       // 🆕 No modo demo, usar saldo demo e pular sincronização Bybit
       let balanceNow: number;
@@ -1444,6 +1451,8 @@ export const MultiAssetTrader = () => {
       setCycleCount(prev => prev + 1);
     } catch (error) {
       console.error('Erro no ciclo de trading:', error);
+    } finally {
+      tradingLockRef.current = false;
     }
   };
 
