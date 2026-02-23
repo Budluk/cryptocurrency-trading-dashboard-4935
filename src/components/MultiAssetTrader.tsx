@@ -1069,7 +1069,7 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // 🆕 Usar saldo demo ou real conforme o modo
+          // 🆕 Usar saldo atualizado (balanceNow é decrementado após cada trade)
           const freshBalance = isDemoMode ? demoBalance : balanceNow;
           const minBalance = isDemoMode ? 1 : 2; // Demo permite saldo menor
           
@@ -1318,17 +1318,14 @@ export const MultiAssetTrader = () => {
             if (!orderSuccess) {
               const errorMsg = orderData?.error || orderError?.message || '';
               if (errorMsg.includes('ab not enough')) {
-                console.log(`⚠️ Saldo insuficiente para ${symbol} - re-sincronizando saldo...`);
-                // Re-sync balance antes de desistir
-                const freshBal = await syncBybitBalance();
-                if (freshBal < 3) {
-                  console.log(`🛑 Saldo disponível muito baixo ($${freshBal.toFixed(2)}) - parando trader`);
-                  setIsRunning(false);
+                console.log(`⚠️ Saldo insuficiente para ${symbol} (balanceNow: $${balanceNow.toFixed(2)}) - reduzindo saldo local`);
+                // Reduzir saldo local para evitar repetir erro nos próximos ativos
+                balanceNow = Math.max(balanceNow * 0.5, 0);
+                if (balanceNow < 3) {
+                  console.log(`🛑 Saldo estimado muito baixo ($${balanceNow.toFixed(2)}) - parando ciclo`);
                   shouldStopTrading = true;
                   break;
                 }
-                // Saldo ok mas não suficiente para este trade específico - continuar para próximo ativo
-                balanceNow = freshBal;
                 continue;
               }
               if (errorMsg.includes('Rate Limit') || errorMsg.includes('Too many visits')) {
@@ -1343,6 +1340,11 @@ export const MultiAssetTrader = () => {
             openedThisCycle++;
             if (analysisResult.action === 'BUY') buyCountThisCycle++;
             if (analysisResult.action === 'SELL') sellCountThisCycle++;
+            
+            // 💰 Deduzir margem usada do saldo local para evitar "ab not enough" nos próximos ativos
+            const usedMargin = requiredMargin;
+            balanceNow = Math.max(balanceNow - usedMargin, 0);
+            console.log(`💰 Saldo local atualizado: $${balanceNow.toFixed(2)} (deduzido $${usedMargin.toFixed(2)} margem)`);
             
             markAsBotOpened(symbol);
             
