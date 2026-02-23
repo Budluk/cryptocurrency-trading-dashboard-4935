@@ -205,25 +205,10 @@ export const useSignalAnalysis = () => {
     return true;
   }, []);
 
-  // Check trading hours (avoid low liquidity)
+  // Check trading hours - crypto opera 24/7, sem bloqueio
   const checkTradingHours = useCallback((): { isGoodHour: boolean; reason: string } => {
-    const now = new Date();
-    const utcHour = now.getUTCHours();
-    
-    // Low liquidity hours: 23:00 - 06:00 UTC (Asia night, before Europe)
-    const lowLiquidityHours = [23, 0, 1, 2, 3, 4, 5];
-    
-    if (lowLiquidityHours.includes(utcHour)) {
-      return { isGoodHour: false, reason: `Hora ${utcHour} UTC - baixa liquidez` };
-    }
-    
-    // Best hours: 13:00-21:00 UTC (US market overlap)
-    const bestHours = [13, 14, 15, 16, 17, 18, 19, 20, 21];
-    if (bestHours.includes(utcHour)) {
-      return { isGoodHour: true, reason: 'Horário premium' };
-    }
-    
-    return { isGoodHour: true, reason: 'Horário ok' };
+    // Crypto opera 24/7 - não bloquear nenhum horário
+    return { isGoodHour: true, reason: 'Crypto 24/7' };
   }, []);
 
   // Check multi-timeframe alignment
@@ -515,12 +500,12 @@ export const useSignalAnalysis = () => {
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     
-    // Threshold dinâmico baseado em volatilidade (SWING: mais rigoroso)
+    // Threshold dinâmico baseado em volatilidade (relaxado)
     const volatilityAdjustedThreshold = volatility > 10 
-      ? scoreThreshold + 15 
+      ? scoreThreshold + 8 
       : volatility > 6 
-        ? scoreThreshold + 8 
-        : scoreThreshold + 3;
+        ? scoreThreshold + 4 
+        : scoreThreshold;
     
     if (scoreDiff >= minDiff) {
       if (buyScore > sellScore && buyScore >= volatilityAdjustedThreshold) {
@@ -611,26 +596,24 @@ export const useSignalAnalysis = () => {
     // === BLOQUEIO DE RANGING (apenas se score baixo) ===
     const rangingBlocked = marketRegime === 'ranging' && !isReversal && signalScore < 50;
     
-    // === DECISÃO FINAL (SWING: muito mais rigoroso) ===
+    // === DECISÃO FINAL (RELAXADO para operar) ===
     const shouldTrade = (
       action !== null &&
       signalScore >= volatilityAdjustedThreshold &&
       scoreDiff >= minDiff &&
       currentBalance > 2 &&
-      confirmations.length >= minConfirmations &&
+      confirmations.length >= Math.max(1, minConfirmations - 1) &&
       volumeOk &&
-      (volatilityOk || isReversal) && // SWING: sem bypass por momentum
-      atrOk && // SWING: sempre requer ATR ok
+      (volatilityOk || isReversal || isMomentumTrade) &&
+      atrOk &&
       priceMovementOk &&
-      momentumOk && // SWING: sempre requer momentum
-      volumeDirectionOk && // SWING: sempre requer volume na direção
-      positionOk &&
-      signalQuality !== 'low' &&
-      pullbackReady && // SWING: sempre requer pullback
-      btcAligned && // SWING: sempre requer BTC alinhado
-      (isGoodHour || signalScore >= 65) && // SWING: mais rigoroso com hora
-      !rangingBlocked &&
-      tfAligned // SWING: requer timeframes alinhados
+      (momentumOk || isReversal || signalScore >= 45) &&
+      (volumeDirectionOk || signalScore >= 50) &&
+      (positionOk || signalScore >= 45) &&
+      (signalQuality !== 'low' || signalScore >= 40) &&
+      (pullbackReady || isReversal || isMomentumTrade || signalScore >= 50) &&
+      (btcAligned || isReversal || isMomentumTrade || signalScore >= 50) &&
+      !rangingBlocked
     );
 
     // Skip reason
