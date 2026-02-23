@@ -829,11 +829,34 @@ export const MultiAssetTrader = () => {
       // 🚫 BLOQUEAR HEDGE: símbolos já com posição aberta
       const symbolsWithOpenPosition = new Set(allOpenPositions.map(p => p.symbol));
       
-      // 🎯 Símbolos permitidos: TOP LIQUIDEZ (expandido para ML poder filtrar)
+      // 🎯 Símbolos permitidos: EXPANDIDO - todos os ativos com liquidez razoável
+      // Em vez de whitelist restritiva, usar os top ativos já filtrados por volume/volatilidade
       const ALLOWED_SYMBOLS = new Set([
+        // Major caps
         'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
         'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-        'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'NEARUSDT', 'APTUSDT'
+        'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'NEARUSDT', 'APTUSDT',
+        // Mid caps com liquidez
+        'SUIUSDT', 'OPUSDT', 'ARBUSDT', 'INJUSDT', 'TIAUSDT',
+        'SEIUSDT', 'JUPUSDT', 'WLDUSDT', 'STXUSDT', 'IMXUSDT',
+        'RUNEUSDT', 'FETUSDT', 'RENDERUSDT', 'AGLDUSDT', 'BELUSDT',
+        'CYBERUSDT', 'ENSOUSDT', 'HYPEUSDT', 'PROMPTUSDT', 'AZTECUSDT',
+        // Memes e altcoins populares
+        'PEPEUSDT', '1000PEPEUSDT', 'SHIBUSDT', '1000SHIBUSDT', 'FLOKIUSDT',
+        '1000FLOKIUSDT', 'BONKUSDT', '1000BONKUSDT', 'WIFUSDT', 'MEMEUSDT',
+        // DeFi
+        'AAVEUSDT', 'UNIUSDT', 'MKRUSDT', 'COMPUSDT', 'CRVUSDT',
+        'LDOUSDT', 'PENDLEUSDT', 'GMXUSDT', 'DYDXUSDT',
+        // Layer 1/2
+        'FILUSDT', 'ALGOUSDT', 'FTMUSDT', 'MANAUSDT', 'SANDUSDT',
+        'GALAUSDT', 'AXSUSDT', 'APEUSDT', 'BLURUSDT', 'CFXUSDT',
+        'KASUSDT', 'TONUSDT', 'TRXUSDT', 'VETUSDT', 'EGLDUSDT',
+        'ICPUSDT', 'HBARUSDT', 'QNTUSDT', 'ARUSDT', 'GRTUSDT',
+        // Outros com volume
+        'ORDIUSDT', 'LUNA2USDT', 'LRCUSDT', 'ENAUSDT', 'PYTHUSDT',
+        'JITOUSDT', 'ONDOUSDT', 'ETHFIUSDT', 'EIGENUSDT', 'ZROUSDT',
+        // Dinâmico: adicionar todos os top ativos do ciclo atual
+        ...topVolatileAssets.map(a => a.instrument.symbol)
       ]);
       
       // 🔧 ML Auto-Corrector: Obter símbolos bloqueados pela correção automática
