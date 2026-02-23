@@ -1248,7 +1248,7 @@ export const MultiAssetTrader = () => {
           
           // Só configura alavancagem na Bybit se não for demo
           if (!isDemoMode) {
-            for (let attempts = 0; attempts < 3 && !leverageSuccess; attempts++) {
+            for (let attempts = 0; attempts < 2 && !leverageSuccess; attempts++) {
               const { data: leverageData, error } = await supabase.functions.invoke('bybit-trading', {
                 body: {
                   action: 'set_leverage', isTestnet,
@@ -1261,6 +1261,7 @@ export const MultiAssetTrader = () => {
               } else {
                 console.log(`Leverage attempt ${attempts + 1} failed for ${symbol}, reducing from ${finalLeverage}`);
                 finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit delay
               }
             }
           }
@@ -1317,9 +1318,23 @@ export const MultiAssetTrader = () => {
             if (!orderSuccess) {
               const errorMsg = orderData?.error || orderError?.message || '';
               if (errorMsg.includes('ab not enough')) {
-                setIsRunning(false);
-                shouldStopTrading = true;
-                break;
+                console.log(`⚠️ Saldo insuficiente para ${symbol} - re-sincronizando saldo...`);
+                // Re-sync balance antes de desistir
+                const freshBal = await syncBybitBalance();
+                if (freshBal < 3) {
+                  console.log(`🛑 Saldo disponível muito baixo ($${freshBal.toFixed(2)}) - parando trader`);
+                  setIsRunning(false);
+                  shouldStopTrading = true;
+                  break;
+                }
+                // Saldo ok mas não suficiente para este trade específico - continuar para próximo ativo
+                balanceNow = freshBal;
+                continue;
+              }
+              if (errorMsg.includes('Rate Limit') || errorMsg.includes('Too many visits')) {
+                console.log(`⏳ Rate limit atingido - aguardando 5s antes do próximo ativo...`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
               }
             }
           }
@@ -1396,13 +1411,13 @@ export const MultiAssetTrader = () => {
               description: `${analysisResult.action} ${finalLeverage}x | $${usdSize.toFixed(0)}` 
             });
             
-            await new Promise(resolve => setTimeout(resolve, isDemoMode ? 3000 : 5000));
+          await new Promise(resolve => setTimeout(resolve, isDemoMode ? 3000 : 6000));
           } else {
             if (martingaleEnabled) setLossStreak(prev => Math.min(prev + 1, 3));
             setConsecutiveLosses(prev => prev + 1);
           }
 
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await new Promise(resolve => setTimeout(resolve, 2500));
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
