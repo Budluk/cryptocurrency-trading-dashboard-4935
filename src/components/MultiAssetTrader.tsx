@@ -570,6 +570,12 @@ export const MultiAssetTrader = () => {
         balanceNow = await syncBybitBalance();
         await syncOpenPositions();
         topVolNow = await fetchTop10VolatileAssets();
+        
+        // 🛡️ EARLY EXIT: Se saldo disponível < $3, não faz sentido continuar o ciclo
+        if (balanceNow < 3) {
+          console.log(`🛑 Saldo disponível muito baixo: $${balanceNow.toFixed(2)} - pulando ciclo (margem toda em uso)`);
+          return;
+        }
       }
       
       // 🆕 Buscar tendência do BTC para correlação com alts
