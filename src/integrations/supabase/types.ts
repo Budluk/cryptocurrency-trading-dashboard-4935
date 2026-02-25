@@ -2862,6 +2862,7 @@ export type Database = {
           winning_trades: number
         }[]
       }
+      check_user_exists: { Args: { email_to_check: string }; Returns: boolean }
       clean_old_football_cache: { Args: never; Returns: undefined }
       cleanup_stale_positions: {
         Args: { days_old?: number }
