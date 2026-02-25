@@ -46,58 +46,63 @@ export function useSmartExitManager() {
     breakEvenActivated: new Map(),
   });
 
+  // TRAILING PROGRESSIVO: quanto mais lucro, mais apertado o trailing
+  const getProgressiveTrailingPct = useCallback((profitPct: number, baseTrailingPct: number): number => {
+    // Níveis progressivos - trailing aperta conforme lucro cresce
+    if (profitPct >= 5.0) return Math.min(baseTrailingPct * 0.25, 0.15); // 5%+ lucro → trailing mínimo (0.15%)
+    if (profitPct >= 3.0) return Math.min(baseTrailingPct * 0.35, 0.2);  // 3%+ → 0.2%
+    if (profitPct >= 2.0) return Math.min(baseTrailingPct * 0.5, 0.25);  // 2%+ → 0.25%
+    if (profitPct >= 1.0) return Math.min(baseTrailingPct * 0.65, 0.3);  // 1%+ → 0.3%
+    if (profitPct >= 0.5) return Math.min(baseTrailingPct * 0.8, 0.35);  // 0.5%+ → 0.35%
+    return baseTrailingPct; // Abaixo de 0.5% → trailing normal
+  }, []);
+
   // Configurações de trailing stop MAIS AGRESSIVAS - breakeven cedo
   const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any, profitPct?: number): TrailingStopConfig => {
-    // Se já tem lucro, apertar ainda mais
     const hasProfit = profitPct && profitPct > 0;
     
-    // Se ML está ativo, usar recomendações com ajustes
+    let baseConfig: TrailingStopConfig;
+
     if (mlConfig?.is_enabled && mlConfig?.optimal_patterns?.dynamicStops) {
       const dynamicStops = mlConfig.optimal_patterns.dynamicStops;
       
-      // Selecionar config baseado na volatilidade - BREAKEVEN MAIS CEDO
       if (volatility < 2) {
-        return {
-          activationPct: hasProfit ? 0.15 : 0.25, // Ativa mais cedo
+        baseConfig = {
+          activationPct: hasProfit ? 0.15 : 0.25,
           trailingPct: Math.min(dynamicStops.lowVolatility || 0.3, 0.25),
-          breakEvenPct: 0.15, // Breakeven com apenas 0.15% lucro
+          breakEvenPct: 0.15,
         };
       } else if (volatility < 5) {
-        return {
+        baseConfig = {
           activationPct: hasProfit ? 0.2 : 0.35,
           trailingPct: Math.min(dynamicStops.mediumVolatility || 0.4, 0.35),
           breakEvenPct: 0.2,
         };
       } else {
-        return {
+        baseConfig = {
           activationPct: hasProfit ? 0.3 : 0.5,
           trailingPct: Math.min(dynamicStops.highVolatility || 0.6, 0.5),
           breakEvenPct: 0.25,
         };
       }
+    } else {
+      // Fallback sem ML
+      if (volatility < 2) {
+        baseConfig = { activationPct: 0.25, trailingPct: 0.2, breakEvenPct: 0.15 };
+      } else if (volatility < 5) {
+        baseConfig = { activationPct: 0.35, trailingPct: 0.3, breakEvenPct: 0.2 };
+      } else {
+        baseConfig = { activationPct: 0.5, trailingPct: 0.4, breakEvenPct: 0.25 };
+      }
     }
 
-    // Fallback sem ML - MAIS CONSERVADOR
-    if (volatility < 2) {
-      return { 
-        activationPct: 0.25, 
-        trailingPct: 0.2, 
-        breakEvenPct: 0.15 // Breakeven com 0.15%
-      };
-    } else if (volatility < 5) {
-      return { 
-        activationPct: 0.35, 
-        trailingPct: 0.3, 
-        breakEvenPct: 0.2 
-      };
-    } else {
-      return { 
-        activationPct: 0.5, 
-        trailingPct: 0.4, 
-        breakEvenPct: 0.25 
-      };
+    // Aplicar trailing progressivo se já tem lucro
+    if (profitPct && profitPct > 0) {
+      baseConfig.trailingPct = getProgressiveTrailingPct(profitPct, baseConfig.trailingPct);
     }
-  }, []);
+
+    return baseConfig;
+  }, [getProgressiveTrailingPct]);
 
   // Configurações de saída parcial baseadas em ML
   const getPartialExitConfig = useCallback((mlConfig: any): PartialExitConfig => {
@@ -376,7 +381,8 @@ export function useSmartExitManager() {
 
     for (const position of positions) {
       const volatility = volatilityMap.get(position.symbol) || 2;
-      const trailingConfig = getAdaptiveTrailingConfig(volatility, mlConfig);
+      const currentProfit = calculateProfitPct(position);
+      const trailingConfig = getAdaptiveTrailingConfig(volatility, mlConfig, currentProfit);
       const partialConfig = getPartialExitConfig(mlConfig);
 
       // Verificar saída parcial primeiro
