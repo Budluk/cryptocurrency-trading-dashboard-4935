@@ -952,9 +952,9 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
     // 11. APLICAR AJUSTES DE MERCADO AO VIVO
     // ========================
     const baseConfig = {
-      stopLoss: aiRecommendations.dynamicStopLoss?.base || optimizedStop,
-      takeProfit: aiRecommendations.dynamicTakeProfit?.base || optimizedTP,
-      leverage: aiRecommendations.leverageRecommendations?.optimal || bestLeverage
+      stopLoss: Number(aiRecommendations.dynamicStopLoss?.base || optimizedStop) || optimizedStop,
+      takeProfit: Number(aiRecommendations.dynamicTakeProfit?.base || optimizedTP) || optimizedTP,
+      leverage: Number(aiRecommendations.leverageRecommendations?.optimal || bestLeverage) || bestLeverage
     };
     
     const liveAdjustments = calculateLiveAdjustments(liveMarket, baseConfig);
