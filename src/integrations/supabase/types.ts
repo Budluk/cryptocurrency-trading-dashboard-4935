@@ -693,6 +693,195 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_config: {
+        Row: {
+          api_key_encrypted: string | null
+          api_secret_encrypted: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          is_testnet: boolean | null
+          min_price: number | null
+          risk_percent: number | null
+          spread_threshold: number | null
+          stop_loss_percent: number | null
+          take_profit_percent: number | null
+          updated_at: string | null
+          user_id: string
+          volume_threshold: number | null
+        }
+        Insert: {
+          api_key_encrypted?: string | null
+          api_secret_encrypted?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_testnet?: boolean | null
+          min_price?: number | null
+          risk_percent?: number | null
+          spread_threshold?: number | null
+          stop_loss_percent?: number | null
+          take_profit_percent?: number | null
+          updated_at?: string | null
+          user_id: string
+          volume_threshold?: number | null
+        }
+        Update: {
+          api_key_encrypted?: string | null
+          api_secret_encrypted?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_testnet?: boolean | null
+          min_price?: number | null
+          risk_percent?: number | null
+          spread_threshold?: number | null
+          stop_loss_percent?: number | null
+          take_profit_percent?: number | null
+          updated_at?: string | null
+          user_id?: string
+          volume_threshold?: number | null
+        }
+        Relationships: []
+      }
+      bot_statistics: {
+        Row: {
+          avg_loss: number | null
+          avg_win: number | null
+          created_at: string | null
+          id: string
+          losing_trades: number | null
+          total_pnl: number | null
+          total_trades: number | null
+          trades_today: number | null
+          updated_at: string | null
+          user_id: string
+          win_rate: number | null
+          winning_trades: number | null
+        }
+        Insert: {
+          avg_loss?: number | null
+          avg_win?: number | null
+          created_at?: string | null
+          id?: string
+          losing_trades?: number | null
+          total_pnl?: number | null
+          total_trades?: number | null
+          trades_today?: number | null
+          updated_at?: string | null
+          user_id: string
+          win_rate?: number | null
+          winning_trades?: number | null
+        }
+        Update: {
+          avg_loss?: number | null
+          avg_win?: number | null
+          created_at?: string | null
+          id?: string
+          losing_trades?: number | null
+          total_pnl?: number | null
+          total_trades?: number | null
+          trades_today?: number | null
+          updated_at?: string | null
+          user_id?: string
+          win_rate?: number | null
+          winning_trades?: number | null
+        }
+        Relationships: []
+      }
+      bot_trades: {
+        Row: {
+          created_at: string | null
+          entry_price: number | null
+          entry_time: string | null
+          exit_price: number | null
+          exit_time: string | null
+          id: string
+          pnl: number | null
+          pnl_percent: number | null
+          quantity: number | null
+          status: string | null
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          entry_price?: number | null
+          entry_time?: string | null
+          exit_price?: number | null
+          exit_time?: string | null
+          id?: string
+          pnl?: number | null
+          pnl_percent?: number | null
+          quantity?: number | null
+          status?: string | null
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          entry_price?: number | null
+          entry_time?: string | null
+          exit_price?: number | null
+          exit_time?: string | null
+          id?: string
+          pnl?: number | null
+          pnl_percent?: number | null
+          quantity?: number | null
+          status?: string | null
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      candle_data: {
+        Row: {
+          close: number | null
+          created_at: string | null
+          ema20_1m: number | null
+          ema20_5m: number | null
+          ema50_5m: number | null
+          high: number | null
+          id: string
+          low: number | null
+          open: number | null
+          symbol: string
+          timeframe: string
+          timestamp: string
+          volume: number | null
+        }
+        Insert: {
+          close?: number | null
+          created_at?: string | null
+          ema20_1m?: number | null
+          ema20_5m?: number | null
+          ema50_5m?: number | null
+          high?: number | null
+          id?: string
+          low?: number | null
+          open?: number | null
+          symbol: string
+          timeframe: string
+          timestamp: string
+          volume?: number | null
+        }
+        Update: {
+          close?: number | null
+          created_at?: string | null
+          ema20_1m?: number | null
+          ema20_5m?: number | null
+          ema50_5m?: number | null
+          high?: number | null
+          id?: string
+          low?: number | null
+          open?: number | null
+          symbol?: string
+          timeframe?: string
+          timestamp?: string
+          volume?: number | null
+        }
+        Relationships: []
+      }
       copy_trading_config: {
         Row: {
           created_at: string
@@ -1339,6 +1528,39 @@ export type Database = {
           updated_at?: string
           user_id?: string
           win_rate_by_leverage?: Json | null
+        }
+        Relationships: []
+      }
+      monitored_pairs: {
+        Row: {
+          added_at: string | null
+          id: string
+          last_price: number | null
+          spread: number | null
+          status: string | null
+          symbol: string
+          user_id: string
+          volume_24h: number | null
+        }
+        Insert: {
+          added_at?: string | null
+          id?: string
+          last_price?: number | null
+          spread?: number | null
+          status?: string | null
+          symbol: string
+          user_id: string
+          volume_24h?: number | null
+        }
+        Update: {
+          added_at?: string | null
+          id?: string
+          last_price?: number | null
+          spread?: number | null
+          status?: string | null
+          symbol?: string
+          user_id?: string
+          volume_24h?: number | null
         }
         Relationships: []
       }

@@ -4,25 +4,28 @@ import { useCallback, useMemo } from 'react';
 export const useTradingCalculations = () => {
   
   // 🎯 Alavancagem para scalping baseada na volatilidade
+  // 🔧 REDUZIDO: Leverage menor = SL mais largo = menos stop-outs
   const getLeverageForScalping = useCallback((volatility: number): number => {
-    if (volatility > 5.0) return 15;
-    if (volatility > 3.0) return 20;
-    if (volatility > 2.0) return 25;
-    if (volatility > 1.0) return 30;
-    return 35;
+    if (volatility > 10.0) return 5;
+    if (volatility > 5.0) return 8;
+    if (volatility > 3.0) return 10;
+    if (volatility > 2.0) return 12;
+    if (volatility > 1.0) return 15;
+    return 18;
   }, []);
 
   // Alavancagem baseada no bankroll e win rate
+  // 🔧 REDUZIDO: Leverage menor para dar mais espaço ao SL
   const getLeverageForBalance = useCallback((balance: number, winRate: number): number => {
-    let baseLeverage = 20;
-    if (balance < 5) baseLeverage = 30;
-    else if (balance < 10) baseLeverage = 25;
-    else if (balance < 20) baseLeverage = 20;
-    else if (balance < 50) baseLeverage = 18;
-    else baseLeverage = 15;
+    let baseLeverage = 10;
+    if (balance < 5) baseLeverage = 15;
+    else if (balance < 10) baseLeverage = 12;
+    else if (balance < 20) baseLeverage = 10;
+    else if (balance < 50) baseLeverage = 8;
+    else baseLeverage = 6;
 
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 5, 40);
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 8, 10);
+    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 20);
+    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 3, 5);
 
     return baseLeverage;
   }, []);
@@ -150,18 +153,17 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🔧 CORREÇÃO CRÍTICA: SL MUITO MAIOR para reduzir stop-outs
-    // Antes: SL = 0.3%-1.5% → Stop-out 56%
-    // Agora: SL = 0.8%-3.0% → Dar mais espaço para o trade respirar
+    // 🔧 CORREÇÃO CRÍTICA v2: SL MUITO MAIS LARGO + R:R 1:2.5
+    // PROBLEMA REAL: SL de 0.8% com leverage 25x = 0.032% de preço = stop-out por qualquer wick
+    // SOLUÇÃO: SL mínimo 1.5% + leverage reduzido = SL efetivo > 0.1% do preço
     
-    // SL baseado em ATR: usar 40-50% do ATR para dar espaço
-    const volatilityBasedSL = atrPercent * 0.45; // 45% do ATR (antes era 25%)
-    const minSL = 0.008; // 0.8% mínimo (antes era 0.3%)
-    const maxSL = 0.030; // 3.0% máximo (antes era 1.5%)
+    // SL baseado em ATR: usar 50-60% do ATR
+    const volatilityBasedSL = atrPercent * 0.55; // 55% do ATR
+    const minSL = 0.015; // 1.5% mínimo (antes era 0.8%)
+    const maxSL = 0.050; // 5.0% máximo (antes era 3.0%)
     
-    // 🎯 R:R 1:2 para compensar win rate baixo
-    // Com SL maior, precisamos de TP proporcionalmente maior
-    const targetRR = 2.0;
+    // 🎯 R:R 1:2.5 OBRIGATÓRIO para compensar win rate de ~40%
+    const targetRR = 2.5;
 
     // USAR TOPOS/FUNDOS SE DISPONÍVEIS para stops estruturais
     if (highPrice && lowPrice && highPrice > lowPrice) {
@@ -170,19 +172,17 @@ export const useTradingCalculations = () => {
       const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
       const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
       
-      // Usar swing levels com margem extra (+20%)
-      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.2));
+      // Usar swing levels com margem extra (+30%)
+      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.3));
       // TP deve manter R:R mínimo
       takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2.5, swingTargetPct));
     } else {
       // Fallback: usar ATR/volatilidade
       if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
-        // ML pode sugerir valores, mas aplicar mínimo maior
         const mlSL = mlConfig.recommended_stop_loss_pct / 100;
-        stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL * 1.5)); // +50% no ML sugerido
+        stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL * 1.5));
         takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2.5, mlConfig.recommended_take_profit_pct / 100));
       } else {
-        // Usar volatilidade com folga
         stopLossPct = Math.max(minSL, Math.min(maxSL, volatilityBasedSL / 100));
         takeProfitPct = stopLossPct * targetRR;
       }
@@ -190,16 +190,16 @@ export const useTradingCalculations = () => {
     
     // Alta volatilidade = SL ainda maior
     if (atrPercent > 10) {
-      stopLossPct = Math.max(stopLossPct, 0.015); // Mínimo 1.5% em alta vol
+      stopLossPct = Math.max(stopLossPct, 0.025); // Mínimo 2.5% em alta vol
       takeProfitPct = stopLossPct * targetRR;
     } else if (atrPercent > 5) {
-      stopLossPct = Math.max(stopLossPct, 0.01); // Mínimo 1% em vol média
+      stopLossPct = Math.max(stopLossPct, 0.018); // Mínimo 1.8% em vol média
       takeProfitPct = stopLossPct * targetRR;
     }
     
-    // Scalp assets: SL um pouco menor mas ainda seguro
+    // Scalp assets: SL um pouco menor mas NUNCA abaixo de 1.0%
     if (isScalpAsset) {
-      stopLossPct = Math.max(0.006, stopLossPct * 0.85); // 0.6% mínimo (antes era 0.25%)
+      stopLossPct = Math.max(0.010, stopLossPct * 0.85); // 1.0% mínimo
       takeProfitPct = stopLossPct * targetRR;
     }
     
