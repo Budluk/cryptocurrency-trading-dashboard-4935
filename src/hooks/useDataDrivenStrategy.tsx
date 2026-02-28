@@ -296,37 +296,40 @@ export const useDataDrivenStrategy = () => {
   ): { stopLoss: number; takeProfit: number; reason: string } => {
     const analysis = analyzeSymbol(symbol);
     
-    // 🔧 CORREÇÃO CRÍTICA: Usar percentuais BASEADOS NA VOLATILIDADE
-    // Volatilidade de 10% = SL de pelo menos 0.5%, TP de 1.25%
-    // SL mínimo deve ser ~5% da volatilidade para não ser atingido por ruído
+    // 🔧 CORREÇÃO CRÍTICA v2: SL MUITO MAIOR para R:R real de 1:2.5+
+    // PROBLEMA: SL de 0.3% com leverage 25x = 0.012% de movimento = stop-out instantâneo
+    // SOLUÇÃO: SL baseado em volatilidade real, mínimo 1.0%
     
-    // Calcular SL baseado na volatilidade (mínimo 0.3%, máximo 1.5%)
-    let slPercent = Math.max(0.3, Math.min(1.5, volatility * 0.05));
-    // TP sempre 2.5x o SL para R:R favorável
+    // SL = 10-15% da volatilidade diária (dar espaço para respirar)
+    let slPercent = Math.max(1.0, Math.min(3.0, volatility * 0.12));
+    // TP sempre 2.5x o SL para compensar win rate baixo
     let tpPercent = slPercent * 2.5;
     
-    // Ativos com alto win rate na hora = pode usar SL mais apertado
+    // Ativos com alto win rate na hora = SL um pouco menor mas nunca abaixo de 0.8%
     if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 70) {
-      slPercent = Math.max(0.25, slPercent * 0.8);
-      tpPercent = slPercent * 2.0; // R:R 1:2
+      slPercent = Math.max(0.8, slPercent * 0.85);
+      tpPercent = slPercent * 2.5; // R:R 1:2.5 MÍNIMO
     }
     // Win rate médio
     else if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 50) {
-      slPercent = Math.max(0.3, slPercent * 0.9);
-      tpPercent = slPercent * 2.5; // R:R 1:2.5
+      slPercent = Math.max(1.0, slPercent * 0.9);
+      tpPercent = slPercent * 2.5;
     }
     // Premium ou desconhecido = mais conservador
     else {
-      slPercent = Math.max(0.4, slPercent);
+      slPercent = Math.max(1.2, slPercent);
       tpPercent = slPercent * 3.0; // R:R 1:3
     }
     
-    // Volatilidade alta = SL maior para não ser stopado por ruído
+    // Volatilidade alta = SL MUITO maior para não ser stopado por ruído
     if (volatility > 15) {
-      slPercent = Math.max(slPercent, 0.6);
+      slPercent = Math.max(slPercent, 2.0);
       tpPercent = slPercent * 2.5;
     } else if (volatility > 10) {
-      slPercent = Math.max(slPercent, 0.4);
+      slPercent = Math.max(slPercent, 1.5);
+      tpPercent = slPercent * 2.5;
+    } else if (volatility > 5) {
+      slPercent = Math.max(slPercent, 1.0);
       tpPercent = slPercent * 2.5;
     }
     

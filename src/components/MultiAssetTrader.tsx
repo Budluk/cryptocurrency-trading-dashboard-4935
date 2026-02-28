@@ -917,9 +917,9 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS (relaxados para operar) ===
-          let scoreThreshold = 38; // Reduzido para permitir mais trades
-          let minConfirmations = 2; // Menos confirmações necessárias
+          // === THRESHOLDS (RIGOROSOS: menos trades, melhor qualidade) ===
+          let scoreThreshold = 48; // AUMENTADO de 38 para evitar sinais fracos
+          let minConfirmations = 3; // AUMENTADO de 2
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
@@ -933,8 +933,8 @@ export const MultiAssetTrader = () => {
             scoreThreshold -= 5;
           }
           
-          // Mínimo score (nunca abaixo de 30)
-          scoreThreshold = Math.max(30, scoreThreshold);
+          // Mínimo score (nunca abaixo de 40)
+          scoreThreshold = Math.max(40, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -1162,15 +1162,15 @@ export const MultiAssetTrader = () => {
             takeProfit = sltp.takeProfit;
           }
           
-          // 🔧 ML AUTO-CORRECTOR: Aplicar SL/TP corrigidos baseados em análise de dados
-          let minSlPct = 0.008; // 0.80% default
-          let rr = 2.5; // 1:2.5 default
+          // 🔧 ML AUTO-CORRECTOR: Aplicar SL/TP corrigidos (com MÍNIMOS seguros)
+          let minSlPct = 0.015; // 1.5% default (antes: 0.8% - muito apertado)
+          let rr = 2.5; // 1:2.5 OBRIGATÓRIO
           
           if (mlAutoCorrectEnabled && mlAutoConfig) {
-            // Usar parâmetros corrigidos pelo ML (já em percentual)
-            minSlPct = (mlAutoConfig.stopLossPct || 0.8) / 100;
-            const tpPct = (mlAutoConfig.takeProfitPct || 2.0) / 100;
-            rr = tpPct / minSlPct; // Calcular R:R real baseado nos parâmetros
+            // Usar parâmetros corrigidos pelo ML mas NUNCA abaixo do mínimo
+            const mlSlRaw = (mlAutoConfig.stopLossPct || 1.5) / 100;
+            minSlPct = Math.max(0.015, mlSlRaw); // NUNCA abaixo de 1.5%
+            const tpPct = minSlPct * rr; // Forçar R:R 2.5
             console.log(`🔧 ML SL/TP: SL=${(minSlPct * 100).toFixed(2)}%, TP=${(tpPct * 100).toFixed(2)}%, R:R=${rr.toFixed(1)}`);
           }
           
@@ -1185,7 +1185,7 @@ export const MultiAssetTrader = () => {
               console.log(`⚠️ SL BUY corrigido: ${stopLoss} → ${corrected} (preço: ${currentPrice})`);
               stopLoss = corrected;
             }
-            // Verificar se SL está pelo menos 0.3% abaixo
+            // Verificar se SL está pelo menos 1.5% abaixo
             const slDist = (currentPrice - parseFloat(stopLoss)) / currentPrice;
             if (slDist < minSlPct) {
               stopLoss = (currentPrice * (1 - minSlPct)).toFixed(6);
@@ -1202,7 +1202,7 @@ export const MultiAssetTrader = () => {
               console.log(`⚠️ SL SELL corrigido: ${stopLoss} → ${corrected} (preço: ${currentPrice})`);
               stopLoss = corrected;
             }
-            // Verificar se SL está pelo menos 0.3% acima
+            // Verificar se SL está pelo menos 1.5% acima
             const slDist = (parseFloat(stopLoss) - currentPrice) / currentPrice;
             if (slDist < minSlPct) {
               stopLoss = (currentPrice * (1 + minSlPct)).toFixed(6);

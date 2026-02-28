@@ -46,21 +46,21 @@ export function useSmartExitManager() {
     breakEvenActivated: new Map(),
   });
 
-  // TRAILING PROGRESSIVO: quanto mais lucro, mais apertado o trailing
+  // TRAILING PROGRESSIVO: quanto mais lucro, mais apertado - MAS nunca ultra-apertado
+  // PROBLEMA ANTERIOR: trailing de 0.15% fecha winners cedo demais, destruindo R:R
   const getProgressiveTrailingPct = useCallback((profitPct: number, baseTrailingPct: number): number => {
-    // Níveis progressivos - trailing aperta conforme lucro cresce
-    if (profitPct >= 5.0) return Math.min(baseTrailingPct * 0.25, 0.15); // 5%+ lucro → trailing mínimo (0.15%)
-    if (profitPct >= 3.0) return Math.min(baseTrailingPct * 0.35, 0.2);  // 3%+ → 0.2%
-    if (profitPct >= 2.0) return Math.min(baseTrailingPct * 0.5, 0.25);  // 2%+ → 0.25%
-    if (profitPct >= 1.0) return Math.min(baseTrailingPct * 0.65, 0.3);  // 1%+ → 0.3%
-    if (profitPct >= 0.5) return Math.min(baseTrailingPct * 0.8, 0.35);  // 0.5%+ → 0.35%
-    return baseTrailingPct; // Abaixo de 0.5% → trailing normal
+    // Níveis progressivos - trailing aperta MAS mantém espaço para respirar
+    if (profitPct >= 8.0) return Math.max(baseTrailingPct * 0.35, 0.5);  // 8%+ → 0.5% mínimo
+    if (profitPct >= 5.0) return Math.max(baseTrailingPct * 0.45, 0.6);  // 5%+ → 0.6% mínimo
+    if (profitPct >= 3.0) return Math.max(baseTrailingPct * 0.55, 0.7);  // 3%+ → 0.7% mínimo
+    if (profitPct >= 2.0) return Math.max(baseTrailingPct * 0.65, 0.8);  // 2%+ → 0.8% mínimo
+    if (profitPct >= 1.0) return Math.max(baseTrailingPct * 0.8, 0.9);   // 1%+ → 0.9% mínimo
+    return baseTrailingPct; // Abaixo de 1% → trailing normal (largo)
   }, []);
 
-  // Configurações de trailing stop MAIS AGRESSIVAS - breakeven cedo
+  // Configurações de trailing stop - MAIS LARGAS para não fechar winners cedo
+  // PROBLEMA ANTERIOR: breakeven em 0.15-0.25% fecha quase tudo no entry, R:R = 0.11
   const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any, profitPct?: number): TrailingStopConfig => {
-    const hasProfit = profitPct && profitPct > 0;
-    
     let baseConfig: TrailingStopConfig;
 
     if (mlConfig?.is_enabled && mlConfig?.optimal_patterns?.dynamicStops) {
@@ -68,31 +68,31 @@ export function useSmartExitManager() {
       
       if (volatility < 2) {
         baseConfig = {
-          activationPct: hasProfit ? 0.15 : 0.25,
-          trailingPct: Math.min(dynamicStops.lowVolatility || 0.3, 0.25),
-          breakEvenPct: 0.15,
+          activationPct: 1.5,   // Só ativar com 1.5% lucro (antes: 0.15-0.25%)
+          trailingPct: Math.max(dynamicStops.lowVolatility || 0.8, 0.8),
+          breakEvenPct: 0.8,    // Breakeven só com 0.8% (antes: 0.15%)
         };
       } else if (volatility < 5) {
         baseConfig = {
-          activationPct: hasProfit ? 0.2 : 0.35,
-          trailingPct: Math.min(dynamicStops.mediumVolatility || 0.4, 0.35),
-          breakEvenPct: 0.2,
+          activationPct: 2.0,
+          trailingPct: Math.max(dynamicStops.mediumVolatility || 1.0, 1.0),
+          breakEvenPct: 1.0,
         };
       } else {
         baseConfig = {
-          activationPct: hasProfit ? 0.3 : 0.5,
-          trailingPct: Math.min(dynamicStops.highVolatility || 0.6, 0.5),
-          breakEvenPct: 0.25,
+          activationPct: 2.5,
+          trailingPct: Math.max(dynamicStops.highVolatility || 1.2, 1.2),
+          breakEvenPct: 1.5,
         };
       }
     } else {
-      // Fallback sem ML
+      // Fallback sem ML - valores LARGOS
       if (volatility < 2) {
-        baseConfig = { activationPct: 0.25, trailingPct: 0.2, breakEvenPct: 0.15 };
+        baseConfig = { activationPct: 1.5, trailingPct: 0.8, breakEvenPct: 0.8 };
       } else if (volatility < 5) {
-        baseConfig = { activationPct: 0.35, trailingPct: 0.3, breakEvenPct: 0.2 };
+        baseConfig = { activationPct: 2.0, trailingPct: 1.0, breakEvenPct: 1.0 };
       } else {
-        baseConfig = { activationPct: 0.5, trailingPct: 0.4, breakEvenPct: 0.25 };
+        baseConfig = { activationPct: 2.5, trailingPct: 1.2, breakEvenPct: 1.5 };
       }
     }
 
