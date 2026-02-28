@@ -917,9 +917,9 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS (RIGOROSOS: menos trades, melhor qualidade) ===
-          let scoreThreshold = 48; // AUMENTADO de 38 para evitar sinais fracos
-          let minConfirmations = 3; // AUMENTADO de 2
+          // === THRESHOLDS (EQUILIBRADOS: manter qualidade sem travar entradas) ===
+          let scoreThreshold = 44;
+          let minConfirmations = 2;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
             const patterns = mlConfig.optimal_patterns || {};
@@ -931,10 +931,17 @@ export const MultiAssetTrader = () => {
           // Bonus para ativo ideal da hora
           if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
             scoreThreshold -= 5;
+            minConfirmations = 1;
           }
           
-          // Mínimo score (nunca abaixo de 40)
-          scoreThreshold = Math.max(40, scoreThreshold);
+          // Mercado muito volátil: manter ativo, mas exigir 2 confirmações mínimas
+          if (volatility > 12) {
+            scoreThreshold += 1;
+            minConfirmations = Math.max(2, minConfirmations);
+          }
+          
+          // Mínimo score (nunca abaixo de 38)
+          scoreThreshold = Math.max(38, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({

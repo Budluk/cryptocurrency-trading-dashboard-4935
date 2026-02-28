@@ -495,17 +495,17 @@ export const useSignalAnalysis = () => {
     
     // === DETERMINAR AÇÃO (RIGOROSO: evitar trades fracos) ===
     const scoreDiff = Math.abs(buyScore - sellScore);
-    const minDiff = 18; // AUMENTADO de 12: diferença maior para evitar sinais ambíguos
+    const minDiff = marketRegime === 'trending' ? 14 : marketRegime === 'volatile' ? 16 : 18;
     
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     
-    // Threshold dinâmico baseado em volatilidade (mais rigoroso)
-    const volatilityAdjustedThreshold = volatility > 10 
-      ? scoreThreshold + 15 
-      : volatility > 6 
-        ? scoreThreshold + 8 
-        : scoreThreshold + 3;
+    // Threshold dinâmico por volatilidade (menos punitivo para não matar entradas)
+    const volatilityAdjustedThreshold = volatility > 12 
+      ? scoreThreshold + 7
+      : volatility > 8 
+        ? scoreThreshold + 4
+        : scoreThreshold + 2;
     
     if (scoreDiff >= minDiff) {
       if (buyScore > sellScore && buyScore >= volatilityAdjustedThreshold) {
