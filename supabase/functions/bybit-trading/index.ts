@@ -9,7 +9,26 @@ const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 const RECV_WINDOW = "30000";
 const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
-const BASE_URL = BYBIT_BASE_URLS[0];
+
+// Typed transient error for deterministic classification
+class BybitTransientError extends Error {
+  public readonly transient = true;
+  public readonly code: string;
+  public readonly httpStatus: number;
+  public readonly retryAfterMs: number;
+  public readonly endpoint: string;
+  public readonly host: string;
+
+  constructor(opts: { message: string; code?: string; httpStatus?: number; retryAfterMs?: number; endpoint?: string; host?: string }) {
+    super(opts.message);
+    this.name = 'BybitTransientError';
+    this.code = opts.code || 'BYBIT_UPSTREAM_UNAVAILABLE';
+    this.httpStatus = opts.httpStatus || 0;
+    this.retryAfterMs = opts.retryAfterMs || 10000;
+    this.endpoint = opts.endpoint || '';
+    this.host = opts.host || '';
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -17,14 +36,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Create Supabase client with service role for DB operations
     const authHeader = req.headers.get('Authorization');
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Try to get user from auth header, fallback to body userId
     let userId: string | null = null;
     if (authHeader?.startsWith('Bearer ')) {
       const { data: userData } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
@@ -36,14 +53,10 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, params: nestedParams, userId: bodyUserId, ...restParams } = body;
     
-    // Use auth userId or fallback to body userId
     if (!userId && bodyUserId) userId = bodyUserId;
-    
-    // Handle both nested params: { action, params: {...} } and flat params: { action, symbol, leverage, ... }
     const params = nestedParams || restParams;
     
     console.log(`Bybit MAINNET - Action: ${action} - User: ${userId || 'anonymous'}`);
-    // Security: Do not log API key status or lengths
 
     let result;
 
@@ -93,45 +106,82 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Bybit trading error:', error);
+    // Deterministic transient error classification
+    if (error instanceof BybitTransientError) {
+      console.warn(`[TRANSIENT] ${error.code} | endpoint=${error.endpoint} host=${error.host} status=${error.httpStatus}`);
+      return new Response(JSON.stringify({
+        success: false,
+        transient: true,
+        code: error.code,
+        error: error.message,
+        retryAfterMs: error.retryAfterMs,
+      }), {
+        status: 200, // Never 500 for transient upstream issues
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Fallback: check message for transient patterns (safety net)
     const message = error instanceof Error ? error.message : String(error);
-    const isTransient = /cloudflare|temporarily unavailable|unexpected token|fetch failed|network|returned html|bybit returned/i.test(message);
+    const isTransient = /cloudflare|temporarily unavailable|unexpected token|fetch failed|network|returned html|bybit returned|ECONNREFUSED|ETIMEDOUT|503|502/i.test(message);
+
+    if (isTransient) {
+      console.warn(`[TRANSIENT-FALLBACK] ${message}`);
+      return new Response(JSON.stringify({
+        success: false,
+        transient: true,
+        code: 'BYBIT_UPSTREAM_UNAVAILABLE',
+        error: message,
+        retryAfterMs: 10000,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Real internal error → 500
+    console.error('Bybit trading error:', error);
     return new Response(JSON.stringify({ success: false, error: message }), {
-      status: isTransient ? 200 : 500,
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
 
-// Get fresh Bybit server timestamp - uses the 'time' field directly from response
+// Get fresh Bybit server timestamp
 async function getBybitServerTime(): Promise<number> {
   try {
     for (const baseUrl of BYBIT_BASE_URLS) {
-      const response = await fetch(`${baseUrl}/v5/market/time`);
-      const text = await response.text();
-      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-        console.warn(`Bybit time endpoint returned HTML on ${baseUrl}`);
-        continue;
-      }
+      try {
+        const response = await fetch(`${baseUrl}/v5/market/time`);
+        const text = await response.text();
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+          console.warn(`Bybit time endpoint returned HTML on ${baseUrl}`);
+          continue;
+        }
 
-      const data = JSON.parse(text);
-      
-      // Use the 'time' field directly - it's already in milliseconds as integer
-      if (data.retCode === 0 && data.time) {
-        const serverTime = Math.floor(Number(data.time));
-        console.log(`Bybit server time (direct): ${serverTime}`);
-        return serverTime;
-      }
-      
-      // Fallback: use timeSecond and convert
-      if (data.retCode === 0 && data.result?.timeSecond) {
-        const serverTime = Math.floor(Number(data.result.timeSecond)) * 1000;
-        console.log(`Bybit server time (calculated): ${serverTime}`);
-        return serverTime;
+        const data = JSON.parse(text);
+        
+        if (data.retCode === 0 && data.time) {
+          const serverTime = Math.floor(Number(data.time));
+          console.log(`Bybit server time (direct): ${serverTime}`);
+          return serverTime;
+        }
+        
+        if (data.retCode === 0 && data.result?.timeSecond) {
+          const serverTime = Math.floor(Number(data.result.timeSecond)) * 1000;
+          console.log(`Bybit server time (calculated): ${serverTime}`);
+          return serverTime;
+        }
+      } catch {
+        continue;
       }
     }
 
-    throw new Error('Invalid server time response');
+    // All hosts failed for time - use local fallback (not a hard error)
+    const fallback = Math.floor(Date.now() - 1000);
+    console.log(`Bybit server time (fallback): ${fallback}`);
+    return fallback;
   } catch (error) {
     console.error('Server time fetch error:', error);
     const fallback = Math.floor(Date.now() - 1000);
@@ -199,6 +249,8 @@ async function makeBybitRequest(
   const maxRetriesPerHost = 3;
   let data: any;
   let lastError = '';
+  let lastHttpStatus = 0;
+  let lastHost = '';
 
   for (const baseUrl of BYBIT_BASE_URLS) {
     let url = `${baseUrl}${endpoint}`;
@@ -207,50 +259,84 @@ async function makeBybitRequest(
     }
 
     for (let attempt = 0; attempt < maxRetriesPerHost; attempt++) {
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: method !== 'GET' ? body : undefined,
-      });
+      try {
+        const response = await fetch(url, {
+          method,
+          headers,
+          body: method !== 'GET' ? body : undefined,
+        });
 
-      const responseText = await response.text();
-      
-      // Check if response is HTML (Cloudflare/WAF page) instead of JSON
-      if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
-        lastError = `Bybit returned HTML on ${baseUrl}`;
-        console.error(`${lastError} for ${endpoint} (attempt ${attempt + 1}/${maxRetriesPerHost}). Status: ${response.status}`);
-        if (attempt < maxRetriesPerHost - 1) {
-          const delay = 2000 * (attempt + 1); // 2s, 4s
-          await new Promise(r => setTimeout(r, delay));
+        lastHttpStatus = response.status;
+        lastHost = baseUrl;
+
+        // Classify HTTP-level transient errors before reading body
+        if (response.status === 429) {
+          lastError = `Bybit rate limited (429) on ${baseUrl}`;
+          console.warn(`${lastError} for ${endpoint}`);
+          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
           continue;
         }
-        break; // try next host
+
+        const responseText = await response.text();
+        
+        // HTML response = Cloudflare/WAF block
+        if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+          lastError = `Bybit returned HTML on ${baseUrl}`;
+          console.error(`${lastError} for ${endpoint} (attempt ${attempt + 1}/${maxRetriesPerHost}). Status: ${response.status}`);
+          if (attempt < maxRetriesPerHost - 1) {
+            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          break; // try next host
+        }
+
+        // 5xx from Bybit itself
+        if (response.status >= 500) {
+          lastError = `Bybit server error ${response.status} on ${baseUrl}`;
+          console.error(`${lastError} for ${endpoint}`);
+          if (attempt < maxRetriesPerHost - 1) {
+            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          break;
+        }
+        
+        data = JSON.parse(responseText);
+        break;
+      } catch (fetchErr: any) {
+        lastError = fetchErr?.message || String(fetchErr);
+        lastHost = baseUrl;
+        console.error(`Fetch error on ${baseUrl}${endpoint}: ${lastError}`);
+        if (attempt < maxRetriesPerHost - 1) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        break;
       }
-      
-      data = JSON.parse(responseText);
-      break;
     }
 
     if (data) break;
   }
 
   if (!data) {
-    throw new Error(lastError || 'Bybit API temporarily unavailable. Try again in a few seconds.');
+    // All hosts exhausted → throw typed transient error
+    throw new BybitTransientError({
+      message: lastError || 'Bybit API temporarily unavailable',
+      httpStatus: lastHttpStatus,
+      endpoint,
+      host: lastHost,
+      retryAfterMs: lastHttpStatus === 429 ? 15000 : 10000,
+    });
   }
   
-  // Handle non-critical Bybit errors that are actually success cases
-  // 110043 = leverage not modified (already set)
-  // 110025 = position trading-stop not modified (SL/TP already set to same value)
-  // 110017 = position trading-stop not modified (alternative code)
+  // Handle non-critical Bybit errors
   const nonCriticalErrors = [110043, 110025, 110017];
   
   if (data.retCode !== 0) {
-    // Check if it's a non-critical error code
     if (nonCriticalErrors.includes(data.retCode)) {
       console.log(`Bybit non-critical response (${data.retCode}): ${data.retMsg}`);
       return { success: true, message: data.retMsg, retCode: data.retCode };
     }
-    // Also check for "not modified" in the message (catch-all for any "already set" scenarios)
     const lowerMsg = (data.retMsg || '').toLowerCase();
     if (lowerMsg.includes('not modified') || lowerMsg.includes('same value')) {
       console.log(`Bybit non-critical response (msg match): ${data.retMsg}`);
@@ -294,13 +380,11 @@ type LotSizeMeta = {
 function decimalsFromStep(stepStr: string): number {
   if (!stepStr.includes('.')) return 0;
   const frac = stepStr.split('.')[1] ?? '';
-  // If exchange returns 0.0100, treat as 0.01 (2 decimals)
   const trimmed = frac.replace(/0+$/, '');
   return trimmed.length;
 }
 
 function floorToStep(value: number, step: number): number {
-  // small epsilon to reduce floating precision issues
   return Math.floor((value + 1e-12) / step) * step;
 }
 
@@ -339,12 +423,9 @@ function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boole
   let q = floorToStep(rawQty, meta.qtyStep);
 
   if (meta.minOrderQty && q < meta.minOrderQty) {
-    // If floor dropped below min but raw was >= min, bump to min.
     if (rawQty >= meta.minOrderQty) {
       q = meta.minOrderQty;
     } else {
-      // For reduceOnly, return null instead of throwing error
-      // This allows the caller to handle gracefully (skip the order)
       if (reduceOnly) {
         console.log(`⚠️ Qty ${rawQty} below minOrderQty ${meta.minOrderQty} for reduceOnly - skipping order`);
         return null;
@@ -357,7 +438,6 @@ function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boole
     q = meta.maxOrderQty;
   }
 
-  // Avoid -0.00
   if (Object.is(q, -0)) q = 0;
 
   return q.toFixed(meta.decimals);
@@ -369,7 +449,7 @@ async function placeOrder(params: any) {
     side,
     qty,
     orderType = 'Market',
-    price, // 🎯 Preço limite para ordens Limit
+    price,
     stopLoss,
     takeProfit,
     leverage,
@@ -385,7 +465,6 @@ async function placeOrder(params: any) {
     throw new Error(`place_order: invalid qty '${qty}'`);
   }
 
-  // Validar preço para ordens Limit
   if (orderType === 'Limit' && !price) {
     throw new Error('place_order: price is required for Limit orders');
   }
@@ -398,13 +477,11 @@ async function placeOrder(params: any) {
     }
   }
 
-  // Normalize qty to instrument filters (prevents Bybit retCode=10001 "Qty invalid")
   let qtyStr: string | null = String(qty);
   const lotMeta = await getLotSizeMeta(symbol);
   if (lotMeta) {
     qtyStr = normalizeQtyString(rawQty, lotMeta, !!reduceOnly);
     
-    // 🔧 CORRIGIDO: Se qty é insuficiente para reduceOnly, retornar sucesso com aviso
     if (qtyStr === null) {
       console.log(`⚠️ Ordem ${symbol} ignorada: qty insuficiente para reduceOnly`);
       return {
@@ -423,7 +500,6 @@ async function placeOrder(params: any) {
     );
   }
 
-  // 1) Cria a ordem
   const orderParams: Record<string, any> = {
     category: 'linear',
     symbol,
@@ -434,13 +510,11 @@ async function placeOrder(params: any) {
     positionIdx: Number.isFinite(Number(positionIdx)) ? Number(positionIdx) : 0,
   };
 
-  // 🎯 Adicionar preço para ordens Limit
   if (orderType === 'Limit' && price) {
     orderParams.price = String(price);
     console.log(`📋 ORDEM LIMITE: ${symbol} ${side} @ ${price}`);
   }
 
-  // Respect reduceOnly when caller is trying to close/partial close
   if (reduceOnly !== undefined) {
     orderParams.reduceOnly = !!reduceOnly;
   }
@@ -448,7 +522,6 @@ async function placeOrder(params: any) {
   console.log('Order params:', JSON.stringify(orderParams));
   const orderResult = await makeBybitRequest('POST', '/v5/order/create', orderParams);
 
-  // 2) Aplica SL/TP logo após a execução usando o preço REAL (avgPrice)
   if (stopLoss || takeProfit) {
     try {
       const basePrice = await waitForPositionAvgPrice(symbol, side);
@@ -462,7 +535,6 @@ async function placeOrder(params: any) {
         takeProfit,
       });
 
-      // Se não conseguimos obter preço de referência, ainda tentamos setar com o que veio
       const stopParams = {
         symbol,
         stopLoss: corrected.stopLoss ?? (stopLoss ? String(stopLoss) : undefined),
@@ -501,251 +573,146 @@ function correctStopsAgainstPrice({
     return { refPrice: null };
   }
 
-  const buffer = 0.0015; // 0.15% só para garantir "lado correto" no preço real
-  const rr = 2.5;
+  const result: { stopLoss?: string; takeProfit?: string; refPrice: number | null } = { refPrice };
 
-  let sl = stopLoss !== undefined && stopLoss !== null ? Number(stopLoss) : undefined;
-  let tp = takeProfit !== undefined && takeProfit !== null ? Number(takeProfit) : undefined;
-
-  if (side === 'Buy') {
-    if (sl !== undefined && Number.isFinite(sl) && sl >= refPrice) {
-      sl = refPrice * (1 - buffer);
-    }
-    if (tp !== undefined && Number.isFinite(tp) && tp <= refPrice) {
-      tp = refPrice * (1 + buffer * rr);
-    }
-  } else {
-    if (sl !== undefined && Number.isFinite(sl) && sl <= refPrice) {
-      sl = refPrice * (1 + buffer);
-    }
-    if (tp !== undefined && Number.isFinite(tp) && tp >= refPrice) {
-      tp = refPrice * (1 - buffer * rr);
+  if (stopLoss) {
+    const slVal = Number(stopLoss);
+    if (Number.isFinite(slVal)) {
+      if (side === 'Buy' && slVal >= refPrice) {
+        const correctedSL = refPrice * 0.98;
+        console.log(`⚠️ SL corrigido para Buy: ${slVal} → ${correctedSL.toFixed(4)} (ref=${refPrice})`);
+        result.stopLoss = formatPriceForBybit(correctedSL, refPrice);
+      } else if (side === 'Sell' && slVal <= refPrice) {
+        const correctedSL = refPrice * 1.02;
+        console.log(`⚠️ SL corrigido para Sell: ${slVal} → ${correctedSL.toFixed(4)} (ref=${refPrice})`);
+        result.stopLoss = formatPriceForBybit(correctedSL, refPrice);
+      } else {
+        result.stopLoss = formatPriceForBybit(slVal, refPrice);
+      }
     }
   }
 
-  return {
-    refPrice,
-    stopLoss: sl !== undefined && Number.isFinite(sl) ? formatPriceForBybit(sl, refPrice) : undefined,
-    takeProfit: tp !== undefined && Number.isFinite(tp) ? formatPriceForBybit(tp, refPrice) : undefined,
-  };
+  if (takeProfit) {
+    const tpVal = Number(takeProfit);
+    if (Number.isFinite(tpVal)) {
+      if (side === 'Buy' && tpVal <= refPrice) {
+        const correctedTP = refPrice * 1.02;
+        console.log(`⚠️ TP corrigido para Buy: ${tpVal} → ${correctedTP.toFixed(4)} (ref=${refPrice})`);
+        result.takeProfit = formatPriceForBybit(correctedTP, refPrice);
+      } else if (side === 'Sell' && tpVal >= refPrice) {
+        const correctedTP = refPrice * 0.98;
+        console.log(`⚠️ TP corrigido para Sell: ${tpVal} → ${correctedTP.toFixed(4)} (ref=${refPrice})`);
+        result.takeProfit = formatPriceForBybit(correctedTP, refPrice);
+      } else {
+        result.takeProfit = formatPriceForBybit(tpVal, refPrice);
+      }
+    }
+  }
+
+  return result;
 }
 
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForPositionAvgPrice(symbol: string, side: 'Buy' | 'Sell'): Promise<number | null> {
-  for (let i = 0; i < 5; i++) {
-    await sleep(250);
-    const positions = await getPositionsBySymbol(symbol);
-    const pos = positions.find((p: any) => p.symbol === symbol && p.side === side && Number(p.size || 0) > 0);
-    const avg = pos?.avgPrice ? Number(pos.avgPrice) : NaN;
-    if (Number.isFinite(avg) && avg > 0) return avg;
+async function waitForPositionAvgPrice(symbol: string, side: string, retries = 3): Promise<number | null> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const positions = await getPositions();
+      const pos = positions.find((p: any) => p.symbol === symbol && p.side === side && parseFloat(p.size) > 0);
+      if (pos?.avgPrice) {
+        const avg = parseFloat(pos.avgPrice);
+        if (avg > 0) return avg;
+      }
+    } catch {
+      // ignore
+    }
+    await new Promise(r => setTimeout(r, 1000));
   }
   return null;
 }
 
-async function getPositionsBySymbol(symbol: string) {
-  const result = await makeBybitRequest('GET', '/v5/position/list', { category: 'linear', symbol });
-  return result?.list || [];
-}
-
-async function getLastPrice(symbol: string): Promise<number | null> {
+async function getLastPrice(symbol: string): Promise<number> {
   try {
-    const list = await getTickers(symbol);
-    const t = list?.find((x: any) => x.symbol === symbol) ?? list?.[0];
-    const p = t?.lastPrice ? Number(t.lastPrice) : NaN;
-    return Number.isFinite(p) ? p : null;
+    const tickers = await getTickers(symbol);
+    const ticker = Array.isArray(tickers) ? tickers[0] : tickers;
+    return parseFloat(ticker?.lastPrice || '0');
   } catch {
-    return null;
+    return 0;
   }
-}
-
-async function setTradingStop(params: { symbol: string; stopLoss?: string; takeProfit?: string }) {
-  const { symbol, stopLoss, takeProfit } = params;
-
-  // 🔧 CORREÇÃO: Buscar posição aberta para saber o side e validar SL/TP
-  const positions = await getPositionsBySymbol(symbol);
-  const openPosition = positions.find((p: any) => Number(p.size || 0) > 0);
-  
-  if (!openPosition) {
-    console.log(`⚠️ No open position for ${symbol} - skipping trading stop`);
-    return { retCode: 0, retMsg: 'No position to set stop for', result: {} };
-  }
-  
-  const side = openPosition.side as 'Buy' | 'Sell';
-  const markPrice = Number(openPosition.markPrice || 0);
-  const avgPrice = Number(openPosition.avgPrice || 0);
-  const refPrice = markPrice > 0 ? markPrice : avgPrice;
-  
-  console.log(`📊 Position ${symbol} ${side}: markPrice=${markPrice}, avgPrice=${avgPrice}`);
-
-  let validatedSL = stopLoss ? Number(stopLoss) : undefined;
-  let validatedTP = takeProfit ? Number(takeProfit) : undefined;
-  
-  // 🛡️ VALIDAÇÃO: SL deve estar no lado correto
-  if (validatedSL !== undefined && Number.isFinite(validatedSL) && refPrice > 0) {
-    if (side === 'Buy') {
-      // Para BUY, SL deve ser ABAIXO do preço atual (mark price)
-      if (validatedSL >= refPrice) {
-        // SL inválido - recalcular como 0.3% abaixo do preço
-        const correctedSL = refPrice * 0.997;
-        console.log(`⚠️ SL ${validatedSL} >= markPrice ${refPrice} para BUY. Corrigindo para ${correctedSL.toFixed(6)}`);
-        validatedSL = correctedSL;
-      }
-    } else {
-      // Para SELL, SL deve ser ACIMA do preço atual
-      if (validatedSL <= refPrice) {
-        const correctedSL = refPrice * 1.003;
-        console.log(`⚠️ SL ${validatedSL} <= markPrice ${refPrice} para SELL. Corrigindo para ${correctedSL.toFixed(6)}`);
-        validatedSL = correctedSL;
-      }
-    }
-  }
-  
-  // 🛡️ VALIDAÇÃO: TP deve estar no lado correto
-  if (validatedTP !== undefined && Number.isFinite(validatedTP) && refPrice > 0) {
-    if (side === 'Buy') {
-      // Para BUY, TP deve ser ACIMA do preço atual
-      if (validatedTP <= refPrice) {
-        const correctedTP = refPrice * 1.008;
-        console.log(`⚠️ TP ${validatedTP} <= markPrice ${refPrice} para BUY. Corrigindo para ${correctedTP.toFixed(6)}`);
-        validatedTP = correctedTP;
-      }
-    } else {
-      // Para SELL, TP deve ser ABAIXO do preço atual
-      if (validatedTP >= refPrice) {
-        const correctedTP = refPrice * 0.992;
-        console.log(`⚠️ TP ${validatedTP} >= markPrice ${refPrice} para SELL. Corrigindo para ${correctedTP.toFixed(6)}`);
-        validatedTP = correctedTP;
-      }
-    }
-  }
-
-  const body: Record<string, any> = {
-    category: 'linear',
-    symbol,
-    tpslMode: 'Full',
-    positionIdx: 0,
-  };
-
-  if (validatedSL !== undefined && Number.isFinite(validatedSL)) {
-    const decimals = refPrice < 1 ? 6 : refPrice < 100 ? 4 : 2;
-    body.stopLoss = validatedSL.toFixed(decimals);
-    body.slTriggerBy = 'MarkPrice';
-  }
-
-  if (validatedTP !== undefined && Number.isFinite(validatedTP)) {
-    const decimals = refPrice < 1 ? 6 : refPrice < 100 ? 4 : 2;
-    body.takeProfit = validatedTP.toFixed(decimals);
-    body.tpTriggerBy = 'LastPrice';
-  }
-
-  console.log('Trading-stop params:', JSON.stringify(body));
-  return await makeBybitRequest('POST', '/v5/position/trading-stop', body);
 }
 
 async function closePosition(params: any) {
-  const { symbol, side, qty } = params;
-  const closeSide = side === 'Buy' ? 'Sell' : 'Buy';
-  
-  const orderParams = {
-    category: 'linear',
+  const { symbol, side, qty, positionIdx } = params;
+  return placeOrder({
     symbol,
-    side: closeSide,
+    side: side === 'Buy' ? 'Sell' : 'Buy',
+    qty,
     orderType: 'Market',
-    qty: String(qty),
-    timeInForce: 'GTC',
-    positionIdx: 0,
     reduceOnly: true,
-  };
-
-  console.log('Close params:', JSON.stringify(orderParams));
-  return await makeBybitRequest('POST', '/v5/order/create', orderParams);
+    positionIdx: positionIdx ?? 0,
+  });
 }
 
 async function getInstruments(symbol?: string) {
-  const params: Record<string, any> = { category: 'linear' };
+  const params: Record<string, string> = { category: 'linear' };
   if (symbol) params.symbol = symbol;
   const result = await makeBybitRequest('GET', '/v5/market/instruments-info', params, false);
   return result?.list || [];
 }
 
 async function getTickers(symbol?: string) {
-  const params: Record<string, any> = { category: 'linear' };
+  const params: Record<string, string> = { category: 'linear' };
   if (symbol) params.symbol = symbol;
   const result = await makeBybitRequest('GET', '/v5/market/tickers', params, false);
   return result?.list || [];
 }
 
 async function setLeverage(params: any) {
-  const { symbol, leverage, buyLeverage, sellLeverage } = params;
-  
-  if (!symbol) {
-    console.error('setLeverage: symbol is required but was:', symbol);
-    throw new Error('Symbol is required for setLeverage');
-  }
-  
-  const leverageValue = leverage || buyLeverage || '10';
-  console.log(`Setting leverage for ${symbol}: ${leverageValue}x`);
-  
-  return await makeBybitRequest('POST', '/v5/position/set-leverage', {
+  const { symbol, leverage } = params;
+  return makeBybitRequest('POST', '/v5/position/set-leverage', {
     category: 'linear',
     symbol,
-    buyLeverage: String(leverageValue),
-    sellLeverage: String(sellLeverage || leverageValue),
+    buyLeverage: String(leverage),
+    sellLeverage: String(leverage),
   });
 }
 
 async function getClosedPnL(params: any) {
-  const { symbol, startTime, endTime, limit = 100, cursor } = params;
-  const queryParams: Record<string, any> = { category: 'linear', limit };
-  if (symbol) queryParams.symbol = symbol;
-  if (startTime) queryParams.startTime = startTime;
-  if (endTime) queryParams.endTime = endTime;
-  if (cursor) queryParams.cursor = cursor;
-  
-  const result = await makeBybitRequest('GET', '/v5/position/closed-pnl', queryParams);
-  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+  return makeBybitRequest('GET', '/v5/position/closed-pnl', {
+    category: 'linear',
+    ...params,
+  });
 }
 
 async function getOrderHistory(params: any) {
-  const { symbol, startTime, endTime, limit = 50, cursor } = params;
-  const queryParams: Record<string, any> = { category: 'linear', limit };
-  if (symbol) queryParams.symbol = symbol;
-  if (startTime) queryParams.startTime = startTime;
-  if (endTime) queryParams.endTime = endTime;
-  if (cursor) queryParams.cursor = cursor;
-  
-  const result = await makeBybitRequest('GET', '/v5/order/history', queryParams);
-  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+  return makeBybitRequest('GET', '/v5/order/history', {
+    category: 'linear',
+    ...params,
+  });
 }
 
 async function getExecutionList(params: any) {
-  const { symbol, startTime, endTime, limit = 100, cursor } = params;
-  const queryParams: Record<string, any> = { category: 'linear', limit };
-  if (symbol) queryParams.symbol = symbol;
-  if (startTime) queryParams.startTime = startTime;
-  if (endTime) queryParams.endTime = endTime;
-  if (cursor) queryParams.cursor = cursor;
-  
-  const result = await makeBybitRequest('GET', '/v5/execution/list', queryParams);
-  return { list: result?.list || [], nextPageCursor: result?.nextPageCursor || null };
+  return makeBybitRequest('GET', '/v5/execution/list', {
+    category: 'linear',
+    ...params,
+  });
 }
 
-// Buscar candles (klines) para análise de S/R
 async function getKlines(params: any) {
-  const { symbol, interval = '5', limit = 100, start, end } = params;
-  const queryParams: Record<string, any> = {
+  return makeBybitRequest('GET', '/v5/market/kline', {
+    category: 'linear',
+    ...params,
+  }, false);
+}
+
+async function setTradingStop(params: any) {
+  const { symbol, stopLoss, takeProfit, positionIdx } = params;
+  const body: Record<string, any> = {
     category: 'linear',
     symbol,
-    interval, // 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
-    limit
+    positionIdx: positionIdx ?? 0,
   };
-  if (start) queryParams.start = start;
-  if (end) queryParams.end = end;
-  
-  // Klines é public endpoint - sem auth
-  const result = await makeBybitRequest('GET', '/v5/market/kline', queryParams, false);
-  return { list: result?.list || [] };
+
+  if (stopLoss) body.stopLoss = String(stopLoss);
+  if (takeProfit) body.takeProfit = String(takeProfit);
+
+  return makeBybitRequest('POST', '/v5/position/trading-stop', body);
 }

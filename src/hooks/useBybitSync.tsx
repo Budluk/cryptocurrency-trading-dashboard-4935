@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { invokeBybit } from '@/lib/invokeBybit';
 
 export interface AssetScore {
   symbol: string;
@@ -68,21 +68,14 @@ export function useBybitSync(isTestnet: boolean) {
     pendingRequests.current.add(reqKey('balance'));
 
     try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_balance', isTestnet, params: { accountType: 'UNIFIED' } },
-      });
+      const data = await invokeBybit('get_balance', { accountType: 'UNIFIED' }, { isTestnet });
 
-      if (error) {
-        console.error('❌ Erro API balance:', error);
-        throw error;
+      if (!data.success) {
+        if (data.transient) console.warn('⚠️ Balance: transient error, using cache');
+        return availableBalance || currentBalance;
       }
 
-      if (!data?.success) {
-        console.warn('⚠️ Bybit API error:', data?.error || data?.message);
-        return currentBalance;
-      }
-
-      const balanceData = data?.data;
+      const balanceData = data.data;
       let balance = 0;
       let available = 0;
 
@@ -133,18 +126,14 @@ export function useBybitSync(isTestnet: boolean) {
     pendingRequests.current.add(reqKey('positions'));
 
     try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_positions', isTestnet, params: { category: 'linear', settleCoin: 'USDT' } },
-      });
+      const data = await invokeBybit('get_positions', { category: 'linear', settleCoin: 'USDT' }, { isTestnet });
 
-      if (error) throw error;
-
-      if (data?.code || data?.error || data?.success === false) {
-        console.warn('Bybit API error (positions):', data?.message || data?.error);
+      if (!data.success) {
+        if (data.transient) console.warn('⚠️ Positions: transient error, using cache');
         return openPositionsCount;
       }
 
-      const positions = Array.isArray(data?.data) ? data.data : (data?.data?.list || []);
+      const positions = Array.isArray(data.data) ? data.data : (data.data?.list || []);
       const activePositions = positions.filter((p: any) => parseFloat(p.size || '0') > 0);
       const count = activePositions.length;
 
@@ -175,18 +164,14 @@ export function useBybitSync(isTestnet: boolean) {
     pendingRequests.current.add(reqKey('volatile'));
 
     try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_tickers', isTestnet, params: { category: 'linear' } },
-      });
+      const data = await invokeBybit('get_tickers', { category: 'linear' }, { isTestnet });
 
-      if (error) throw error;
-
-      if (data?.code || data?.error || data?.success === false) {
-        console.warn('Bybit API error (tickers):', data?.message || data?.error);
+      if (!data.success) {
+        if (data.transient) console.warn('⚠️ Tickers: transient error, using cache');
         return top10VolatileAssets;
       }
 
-      const tickers = Array.isArray(data?.data) ? data.data : (data?.data?.list || []);
+      const tickers = Array.isArray(data.data) ? data.data : (data.data?.list || []);
 
       if (tickers.length === 0) {
         console.warn('Sem dados de tickers disponíveis');
