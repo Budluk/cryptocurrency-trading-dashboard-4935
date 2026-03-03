@@ -8,7 +8,8 @@ const corsHeaders = {
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 const RECV_WINDOW = "30000";
-const BASE_URL = "https://api.bybit.com";
+const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
+const BASE_URL = BYBIT_BASE_URLS[0];
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -93,8 +94,10 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error('Bybit trading error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
+    const message = error instanceof Error ? error.message : String(error);
+    const isTransient = /cloudflare|temporarily unavailable|unexpected token '<'|fetch failed|network/i.test(message);
+    return new Response(JSON.stringify({ success: false, error: message }), {
+      status: isTransient ? 200 : 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
@@ -103,27 +106,31 @@ Deno.serve(async (req) => {
 // Get fresh Bybit server timestamp - uses the 'time' field directly from response
 async function getBybitServerTime(): Promise<number> {
   try {
-    const response = await fetch(`${BASE_URL}/v5/market/time`);
-    const text = await response.text();
-    if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-      throw new Error('Bybit returned HTML');
+    for (const baseUrl of BYBIT_BASE_URLS) {
+      const response = await fetch(`${baseUrl}/v5/market/time`);
+      const text = await response.text();
+      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+        console.warn(`Bybit time endpoint returned HTML on ${baseUrl}`);
+        continue;
+      }
+
+      const data = JSON.parse(text);
+      
+      // Use the 'time' field directly - it's already in milliseconds as integer
+      if (data.retCode === 0 && data.time) {
+        const serverTime = Math.floor(Number(data.time));
+        console.log(`Bybit server time (direct): ${serverTime}`);
+        return serverTime;
+      }
+      
+      // Fallback: use timeSecond and convert
+      if (data.retCode === 0 && data.result?.timeSecond) {
+        const serverTime = Math.floor(Number(data.result.timeSecond)) * 1000;
+        console.log(`Bybit server time (calculated): ${serverTime}`);
+        return serverTime;
+      }
     }
-    const data = JSON.parse(text);
-    
-    // Use the 'time' field directly - it's already in milliseconds as integer
-    if (data.retCode === 0 && data.time) {
-      const serverTime = Math.floor(Number(data.time));
-      console.log(`Bybit server time (direct): ${serverTime}`);
-      return serverTime;
-    }
-    
-    // Fallback: use timeSecond and convert
-    if (data.retCode === 0 && data.result?.timeSecond) {
-      const serverTime = Math.floor(Number(data.result.timeSecond)) * 1000;
-      console.log(`Bybit server time (calculated): ${serverTime}`);
-      return serverTime;
-    }
-    
+
     throw new Error('Invalid server time response');
   } catch (error) {
     console.error('Server time fetch error:', error);
@@ -156,7 +163,6 @@ async function makeBybitRequest(
 ): Promise<any> {
   const timestamp = requiresAuth ? await getBybitServerTime() : Math.floor(Date.now());
   
-  let url = `${BASE_URL}${endpoint}`;
   let body = '';
   let paramsStr = '';
 
@@ -168,7 +174,6 @@ async function makeBybitRequest(
       }
     });
     paramsStr = searchParams.toString();
-    if (paramsStr) url += `?${paramsStr}`;
   } else {
     body = JSON.stringify(params);
     paramsStr = body;
@@ -176,6 +181,8 @@ async function makeBybitRequest(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (compatible; SupabaseEdge/1.0)',
+    'Accept': 'application/json',
   };
 
   if (requiresAuth) {
@@ -189,31 +196,46 @@ async function makeBybitRequest(
     console.log(`Request: ${method} ${endpoint}, timestamp: ${timestamp}`);
   }
 
-  const maxRetries = 3;
+  const maxRetriesPerHost = 3;
   let data: any;
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: method !== 'GET' ? body : undefined,
-    });
+  let lastError = '';
 
-    const responseText = await response.text();
-    
-    // Check if response is HTML (Cloudflare/WAF page) instead of JSON
-    if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
-      console.error(`Bybit returned HTML for ${endpoint} (attempt ${attempt + 1}/${maxRetries}). Status: ${response.status}`);
-      if (attempt < maxRetries - 1) {
-        const delay = 2000 * (attempt + 1); // 2s, 4s
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw new Error(`Bybit API temporarily unavailable. Try again in a few seconds.`);
+  for (const baseUrl of BYBIT_BASE_URLS) {
+    let url = `${baseUrl}${endpoint}`;
+    if (method === 'GET' && paramsStr) {
+      url += `?${paramsStr}`;
     }
-    
-    data = JSON.parse(responseText);
-    break;
+
+    for (let attempt = 0; attempt < maxRetriesPerHost; attempt++) {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: method !== 'GET' ? body : undefined,
+      });
+
+      const responseText = await response.text();
+      
+      // Check if response is HTML (Cloudflare/WAF page) instead of JSON
+      if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+        lastError = `Bybit returned HTML on ${baseUrl}`;
+        console.error(`${lastError} for ${endpoint} (attempt ${attempt + 1}/${maxRetriesPerHost}). Status: ${response.status}`);
+        if (attempt < maxRetriesPerHost - 1) {
+          const delay = 2000 * (attempt + 1); // 2s, 4s
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        break; // try next host
+      }
+      
+      data = JSON.parse(responseText);
+      break;
+    }
+
+    if (data) break;
+  }
+
+  if (!data) {
+    throw new Error(lastError || 'Bybit API temporarily unavailable. Try again in a few seconds.');
   }
   
   // Handle non-critical Bybit errors that are actually success cases
