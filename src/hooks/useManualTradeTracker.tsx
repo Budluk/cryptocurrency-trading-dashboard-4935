@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getUserId } from '@/lib/anonymousUser';
+import { invokeBybit } from '@/lib/invokeBybit';
 import { useContinuousMLTraining } from './useContinuousMLTraining';
 import { useToast } from './use-toast';
 
@@ -197,15 +198,9 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
     if (!isEnabled) return;
     
     try {
-      const { data, error } = await supabase.functions.invoke('bybit-trading', {
-        body: { 
-          action: 'get_positions', 
-          isTestnet, 
-          params: { category: 'linear', settleCoin: 'USDT' } 
-        }
-      });
+      const data = await invokeBybit('get_positions', { category: 'linear', settleCoin: 'USDT' }, { isTestnet });
       
-      if (error || !data?.success) return;
+      if (!data.success) return;
       
       const positions = Array.isArray(data.data) 
         ? data.data 

@@ -30,6 +30,8 @@ export const BybitPositionsPanel = () => {
     setExpandedCharts(prev => ({ ...prev, [symbol]: !prev[symbol] }));
   };
   
+  const [bybitUnstable, setBybitUnstable] = useState(false);
+
   const { data: positions, refetch, isLoading } = useQuery({
     queryKey: ['bybit-positions'],
     queryFn: async () => {
@@ -45,17 +47,30 @@ export const BybitPositionsPanel = () => {
       });
 
       if (error) throw error;
+
+      // Transient error → don't throw, return undefined to keep previous data
+      if (data && !data.success && data.transient) {
+        setBybitUnstable(true);
+        return undefined; // useQuery will keep previous data
+      }
+
       if (!data?.success) throw new Error(data?.error || 'Erro ao buscar posições');
 
-      // data.data is array directly, not data.data.list
+      setBybitUnstable(false);
       const positions = Array.isArray(data.data) ? data.data : (data.data?.list || []);
       return positions.filter((p: any) => parseFloat(p.size || 0) > 0);
     },
-    refetchInterval: 10000,
-    staleTime: 8000,
-    gcTime: 120000,
+    refetchInterval: 15000,
+    staleTime: 12000,
+    gcTime: 300000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
+    placeholderData: (prev: any) => prev, // keep previous data on error
+    retry: (failureCount, error: any) => {
+      // Don't retry transient errors (already handled with cooldown)
+      if (error?.transient) return false;
+      return failureCount < 2;
+    },
   });
 
   const { data: balanceData } = useQuery({
@@ -70,16 +85,27 @@ export const BybitPositionsPanel = () => {
       });
 
       if (error) throw error;
+
+      if (data && !data.success && data.transient) {
+        setBybitUnstable(true);
+        return undefined;
+      }
+
       if (!data?.success) throw new Error(data?.error || 'Erro ao buscar saldo');
 
-      // Balance returns object directly in data, not data.list[0]
+      setBybitUnstable(false);
       const balanceData = data.data;
       return balanceData?.list?.[0] || balanceData || null;
     },
-    refetchInterval: 15000,
-    staleTime: 10000,
-    gcTime: 120000,
+    refetchInterval: 20000,
+    staleTime: 15000,
+    gcTime: 300000,
     refetchOnWindowFocus: false,
+    placeholderData: (prev: any) => prev,
+    retry: (failureCount, error: any) => {
+      if (error?.transient) return false;
+      return failureCount < 2;
+    },
   });
 
   const totalEquity = parseFloat(balanceData?.totalEquity || '0');
@@ -209,6 +235,11 @@ export const BybitPositionsPanel = () => {
             <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
             Posições Bybit
           </h3>
+          {bybitUnstable && (
+            <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-yellow-500/50 text-yellow-500 mb-1">
+              ⚠ Bybit instável — mostrando último dado
+            </Badge>
+          )}
           <p className="text-xs sm:text-sm text-muted-foreground">
             {positions?.length || 0} posições abertas
           </p>
