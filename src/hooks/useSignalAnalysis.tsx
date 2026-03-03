@@ -493,19 +493,19 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    // === DETERMINAR AÇÃO (RIGOROSO: evitar trades fracos) ===
+    // === DETERMINAR AÇÃO ===
     const scoreDiff = Math.abs(buyScore - sellScore);
-    const minDiff = marketRegime === 'trending' ? 14 : marketRegime === 'volatile' ? 16 : 18;
+    const minDiff = marketRegime === 'trending' ? 10 : marketRegime === 'volatile' ? 12 : 14;
     
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     
-    // Threshold dinâmico por volatilidade (menos punitivo para não matar entradas)
+    // Threshold dinâmico por volatilidade (leve)
     const volatilityAdjustedThreshold = volatility > 12 
-      ? scoreThreshold + 7
+      ? scoreThreshold + 4
       : volatility > 8 
-        ? scoreThreshold + 4
-        : scoreThreshold + 2;
+        ? scoreThreshold + 2
+        : scoreThreshold;
     
     if (scoreDiff >= minDiff) {
       if (buyScore > sellScore && buyScore >= volatilityAdjustedThreshold) {
@@ -539,11 +539,11 @@ export const useSignalAnalysis = () => {
     // === FILTROS ===
     const volumeOk = hasMinVolume;
     const volatilityOk = volInRange;
-    const atrOk = atrPercent > 0.3 && atrPercent < 15;
-    const priceMovementOk = Math.abs(priceChange) > 0.2 && Math.abs(priceChange) < 18;
+    const atrOk = atrPercent > 0.15 && atrPercent < 20;
+    const priceMovementOk = Math.abs(priceChange) > 0.1 && Math.abs(priceChange) < 20;
     
     const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2.5 : hasStrongVolume ? 1.8 : hasGoodVolume ? 1.3 : 1);
-    const momentumOk = momentumScore > 0.6;
+    const momentumOk = momentumScore > 0.3;
     
     // Reversões com volume forte
     const isReversal = (
@@ -563,56 +563,48 @@ export const useSignalAnalysis = () => {
     
     const positionOk = !inMiddle || scoreDiff >= 15 || isReversal || isMomentumTrade || signalScore >= 50;
     
-    // === CLASSIFICAÇÃO DE QUALIDADE (RIGOROSO: menos trades, melhor qualidade) ===
+    // === CLASSIFICAÇÃO DE QUALIDADE ===
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     
-    // Premium: sinais excepcionais
-    if (signalScore >= 85 && hasVolumeSpike && (isReversal || isMomentumTrade) && scoreDiff >= 30) {
+    if (signalScore >= 80 && hasVolumeSpike && scoreDiff >= 25) {
       signalQuality = 'premium';
-    }
-    // High: sinais bons
-    else if (signalScore >= 70 && hasStrongVolume && scoreDiff >= 22) {
+    } else if (signalScore >= 60 && hasStrongVolume && scoreDiff >= 16) {
       signalQuality = 'high';
-    }
-    else if (signalScore >= 65 && hasVolumeSpike && scoreDiff >= 20) {
+    } else if (signalScore >= 55 && hasVolumeSpike && scoreDiff >= 14) {
       signalQuality = 'high';
-    }
-    // Medium: sinais decentes
-    else if (signalScore >= 55 && hasGoodVolume && scoreDiff >= 18) {
+    } else if (signalScore >= 45 && hasGoodVolume && scoreDiff >= 12) {
       signalQuality = 'medium';
-    }
-    else if (signalScore >= 52 && hasStrongVolume && scoreDiff >= 16) {
+    } else if (signalScore >= 42 && hasStrongVolume && scoreDiff >= 10) {
       signalQuality = 'medium';
-    }
-    else if (signalScore >= 50 && (isReversal || isMomentumTrade) && hasVolumeSpike) {
+    } else if (signalScore >= 40 && (isReversal || isMomentumTrade)) {
       signalQuality = 'medium';
     }
     
-    // AI upgrade (mais conservador)
-    if (aiBoost >= 15 && signalQuality === 'low' && signalScore >= 45) signalQuality = 'medium';
-    if (aiBoost >= 20 && signalQuality === 'medium' && signalScore >= 60) signalQuality = 'high';
-    if (aiConfidence && aiConfidence > 75 && signalQuality === 'medium' && signalScore >= 55) signalQuality = 'high';
+    // AI upgrade
+    if (aiBoost >= 10 && signalQuality === 'low' && signalScore >= 38) signalQuality = 'medium';
+    if (aiBoost >= 15 && signalQuality === 'medium' && signalScore >= 50) signalQuality = 'high';
+    if (aiConfidence && aiConfidence > 70 && signalQuality === 'medium' && signalScore >= 45) signalQuality = 'high';
     
     // === BLOQUEIO DE RANGING (apenas se score baixo) ===
     const rangingBlocked = marketRegime === 'ranging' && !isReversal && signalScore < 50;
     
-    // === DECISÃO FINAL (RIGOROSO: menos trades, melhor R:R) ===
+    // === DECISÃO FINAL ===
     const shouldTrade = (
       action !== null &&
       signalScore >= volatilityAdjustedThreshold &&
       scoreDiff >= minDiff &&
       currentBalance > 3 &&
-      confirmations.length >= Math.max(2, minConfirmations) &&
+      confirmations.length >= minConfirmations &&
       volumeOk &&
-      (volatilityOk || isReversal || isMomentumTrade) &&
+      (volatilityOk || isReversal || isMomentumTrade || signalScore >= 45) &&
       atrOk &&
       priceMovementOk &&
-      (momentumOk || isReversal || signalScore >= 55) &&
-      (volumeDirectionOk || signalScore >= 60) &&
-      (positionOk || signalScore >= 55) &&
-      (signalQuality !== 'low') && // NUNCA entrar com qualidade LOW
-      (pullbackReady || isReversal || isMomentumTrade || signalScore >= 60) &&
-      (btcAligned || isReversal || isMomentumTrade || signalScore >= 60) &&
+      (momentumOk || isReversal || signalScore >= 45) &&
+      (volumeDirectionOk || signalScore >= 50) &&
+      (positionOk || signalScore >= 45) &&
+      (signalQuality !== 'low') &&
+      (pullbackReady || isReversal || isMomentumTrade || signalScore >= 50) &&
+      (btcAligned || isReversal || isMomentumTrade || signalScore >= 50) &&
       !rangingBlocked
     );
 

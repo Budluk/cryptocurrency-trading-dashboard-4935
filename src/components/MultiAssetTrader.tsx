@@ -917,8 +917,8 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS (EQUILIBRADOS: manter qualidade sem travar entradas) ===
-          let scoreThreshold = 44;
+          // === THRESHOLDS ===
+          let scoreThreshold = 40;
           let minConfirmations = 2;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
@@ -940,8 +940,8 @@ export const MultiAssetTrader = () => {
             minConfirmations = Math.max(2, minConfirmations);
           }
           
-          // Mínimo score (nunca abaixo de 38)
-          scoreThreshold = Math.max(38, scoreThreshold);
+          // Mínimo score (nunca abaixo de 35)
+          scoreThreshold = Math.max(35, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
