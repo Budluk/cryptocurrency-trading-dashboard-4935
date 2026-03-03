@@ -189,31 +189,31 @@ async function makeBybitRequest(
     console.log(`Request: ${method} ${endpoint}, timestamp: ${timestamp}`);
   }
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: method !== 'GET' ? body : undefined,
-  });
-
-  const responseText = await response.text();
+  const maxRetries = 3;
+  let data: any;
   
-  // Check if response is HTML (Cloudflare/WAF page) instead of JSON
-  if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
-    console.error(`Bybit returned HTML instead of JSON for ${endpoint}. Status: ${response.status}`);
-    // Retry once after a short delay
-    await new Promise(r => setTimeout(r, 1500));
-    const retryResponse = await fetch(url, {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, {
       method,
       headers,
       body: method !== 'GET' ? body : undefined,
     });
-    const retryText = await retryResponse.text();
-    if (retryText.startsWith('<!DOCTYPE') || retryText.startsWith('<html')) {
-      throw new Error(`Bybit API temporarily unavailable (Cloudflare). Try again in a few seconds.`);
+
+    const responseText = await response.text();
+    
+    // Check if response is HTML (Cloudflare/WAF page) instead of JSON
+    if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+      console.error(`Bybit returned HTML for ${endpoint} (attempt ${attempt + 1}/${maxRetries}). Status: ${response.status}`);
+      if (attempt < maxRetries - 1) {
+        const delay = 2000 * (attempt + 1); // 2s, 4s
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw new Error(`Bybit API temporarily unavailable. Try again in a few seconds.`);
     }
-    var data = JSON.parse(retryText);
-  } else {
-    var data = JSON.parse(responseText);
+    
+    data = JSON.parse(responseText);
+    break;
   }
   
   // Handle non-critical Bybit errors that are actually success cases
