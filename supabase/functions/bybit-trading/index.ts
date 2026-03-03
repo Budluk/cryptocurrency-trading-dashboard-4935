@@ -104,7 +104,11 @@ Deno.serve(async (req) => {
 async function getBybitServerTime(): Promise<number> {
   try {
     const response = await fetch(`${BASE_URL}/v5/market/time`);
-    const data = await response.json();
+    const text = await response.text();
+    if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      throw new Error('Bybit returned HTML');
+    }
+    const data = JSON.parse(text);
     
     // Use the 'time' field directly - it's already in milliseconds as integer
     if (data.retCode === 0 && data.time) {
@@ -191,7 +195,26 @@ async function makeBybitRequest(
     body: method !== 'GET' ? body : undefined,
   });
 
-  const data = await response.json();
+  const responseText = await response.text();
+  
+  // Check if response is HTML (Cloudflare/WAF page) instead of JSON
+  if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+    console.error(`Bybit returned HTML instead of JSON for ${endpoint}. Status: ${response.status}`);
+    // Retry once after a short delay
+    await new Promise(r => setTimeout(r, 1500));
+    const retryResponse = await fetch(url, {
+      method,
+      headers,
+      body: method !== 'GET' ? body : undefined,
+    });
+    const retryText = await retryResponse.text();
+    if (retryText.startsWith('<!DOCTYPE') || retryText.startsWith('<html')) {
+      throw new Error(`Bybit API temporarily unavailable (Cloudflare). Try again in a few seconds.`);
+    }
+    var data = JSON.parse(retryText);
+  } else {
+    var data = JSON.parse(responseText);
+  }
   
   // Handle non-critical Bybit errors that are actually success cases
   // 110043 = leverage not modified (already set)
