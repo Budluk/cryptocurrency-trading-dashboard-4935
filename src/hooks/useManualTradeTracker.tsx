@@ -228,8 +228,8 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
     // Sincronizar imediatamente
     syncPositions();
     
-    // Sincronizar a cada 10 segundos
-    const interval = setInterval(syncPositions, 10000);
+    // Sincronizar a cada 30 segundos para evitar rate-limit Bybit
+    const interval = setInterval(syncPositions, 30000);
     
     return () => {
       clearInterval(interval);

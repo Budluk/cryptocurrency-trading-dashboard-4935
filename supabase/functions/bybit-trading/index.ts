@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Bybit trading error:', error);
     const message = error instanceof Error ? error.message : String(error);
-    const isTransient = /cloudflare|temporarily unavailable|unexpected token '<'|fetch failed|network/i.test(message);
+    const isTransient = /cloudflare|temporarily unavailable|unexpected token|fetch failed|network|returned html|bybit returned/i.test(message);
     return new Response(JSON.stringify({ success: false, error: message }), {
       status: isTransient ? 200 : 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
