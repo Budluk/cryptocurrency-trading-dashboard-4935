@@ -330,7 +330,7 @@ async function makeBybitRequest(
   }
   
   // Handle non-critical Bybit errors
-  const nonCriticalErrors = [110043, 110025, 110017];
+  const nonCriticalErrors = [110043, 110025, 110017, 10001];
   
   if (data.retCode !== 0) {
     if (nonCriticalErrors.includes(data.retCode)) {
@@ -666,7 +666,24 @@ async function getTickers(symbol?: string) {
 }
 
 async function setLeverage(params: any) {
-  const { symbol, leverage } = params;
+  const { symbol } = params;
+  let leverage = Number(params.leverage || params.buyLeverage);
+
+  // Cap leverage at asset's max allowed leverage
+  try {
+    const instruments = await getInstruments(symbol);
+    const instrument = instruments?.[0];
+    const maxLev = Number(instrument?.leverageFilter?.maxLeverage);
+    if (Number.isFinite(maxLev) && maxLev > 0 && leverage > maxLev) {
+      console.log(`⚠️ Leverage ${leverage}x exceeds max ${maxLev}x for ${symbol}, capping`);
+      leverage = maxLev;
+    }
+  } catch (e) {
+    console.log('Leverage filter fetch warning:', e?.message ?? String(e));
+  }
+
+  if (!Number.isFinite(leverage) || leverage < 1) leverage = 1;
+
   return makeBybitRequest('POST', '/v5/position/set-leverage', {
     category: 'linear',
     symbol,
