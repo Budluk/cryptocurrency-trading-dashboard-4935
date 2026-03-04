@@ -1,87 +1,57 @@
 import { useCallback, useMemo } from 'react';
 
-// 🕐 MAPA DE ATIVOS LUCRATIVOS POR HORA UTC - CORRIGIDO COM DADOS REAIS
-// APENAS ativos com PnL POSITIVO E win rate >= 55%
+// 🕐 MAPA DE ATIVOS LUCRATIVOS POR HORA UTC - LIMPO v3
+// APENAS ativos com PnL POSITIVO, win rate >= 60%, E NÃO na blacklist
+// ⚠️ Removidos: MERLUSDT, MONUSDT, TRUTHUSDT, PUMPFUNUSDT, BOBBOBUSDT (todos na blacklist ou marginais)
 const HOUR_ASSET_MAP: Record<number, { symbol: string; winRate: number; pnl: number }[]> = {
   0: [
     { symbol: 'HUSDT', winRate: 75.0, pnl: 0.74 },
-    // BTCUSDT REMOVIDO - 27.8% win rate real, dreno de capital
   ],
   1: [
-    { symbol: 'MERLUSDT', winRate: 100.0, pnl: 0.94 },
-    { symbol: 'NOTUSDT', winRate: 100.0, pnl: 0.11 },
-    { symbol: 'MONUSDT', winRate: 66.7, pnl: 0.56 },
-    { symbol: 'JELLYJELLYUSDT', winRate: 53.3, pnl: 1.42 },
+    { symbol: 'JELLYJELLYUSDT', winRate: 53.3, pnl: 1.42 }, // Mantido: PnL alto compensa WR
   ],
-  2: [
-    { symbol: 'TRUTHUSDT', winRate: 100.0, pnl: 1.04 },
-    { symbol: 'LUNA2USDT', winRate: 100.0, pnl: 0.10 },
-    { symbol: 'MONUSDT', winRate: 50.0, pnl: 0.30 },
-    // REMOVIDO: NIGHTUSDT, 1000LUNCUSDT, 1000PEPEUSDT - PnL negativo
-  ],
-  3: [], // Sem ativos lucrativos
-  4: [
-    { symbol: 'BOBBOBUSDT', winRate: 62.5, pnl: 0.29 },
-  ],
-  5: [
-    // REMOVIDO: NIGHTUSDT pnl -1.68, 1000PEPEUSDT pnl -0.08
-  ],
-  6: [
-    { symbol: 'BOBBOBUSDT', winRate: 50.0, pnl: 0.40 },
-  ],
+  2: [], // Todos removidos (blacklistados ou WR < 60%)
+  3: [], 
+  4: [], // BOBBOBUSDT removido (marginal)
+  5: [],
+  6: [], // BOBBOBUSDT removido (50% WR = marginal)
   7: [], 
   8: [], 
   9: [], 
   10: [], 
-  11: [
-    // REMOVIDO: BOBBOBUSDT pnl -0.13
-  ],
+  11: [],
   12: [
     { symbol: 'NIGHTUSDT', winRate: 75.0, pnl: 2.34 },
-    // REMOVIDO: JELLYJELLYUSDT pnl -0.22, TRUTHUSDT pnl -1.22
   ],
   13: [
     { symbol: 'NIGHTUSDT', winRate: 100.0, pnl: 0.28 },
-    // REMOVIDO: BOBBOBUSDT pnl -0.60, TRUTHUSDT pnl -2.06, JELLYJELLYUSDT pnl -2.58
   ],
   14: [
     { symbol: 'NIGHTUSDT', winRate: 80.0, pnl: 0.06 },
-    // REMOVIDO: TRUTHUSDT pnl -1.02
   ],
   15: [
-    { symbol: 'PUMPFUNUSDT', winRate: 66.7, pnl: 1.30 },
     { symbol: 'NIGHTUSDT', winRate: 66.7, pnl: 0.39 },
-    { symbol: '1000PEPEUSDT', winRate: 52.9, pnl: 0.52 },
-    // REMOVIDO: TRUTHUSDT pnl -1.82, JELLYJELLYUSDT pnl -0.48, BOBBOBUSDT pnl -1.34
+    { symbol: '1000PEPEUSDT', winRate: 52.9, pnl: 0.52 }, // Mantido: PnL positivo
   ],
   16: [
-    { symbol: 'PUMPFUNUSDT', winRate: 75.0, pnl: 0.87 },
     { symbol: '1000PEPEUSDT', winRate: 75.0, pnl: 0.13 },
     { symbol: 'JELLYJELLYUSDT', winRate: 66.7, pnl: 0.04 },
     { symbol: 'NIGHTUSDT', winRate: 100.0, pnl: 0.02 },
-    // REMOVIDO: TRUTHUSDT pnl -2.63
   ],
   17: [], 
-  18: [
-    { symbol: 'PUMPFUNUSDT', winRate: 53.8, pnl: 0.99 },
-  ],
+  18: [], // PUMPFUNUSDT removido (blacklistado)
   19: [], 
   20: [], 
   21: [
     { symbol: '1000PEPEUSDT', winRate: 100.0, pnl: 0.70 },
-    // REMOVIDO: LUNA2USDT pnl -0.11
   ],
-  22: [
-    // BTCUSDT REMOVIDO - 27.8% win rate real, dreno de capital
-  ],
+  22: [],
   23: [
     { symbol: 'FLUXUSDT', winRate: 66.7, pnl: 0.11 },
-    // BTCUSDT REMOVIDO - 27.8% win rate real
   ],
 };
 
-// 🔴 SÍMBOLOS QUE SEMPRE PERDEM - BLACKLIST EXPANDIDA COM DADOS REAIS
-// Incluindo símbolos que tiveram mais losses que wins no histórico
+// 🔴 SÍMBOLOS QUE SEMPRE PERDEM - BLACKLIST EXPANDIDA v3
 const GLOBAL_BLACKLIST = new Set([
   'LINEAUSDT',     // 0% win rate global
   'HIPPOUSDT',     // 27% win rate global
@@ -92,36 +62,36 @@ const GLOBAL_BLACKLIST = new Set([
   'AKEUSDT',       // Perdas consistentes
   'COMMONUSDT',    // Perdas consistentes
   'PTBUSDT',       // Perdas consistentes
-  // ADICIONADOS baseado em análise de dados reais:
   'STRKUSDT',      // -$1.84 em 13 trades
   'TRUTHUSDT',     // Perde em múltiplas horas
   'MERLUSDT',      // -$1.48 em 6 trades Sell
   'MONUSDT',       // -$1.29 em 4 trades Buy
   'APRUSDT',       // -$1.29 em 14 trades
-  'PUMPFUNUSDT',   // -$1.13 em 44 trades Buy (contradiz dados de hora específica)
+  'PUMPFUNUSDT',   // -$1.13 em 44 trades Buy
   'FARTCOINUSDT',  // -$1.05 em 3 trades Sell
   'ETHUSDT',       // -$1.97 - sem liquidez adequada para scalping
-  // 🚨 CRÍTICO: BTCUSDT - Dreno de performance
-  'BTCUSDT',       // 27.8% win rate, PnL negativo consistente - EVITAR
+  'BTCUSDT',       // 27.8% win rate, PnL negativo consistente
+  'BOBBOBUSDT',    // 50% WR, PnL marginal, drena capital
+  'LUNA2USDT',     // PnL inconsistente, removido de hora 2/21
+  'NOTUSDT',       // Poucos dados, PnL marginal $0.11
 ]);
 
-// 🟢 SÍMBOLOS PREMIUM - REVISADO COM DADOS REAIS (apenas PnL positivo)
-// ⚠️ BTCUSDT REMOVIDO - 27.8% win rate real, dreno de capital
+// 🟢 SÍMBOLOS PREMIUM - APENAS os comprovadamente lucrativos
 const PREMIUM_SYMBOLS = new Map([
   ['NIGHTUSDT', { avgWinRate: 84.4, totalPnl: 3.11 }],
-  ['JELLYJELLYUSDT', { avgWinRate: 55, totalPnl: 3.36 }], // Bom apenas em horários específicos
+  ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }],
   ['HUSDT', { avgWinRate: 75, totalPnl: 0.74 }],
+  ['JELLYJELLYUSDT', { avgWinRate: 60, totalPnl: 1.46 }], // Apenas horários bons
   ['FLUXUSDT', { avgWinRate: 66.7, totalPnl: 0.11 }],
-  ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }], // Bom em horários específicos
 ]);
 
-// 📊 Configurações otimizadas
+// 📊 Configurações otimizadas v3 — mais restritivas
 const OPTIMAL_CONFIG = {
-  minRiskReward: 2.5,
-  maxStopLossPct: 0.12,
-  minTakeProfitPct: 0.25,
-  minWinRateForHour: 50,
-  minTradesForStats: 3,
+  minRiskReward: 3.0,       // Aumentado de 2.5 para 3.0
+  maxStopLossPct: 0.10,     // Reduzido de 0.12
+  minTakeProfitPct: 0.30,   // Aumentado de 0.25
+  minWinRateForHour: 60,    // Aumentado de 50
+  minTradesForStats: 5,     // Aumentado de 3
   maxConsecutiveLossesPerSymbol: 2,
 };
 
@@ -150,7 +120,8 @@ export const useDataDrivenStrategy = () => {
       !GLOBAL_BLACKLIST.has(a.symbol)
     );
     
-    // Se não há ativos específicos para esta hora, usar premium symbols
+    // Se não há ativos específicos para esta hora, usar APENAS premium symbols
+    // 🔧 v3: NÃO usar fallback genérico — só premium comprovados
     if (profitable.length === 0) {
       return Array.from(PREMIUM_SYMBOLS.entries())
         .map(([symbol, data]) => ({
@@ -219,7 +190,7 @@ export const useDataDrivenStrategy = () => {
     // Símbolo premium sem dados específicos para esta hora
     if (premiumData) {
       recommendation = 'CAUTION';
-      confidenceBoost = 10;
+      confidenceBoost = 5; // Reduzido de 10 — premium sem dados de hora é arriscado
       reason = `🟡 Premium (${premiumData.avgWinRate}% avg) - sem dados para ${currentHourUTC}h UTC`;
       
       return {
@@ -235,7 +206,7 @@ export const useDataDrivenStrategy = () => {
       };
     }
     
-    // Símbolo sem dados
+    // Símbolo sem dados — PENALIZAR MAIS para evitar trades cegos
     return {
       symbol,
       isBlacklisted: false,
@@ -243,9 +214,9 @@ export const useDataDrivenStrategy = () => {
       hourWinRate: null,
       hourPnl: null,
       isPremium: false,
-      recommendation: 'CAUTION',
-      confidenceBoost: -10,
-      reason: `⚠️ Sem histórico para ${currentHourUTC}h UTC`
+      recommendation: 'AVOID', // v3: AVOID em vez de CAUTION para desconhecidos
+      confidenceBoost: -25, // v3: penalidade maior (era -10)
+      reason: `🚫 Sem histórico para ${currentHourUTC}h UTC - EVITAR`
     };
   }, []);
   
@@ -262,15 +233,20 @@ export const useDataDrivenStrategy = () => {
       return { shouldTrade: false, adjustedScore: 0, reason: analysis.reason };
     }
     
+    // v3: Desconhecidos = AVOID por padrão
+    if (analysis.recommendation === 'AVOID') {
+      return { shouldTrade: false, adjustedScore: 0, reason: analysis.reason };
+    }
+    
     // Ajustar score
     const adjustedScore = Math.min(100, Math.max(0, signalScore + analysis.confidenceBoost));
     
-    // Score mínimo baseado na situação
-    let minScore = 55;
+    // Score mínimo baseado na situação — v3: mais restritivo
+    let minScore = 60; // Aumentado de 55
     if (analysis.isOptimalForHour) {
-      minScore = 40; // Ativos ideais para hora precisam menos confirmação
+      minScore = 45; // Aumentado de 40
     } else if (analysis.isPremium) {
-      minScore = 50; // Premium sem dados específicos
+      minScore = 55; // Aumentado de 50
     }
     
     // Alta volatilidade = mais exigência
@@ -278,7 +254,7 @@ export const useDataDrivenStrategy = () => {
       minScore += 10;
     }
     
-    const shouldTrade = adjustedScore >= minScore && analysis.recommendation !== 'AVOID';
+    const shouldTrade = adjustedScore >= minScore;
     
     return {
       shouldTrade,
@@ -287,7 +263,7 @@ export const useDataDrivenStrategy = () => {
     };
   }, [analyzeSymbol]);
   
-  // Calcular SL/TP otimizados - CORRIGIDO para usar percentuais REAIS
+  // Calcular SL/TP otimizados — v3: R:R mínimo 3.0 para desconhecidos
   const getOptimalStopTakeProfit = useCallback((
     symbol: string,
     entryPrice: number,
@@ -296,57 +272,54 @@ export const useDataDrivenStrategy = () => {
   ): { stopLoss: number; takeProfit: number; reason: string } => {
     const analysis = analyzeSymbol(symbol);
     
-    // 🔧 CORREÇÃO CRÍTICA v2: SL MUITO MAIOR para R:R real de 1:2.5+
-    // PROBLEMA: SL de 0.3% com leverage 25x = 0.012% de movimento = stop-out instantâneo
-    // SOLUÇÃO: SL baseado em volatilidade real, mínimo 1.0%
+    // SL = 10-15% da volatilidade diária
+    let slPercent = Math.max(1.2, Math.min(3.0, volatility * 0.12));
     
-    // SL = 10-15% da volatilidade diária (dar espaço para respirar)
-    let slPercent = Math.max(1.0, Math.min(3.0, volatility * 0.12));
-    // TP sempre 2.5x o SL para compensar win rate baixo
-    let tpPercent = slPercent * 2.5;
+    // R:R baseado na qualidade do ativo
+    let rrMultiplier = 3.0; // Default: 1:3 para desconhecidos
     
-    // Ativos com alto win rate na hora = SL um pouco menor mas nunca abaixo de 0.8%
+    // Ativos com alto win rate na hora = R:R 2.5 (podem ter WR > 60%)
     if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 70) {
-      slPercent = Math.max(0.8, slPercent * 0.85);
-      tpPercent = slPercent * 2.5; // R:R 1:2.5 MÍNIMO
+      slPercent = Math.max(1.0, slPercent * 0.85);
+      rrMultiplier = 2.5;
     }
-    // Win rate médio
+    // Win rate médio = R:R 2.5
     else if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 50) {
-      slPercent = Math.max(1.0, slPercent * 0.9);
-      tpPercent = slPercent * 2.5;
+      slPercent = Math.max(1.2, slPercent * 0.9);
+      rrMultiplier = 2.5;
     }
-    // Premium ou desconhecido = mais conservador
+    // Premium ou desconhecido = R:R 3.0 (mais conservador)
     else {
-      slPercent = Math.max(1.2, slPercent);
-      tpPercent = slPercent * 3.0; // R:R 1:3
+      slPercent = Math.max(1.5, slPercent);
+      rrMultiplier = 3.0;
     }
+    
+    let tpPercent = slPercent * rrMultiplier;
     
     // Volatilidade alta = SL MUITO maior para não ser stopado por ruído
     if (volatility > 15) {
-      slPercent = Math.max(slPercent, 2.0);
-      tpPercent = slPercent * 2.5;
+      slPercent = Math.max(slPercent, 2.5);
+      tpPercent = slPercent * rrMultiplier;
     } else if (volatility > 10) {
-      slPercent = Math.max(slPercent, 1.5);
-      tpPercent = slPercent * 2.5;
+      slPercent = Math.max(slPercent, 1.8);
+      tpPercent = slPercent * rrMultiplier;
     } else if (volatility > 5) {
-      slPercent = Math.max(slPercent, 1.0);
-      tpPercent = slPercent * 2.5;
+      slPercent = Math.max(slPercent, 1.2);
+      tpPercent = slPercent * rrMultiplier;
     }
     
-    // 🔧 CORREÇÃO: slPercent/tpPercent JÁ ESTÃO EM % (0.5 = 0.5%)
-    // Converter para decimal para multiplicar: 0.5% = 0.005
     const slDecimal = slPercent / 100;
     const tpDecimal = tpPercent / 100;
     
     const slMultiplier = side === 'Buy' ? (1 - slDecimal) : (1 + slDecimal);
     const tpMultiplier = side === 'Buy' ? (1 + tpDecimal) : (1 - tpDecimal);
     
-    console.log(`📊 ${symbol} Vol: ${volatility.toFixed(1)}% → SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}%`);
+    console.log(`📊 ${symbol} Vol: ${volatility.toFixed(1)}% → SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}% | R:R ${rrMultiplier}:1`);
     
     return {
       stopLoss: entryPrice * slMultiplier,
       takeProfit: entryPrice * tpMultiplier,
-      reason: `SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}% | R:R ${(tpPercent/slPercent).toFixed(1)}:1`
+      reason: `SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}% | R:R ${rrMultiplier}:1`
     };
   }, [analyzeSymbol]);
   
@@ -361,7 +334,6 @@ export const useDataDrivenStrategy = () => {
       hourSymbols.has(asset.symbol) && !GLOBAL_BLACKLIST.has(asset.symbol)
     );
     
-    // Se temos ativos ideais, usar eles
     if (idealAssets.length > 0) {
       return idealAssets.sort((a, b) => {
         const aData = hourAssets.find(h => h.symbol === a.symbol);
@@ -370,7 +342,7 @@ export const useDataDrivenStrategy = () => {
       });
     }
     
-    // Fallback: premium symbols não na blacklist
+    // Fallback: APENAS premium symbols (v3: sem top-N genérico)
     return assets.filter(asset => 
       PREMIUM_SYMBOLS.has(asset.symbol) && !GLOBAL_BLACKLIST.has(asset.symbol)
     ).sort((a, b) => {
@@ -380,15 +352,12 @@ export const useDataDrivenStrategy = () => {
     });
   }, [getAssetsForCurrentHour]);
   
-  // Obter configurações
   const getOptimalConfig = useCallback(() => OPTIMAL_CONFIG, []);
   
-  // Verificar se hora atual tem ativos lucrativos
   const hasAssetsForCurrentHour = useCallback(() => {
     return getAssetsForCurrentHour().length > 0;
   }, [getAssetsForCurrentHour]);
   
-  // Estatísticas
   const getStrategyStats = useCallback(() => {
     const currentHourUTC = new Date().getUTCHours();
     const hourAssets = getAssetsForCurrentHour();

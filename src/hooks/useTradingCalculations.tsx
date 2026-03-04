@@ -162,8 +162,8 @@ export const useTradingCalculations = () => {
     const minSL = 0.015; // 1.5% mínimo (antes era 0.8%)
     const maxSL = 0.050; // 5.0% máximo (antes era 3.0%)
     
-    // 🎯 R:R 1:2.5 OBRIGATÓRIO para compensar win rate de ~40%
-    const targetRR = 2.5;
+    // 🎯 R:R 1:3.0 OBRIGATÓRIO para compensar win rate de ~40%
+    const targetRR = 3.0;
 
     // USAR TOPOS/FUNDOS SE DISPONÍVEIS para stops estruturais
     if (highPrice && lowPrice && highPrice > lowPrice) {
