@@ -332,16 +332,25 @@ async function makeBybitRequest(
   // Handle non-critical Bybit errors
   const nonCriticalErrors = [110043, 110025, 110017, 10001];
   
-  if (data.retCode !== 0) {
-    if (nonCriticalErrors.includes(data.retCode)) {
-      console.log(`Bybit non-critical response (${data.retCode}): ${data.retMsg}`);
-      return { success: true, message: data.retMsg, retCode: data.retCode };
+  const retCodeNum = Number(data.retCode);
+
+  if (retCodeNum !== 0) {
+    if (nonCriticalErrors.includes(retCodeNum)) {
+      console.log(`Bybit non-critical response (${retCodeNum}): ${data.retMsg}`);
+      return { success: true, message: data.retMsg, retCode: retCodeNum };
     }
+
     const lowerMsg = (data.retMsg || '').toLowerCase();
+    if (retCodeNum === 10001 && lowerMsg.includes('leverage invalid')) {
+      console.log(`Bybit leverage validation treated as non-critical: ${data.retMsg}`);
+      return { success: true, message: data.retMsg, retCode: retCodeNum };
+    }
+
     if (lowerMsg.includes('not modified') || lowerMsg.includes('same value')) {
       console.log(`Bybit non-critical response (msg match): ${data.retMsg}`);
-      return { success: true, message: data.retMsg, retCode: data.retCode };
+      return { success: true, message: data.retMsg, retCode: retCodeNum };
     }
+
     console.error(`Bybit API Error:`, JSON.stringify(data));
     throw new Error(`Bybit API Error: ${data.retMsg}`);
   }
