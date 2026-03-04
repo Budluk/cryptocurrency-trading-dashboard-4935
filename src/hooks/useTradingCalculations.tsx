@@ -11,7 +11,7 @@ export const useTradingCalculations = () => {
     if (volatility > 3.0) return 10;
     if (volatility > 2.0) return 12;
     if (volatility > 1.0) return 15;
-    return 18;
+    return 18; // Mínimo garantido: 5x (capped no caller)
   }, []);
 
   // Alavancagem baseada no bankroll e win rate
@@ -27,7 +27,7 @@ export const useTradingCalculations = () => {
     if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 20);
     else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 3, 5);
 
-    return baseLeverage;
+    return Math.max(5, baseLeverage); // NUNCA abaixo de 5x
   }, []);
 
   // 💼 Gerenciamento de capital dinâmico

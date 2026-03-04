@@ -1003,7 +1003,7 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          const leverage = Math.floor(dynamicLeverage);
+          const leverage = Math.max(5, Math.floor(dynamicLeverage)); // NUNCA abaixo de 5x
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
@@ -1221,6 +1221,27 @@ export const MultiAssetTrader = () => {
             }
           }
 
+          // 🔒 VALIDAÇÃO FINAL R:R — garantir mínimo 1:2.0 antes de executar
+          {
+            const finalSL = parseFloat(stopLoss);
+            const finalTP = parseFloat(takeProfit);
+            const slDist = Math.abs(currentPrice - finalSL);
+            const tpDist = Math.abs(finalTP - currentPrice);
+            const actualRR = slDist > 0 ? tpDist / slDist : 0;
+            if (actualRR < 2.0) {
+              // Recalcular TP para forçar R:R 2.5
+              const forcedTPDist = slDist * 2.5;
+              if (analysisResult.action === 'BUY') {
+                takeProfit = (currentPrice + forcedTPDist).toFixed(6);
+              } else {
+                takeProfit = (currentPrice - forcedTPDist).toFixed(6);
+              }
+              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 2.0 → forçado 2.5 (TP: ${takeProfit})`);
+            } else {
+              console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 OK`);
+            }
+          }
+
           // 🧠 VALIDAÇÃO COM INTELIGÊNCIA DE MERCADO (Notícias, Whales, Fear & Greed)
           if (aiIntelligenceEnabled) {
             try {
@@ -1280,7 +1301,7 @@ export const MultiAssetTrader = () => {
                 leverageSuccess = true;
               } else {
                 console.log(`Leverage attempt ${attempts + 1} failed for ${symbol}, reducing from ${finalLeverage}`);
-                finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 10);
+                finalLeverage = Math.max(Math.floor(finalLeverage * 0.7), 5);
                 await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit delay
               }
             }
