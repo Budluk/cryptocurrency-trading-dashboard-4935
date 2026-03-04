@@ -827,11 +827,11 @@ export const MultiAssetTrader = () => {
         ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side }))
         : openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
-      // === LIMITES POR CICLO (SWING) ===
+      // === LIMITES POR CICLO — v3: mais restritivo ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // Swing: menos trades
-      const MAX_TRADES_PER_CYCLE = 3; // Swing: máximo 3 trades por ciclo
+      const MAX_SAME_DIRECTION_PER_CYCLE = 1; // v3: máximo 1 por direção
+      const MAX_TRADES_PER_CYCLE = 2; // v3: reduzido de 3 para 2
       
       // Contar posições abertas por direção (incluir demo se ativo)
       const allOpenPositions = isDemoMode ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side })) : openPositions;
@@ -917,8 +917,8 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS ===
-          let scoreThreshold = 40;
+          // === THRESHOLDS v3: mais restritivos ===
+          let scoreThreshold = 45; // Aumentado de 40
           let minConfirmations = 2;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
@@ -928,20 +928,25 @@ export const MultiAssetTrader = () => {
             if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 2;
           }
           
-          // Bonus para ativo ideal da hora
+          // Bonus para ativo ideal da hora (menor bonus que antes)
           if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
-            scoreThreshold -= 5;
+            scoreThreshold -= 3; // Reduzido de -5
             minConfirmations = 1;
           }
           
-          // Mercado muito volátil: manter ativo, mas exigir 2 confirmações mínimas
+          // Mercado muito volátil: exigir mais
           if (volatility > 12) {
-            scoreThreshold += 1;
+            scoreThreshold += 3; // Aumentado de +1
             minConfirmations = Math.max(2, minConfirmations);
           }
           
-          // Mínimo score (nunca abaixo de 35)
-          scoreThreshold = Math.max(35, scoreThreshold);
+          // v3: Sem dados históricos = score MUITO alto exigido
+          if (!isOptimalForHour && !symbolAnalysis.isPremium) {
+            scoreThreshold += 10; // Penalidade para símbolos desconhecidos
+          }
+          
+          // Mínimo score (NUNCA abaixo de 42)
+          scoreThreshold = Math.max(42, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -1170,8 +1175,8 @@ export const MultiAssetTrader = () => {
           }
           
           // 🔧 ML AUTO-CORRECTOR: Aplicar SL/TP corrigidos (com MÍNIMOS seguros)
-          let minSlPct = 0.015; // 1.5% default (antes: 0.8% - muito apertado)
-          let rr = 2.5; // 1:2.5 OBRIGATÓRIO
+          let minSlPct = 0.018; // 1.8% default (v3: aumentado de 1.5%)
+          let rr = 3.0; // 1:3.0 OBRIGATÓRIO (v3: aumentado de 2.5)
           
           if (mlAutoCorrectEnabled && mlAutoConfig) {
             // Usar parâmetros corrigidos pelo ML mas NUNCA abaixo do mínimo
@@ -1221,22 +1226,22 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          // 🔒 VALIDAÇÃO FINAL R:R — garantir mínimo 1:2.0 antes de executar
+          // 🔒 VALIDAÇÃO FINAL R:R — v3: mínimo 1:2.5 obrigatório
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);
             const slDist = Math.abs(currentPrice - finalSL);
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
-            if (actualRR < 2.0) {
-              // Recalcular TP para forçar R:R 2.5
-              const forcedTPDist = slDist * 2.5;
+            if (actualRR < 2.5) {
+              // Recalcular TP para forçar R:R 3.0
+              const forcedTPDist = slDist * 3.0;
               if (analysisResult.action === 'BUY') {
                 takeProfit = (currentPrice + forcedTPDist).toFixed(6);
               } else {
                 takeProfit = (currentPrice - forcedTPDist).toFixed(6);
               }
-              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 2.0 → forçado 2.5 (TP: ${takeProfit})`);
+              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 2.5 → forçado 3.0 (TP: ${takeProfit})`);
             } else {
               console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 OK`);
             }
