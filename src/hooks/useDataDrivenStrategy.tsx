@@ -51,7 +51,8 @@ const HOUR_ASSET_MAP: Record<number, { symbol: string; winRate: number; pnl: num
   ],
 };
 
-// 🔴 SÍMBOLOS QUE SEMPRE PERDEM - BLACKLIST EXPANDIDA v3
+// 🔴 SÍMBOLOS QUE SEMPRE PERDEM - BLACKLIST v4
+// ✅ BTCUSDT removido: incluído como ativo tradável com config específica
 const GLOBAL_BLACKLIST = new Set([
   'LINEAUSDT',     // 0% win rate global
   'HIPPOUSDT',     // 27% win rate global
@@ -69,29 +70,30 @@ const GLOBAL_BLACKLIST = new Set([
   'APRUSDT',       // -$1.29 em 14 trades
   'PUMPFUNUSDT',   // -$1.13 em 44 trades Buy
   'FARTCOINUSDT',  // -$1.05 em 3 trades Sell
-  'ETHUSDT',       // -$1.97 - sem liquidez adequada para scalping
-  'BTCUSDT',       // 27.8% win rate, PnL negativo consistente
-  'BOBBOBUSDT',    // 50% WR, PnL marginal, drena capital
-  'LUNA2USDT',     // PnL inconsistente, removido de hora 2/21
-  'NOTUSDT',       // Poucos dados, PnL marginal $0.11
+  'BOBBOBUSDT',    // 50% WR, PnL marginal
+  'LUNA2USDT',     // PnL inconsistente
+  'NOTUSDT',       // Poucos dados, PnL marginal
 ]);
 
-// 🟢 SÍMBOLOS PREMIUM - APENAS os comprovadamente lucrativos
+// 🟢 SÍMBOLOS PREMIUM - Comprovados + BTC (alta liquidez)
 const PREMIUM_SYMBOLS = new Map([
   ['NIGHTUSDT', { avgWinRate: 84.4, totalPnl: 3.11 }],
   ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }],
   ['HUSDT', { avgWinRate: 75, totalPnl: 0.74 }],
-  ['JELLYJELLYUSDT', { avgWinRate: 60, totalPnl: 1.46 }], // Apenas horários bons
+  ['JELLYJELLYUSDT', { avgWinRate: 60, totalPnl: 1.46 }],
   ['FLUXUSDT', { avgWinRate: 66.7, totalPnl: 0.11 }],
+  ['BTCUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP mais apertados
 ]);
 
-// 📊 Configurações otimizadas v3 — mais restritivas
+// 📊 Configurações otimizadas v4 — R:R REALISTA para aumentar Profit Factor
+// PROBLEMA: R:R 3.0 = TP nunca é atingido → PF 0.70
+// SOLUÇÃO: R:R 2.0 com SL apertado = TP alcançável + wins > losses
 const OPTIMAL_CONFIG = {
-  minRiskReward: 3.0,       // Aumentado de 2.5 para 3.0
-  maxStopLossPct: 0.10,     // Reduzido de 0.12
-  minTakeProfitPct: 0.30,   // Aumentado de 0.25
-  minWinRateForHour: 60,    // Aumentado de 50
-  minTradesForStats: 5,     // Aumentado de 3
+  minRiskReward: 2.0,       // v4: REDUZIDO de 3.0 → 2.0 (TP alcançável)
+  maxStopLossPct: 0.08,     // v4: REDUZIDO de 0.10 → 0.08 (SL mais apertado)
+  minTakeProfitPct: 0.16,   // v4: 2x o SL máximo
+  minWinRateForHour: 55,    // v4: REDUZIDO de 60 → 55 (mais oportunidades)
+  minTradesForStats: 5,
   maxConsecutiveLossesPerSymbol: 2,
 };
 
@@ -263,7 +265,7 @@ export const useDataDrivenStrategy = () => {
     };
   }, [analyzeSymbol]);
   
-  // Calcular SL/TP otimizados — v3: R:R mínimo 3.0 para desconhecidos
+  // Calcular SL/TP otimizados — v4: R:R 2.0 REALISTA
   const getOptimalStopTakeProfit = useCallback((
     symbol: string,
     entryPrice: number,
@@ -272,39 +274,44 @@ export const useDataDrivenStrategy = () => {
   ): { stopLoss: number; takeProfit: number; reason: string } => {
     const analysis = analyzeSymbol(symbol);
     
-    // SL = 10-15% da volatilidade diária
-    let slPercent = Math.max(1.2, Math.min(3.0, volatility * 0.12));
+    // v4: SL mais apertado = perda menor por trade
+    let slPercent = Math.max(0.8, Math.min(2.0, volatility * 0.08));
     
-    // R:R baseado na qualidade do ativo
-    let rrMultiplier = 3.0; // Default: 1:3 para desconhecidos
+    // v4: R:R 2.0 para TODOS — TP alcançável
+    let rrMultiplier = 2.0;
     
-    // Ativos com alto win rate na hora = R:R 2.5 (podem ter WR > 60%)
-    if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 70) {
-      slPercent = Math.max(1.0, slPercent * 0.85);
-      rrMultiplier = 2.5;
+    // BTC: SL ainda mais apertado (alta liquidez)
+    if (symbol === 'BTCUSDT') {
+      slPercent = Math.max(0.5, Math.min(1.0, volatility * 0.06));
+      rrMultiplier = 2.0;
     }
-    // Win rate médio = R:R 2.5
+    // Ativos com alto win rate = podem ter SL menor
+    else if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 70) {
+      slPercent = Math.max(0.8, slPercent * 0.85);
+      rrMultiplier = 2.0;
+    }
+    // Win rate médio
     else if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 50) {
-      slPercent = Math.max(1.2, slPercent * 0.9);
-      rrMultiplier = 2.5;
+      slPercent = Math.max(1.0, slPercent * 0.9);
+      rrMultiplier = 2.0;
     }
-    // Premium ou desconhecido = R:R 3.0 (mais conservador)
+    // Premium/desconhecido — SL um pouco maior mas R:R igual
     else {
-      slPercent = Math.max(1.5, slPercent);
-      rrMultiplier = 3.0;
+      slPercent = Math.max(1.2, slPercent);
+      rrMultiplier = 2.0;
     }
     
     let tpPercent = slPercent * rrMultiplier;
     
-    // Volatilidade alta = SL MUITO maior para não ser stopado por ruído
+    // v4: Volatilidade alta = SL maior mas CAPPED em 2.0%
     if (volatility > 15) {
-      slPercent = Math.max(slPercent, 2.5);
+      slPercent = Math.max(slPercent, 2.0);
       tpPercent = slPercent * rrMultiplier;
     } else if (volatility > 10) {
-      slPercent = Math.max(slPercent, 1.8);
+      slPercent = Math.max(slPercent, 1.5);
       tpPercent = slPercent * rrMultiplier;
     } else if (volatility > 5) {
-      slPercent = Math.max(slPercent, 1.2);
+      slPercent = Math.max(slPercent, 1.0);
       tpPercent = slPercent * rrMultiplier;
     }
     
