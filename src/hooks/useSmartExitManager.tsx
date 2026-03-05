@@ -58,8 +58,8 @@ export function useSmartExitManager() {
     return baseTrailingPct; // Abaixo de 1% → trailing normal (largo)
   }, []);
 
-  // Configurações de trailing stop - MAIS LARGAS para não fechar winners cedo
-  // PROBLEMA ANTERIOR: breakeven em 0.15-0.25% fecha quase tudo no entry, R:R = 0.11
+  // Configurações de trailing stop - MAIS PACIENTES para evitar cortar lucro cedo
+  // Regras agora usam % de movimento de preço (não multiplicado pela alavancagem)
   const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any, profitPct?: number): TrailingStopConfig => {
     let baseConfig: TrailingStopConfig;
 
@@ -68,31 +68,31 @@ export function useSmartExitManager() {
       
       if (volatility < 2) {
         baseConfig = {
-          activationPct: 1.5,   // Só ativar com 1.5% lucro (antes: 0.15-0.25%)
-          trailingPct: Math.max(dynamicStops.lowVolatility || 0.8, 0.8),
-          breakEvenPct: 0.8,    // Breakeven só com 0.8% (antes: 0.15%)
+          activationPct: 2.0,
+          trailingPct: Math.max(dynamicStops.lowVolatility || 1.0, 1.0),
+          breakEvenPct: 1.2,
         };
       } else if (volatility < 5) {
         baseConfig = {
-          activationPct: 2.0,
-          trailingPct: Math.max(dynamicStops.mediumVolatility || 1.0, 1.0),
-          breakEvenPct: 1.0,
+          activationPct: 2.8,
+          trailingPct: Math.max(dynamicStops.mediumVolatility || 1.2, 1.2),
+          breakEvenPct: 1.6,
         };
       } else {
         baseConfig = {
-          activationPct: 2.5,
-          trailingPct: Math.max(dynamicStops.highVolatility || 1.2, 1.2),
-          breakEvenPct: 1.5,
+          activationPct: 3.5,
+          trailingPct: Math.max(dynamicStops.highVolatility || 1.5, 1.5),
+          breakEvenPct: 2.0,
         };
       }
     } else {
-      // Fallback sem ML - valores LARGOS
+      // Fallback sem ML
       if (volatility < 2) {
-        baseConfig = { activationPct: 1.5, trailingPct: 0.8, breakEvenPct: 0.8 };
+        baseConfig = { activationPct: 2.0, trailingPct: 1.0, breakEvenPct: 1.2 };
       } else if (volatility < 5) {
-        baseConfig = { activationPct: 2.0, trailingPct: 1.0, breakEvenPct: 1.0 };
+        baseConfig = { activationPct: 2.8, trailingPct: 1.2, breakEvenPct: 1.6 };
       } else {
-        baseConfig = { activationPct: 2.5, trailingPct: 1.2, breakEvenPct: 1.5 };
+        baseConfig = { activationPct: 3.5, trailingPct: 1.5, breakEvenPct: 2.0 };
       }
     }
 
@@ -109,29 +109,32 @@ export function useSmartExitManager() {
     if (mlConfig?.is_enabled && mlConfig?.optimal_patterns?.dynamicTP) {
       const dynamicTP = mlConfig.optimal_patterns.dynamicTP;
       return {
-        firstExitPct: dynamicTP.lowVolatility || 1.5,
-        firstExitSize: 0.5, // 50% da posição
-        secondExitPct: dynamicTP.mediumVolatility || 3.0,
-        secondExitSize: 0.5, // 50% restante
+        // Mais paciente: captura lucro parcial menor e deixa runner maior
+        firstExitPct: Math.max(dynamicTP.lowVolatility || 2.2, 2.2),
+        firstExitSize: 0.3, // 30% da posição
+        secondExitPct: Math.max(dynamicTP.mediumVolatility || 4.5, 4.5),
+        secondExitSize: 0.7, // 70% restante
       };
     }
 
-    // Config padrão
+    // Config padrão (foco em melhorar R:R efetivo)
     return {
-      firstExitPct: 1.5,
-      firstExitSize: 0.5,
-      secondExitPct: 3.0,
-      secondExitSize: 0.5,
+      firstExitPct: 2.2,
+      firstExitSize: 0.3,
+      secondExitPct: 4.5,
+      secondExitSize: 0.7,
     };
   }, []);
 
   // Calcular lucro % atual de uma posição
+  // IMPORTANTE: usar movimento de preço puro (sem multiplicar por alavancagem)
+  // para evitar ativações prematuras de trailing/saídas parciais.
   const calculateProfitPct = useCallback((position: PositionData): number => {
     const priceDiff = position.side === 'Buy' 
       ? position.currentPrice - position.entryPrice
       : position.entryPrice - position.currentPrice;
     
-    return (priceDiff / position.entryPrice) * 100 * position.leverage;
+    return (priceDiff / position.entryPrice) * 100;
   }, []);
 
   // Verificar e executar saída parcial
@@ -375,9 +378,11 @@ export function useSmartExitManager() {
   const processOpenPositions = useCallback(async (
     positions: PositionData[],
     mlConfig: any,
-    volatilityMap: Map<string, number>
+    volatilityMap: Map<string, number>,
+    options?: { enablePartialExit?: boolean }
   ) => {
     const results = [];
+    const shouldUsePartialExit = options?.enablePartialExit ?? true;
 
     for (const position of positions) {
       const volatility = volatilityMap.get(position.symbol) || 2;
@@ -385,16 +390,18 @@ export function useSmartExitManager() {
       const trailingConfig = getAdaptiveTrailingConfig(volatility, mlConfig, currentProfit);
       const partialConfig = getPartialExitConfig(mlConfig);
 
-      // Verificar saída parcial primeiro
-      const partialResult = await checkPartialExit(position, partialConfig);
-      
-      if (partialResult.executed) {
-        results.push({
-          symbol: position.symbol,
-          action: 'PARTIAL_EXIT',
-          level: partialResult.level,
-        });
-        continue; // Não processar trailing se acabou de fazer saída parcial
+      // Verificar saída parcial primeiro (se habilitado)
+      if (shouldUsePartialExit) {
+        const partialResult = await checkPartialExit(position, partialConfig);
+        
+        if (partialResult.executed) {
+          results.push({
+            symbol: position.symbol,
+            action: 'PARTIAL_EXIT',
+            level: partialResult.level,
+          });
+          continue; // Não processar trailing se acabou de fazer saída parcial
+        }
       }
 
       // Calcular trailing stop
