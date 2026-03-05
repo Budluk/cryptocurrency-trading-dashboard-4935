@@ -153,47 +153,42 @@ export const useTradingCalculations = () => {
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🔧 CORREÇÃO CRÍTICA v2: SL MUITO MAIS LARGO + R:R 1:2.5
-    // PROBLEMA REAL: SL de 0.8% com leverage 25x = 0.032% de preço = stop-out por qualquer wick
-    // SOLUÇÃO: SL mínimo 1.5% + leverage reduzido = SL efetivo > 0.1% do preço
+    // 🔧 v4: SL APERTADO + R:R 2.0 REALISTA
+    // PROBLEMA: R:R 3.0 = TP nunca atingido → R:R real 0.37
+    // SOLUÇÃO: SL 1.0-2.0% + TP 2.0-4.0% = R:R 2.0 alcançável
     
-    // SL baseado em ATR: usar 50-60% do ATR
-    const volatilityBasedSL = atrPercent * 0.55; // 55% do ATR
-    const minSL = 0.015; // 1.5% mínimo (antes era 0.8%)
-    const maxSL = 0.050; // 5.0% máximo (antes era 3.0%)
+    const volatilityBasedSL = atrPercent * 0.35; // v4: 35% do ATR (era 55%)
+    const minSL = 0.010; // v4: 1.0% mínimo (era 1.5%)
+    const maxSL = 0.025; // v4: 2.5% máximo (era 5.0% — perdia demais)
     
-    // 🎯 R:R 1:3.0 OBRIGATÓRIO para compensar win rate de ~40%
-    const targetRR = 3.0;
+    // 🎯 R:R 1:2.0 REALISTA — TP alcançável com win rate > 40%
+    const targetRR = 2.0;
 
-    // USAR TOPOS/FUNDOS SE DISPONÍVEIS para stops estruturais
     if (highPrice && lowPrice && highPrice > lowPrice) {
       const { swingStop, swingTarget } = findSwingLevels(highPrice, lowPrice, currentPrice, action);
       
       const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
       const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
       
-      // Usar swing levels com margem extra (+30%)
-      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.3));
-      // TP deve manter R:R mínimo
-      takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2.5, swingTargetPct));
+      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.1)); // v4: buffer 10% (era 30%)
+      takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, swingTargetPct));
     } else {
-      // Fallback: usar ATR/volatilidade
       if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
         const mlSL = mlConfig.recommended_stop_loss_pct / 100;
-        stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL * 1.5));
-        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2.5, mlConfig.recommended_take_profit_pct / 100));
+        stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL));
+        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, mlConfig.recommended_take_profit_pct / 100));
       } else {
         stopLossPct = Math.max(minSL, Math.min(maxSL, volatilityBasedSL / 100));
         takeProfitPct = stopLossPct * targetRR;
       }
     }
     
-    // Alta volatilidade = SL ainda maior
+    // Alta volatilidade = SL maior mas CAPPED
     if (atrPercent > 10) {
-      stopLossPct = Math.max(stopLossPct, 0.025); // Mínimo 2.5% em alta vol
+      stopLossPct = Math.max(stopLossPct, 0.018); // 1.8% em alta vol
       takeProfitPct = stopLossPct * targetRR;
     } else if (atrPercent > 5) {
-      stopLossPct = Math.max(stopLossPct, 0.018); // Mínimo 1.8% em vol média
+      stopLossPct = Math.max(stopLossPct, 0.012); // 1.2% em vol média
       takeProfitPct = stopLossPct * targetRR;
     }
     

@@ -1174,15 +1174,22 @@ export const MultiAssetTrader = () => {
             takeProfit = sltp.takeProfit;
           }
           
-          // 🔧 ML AUTO-CORRECTOR: Aplicar SL/TP corrigidos (com MÍNIMOS seguros)
-          let minSlPct = 0.018; // 1.8% default (v3: aumentado de 1.5%)
-          let rr = 3.0; // 1:3.0 OBRIGATÓRIO (v3: aumentado de 2.5)
+          // 🔧 v4: R:R REALISTA — 1:2.0 para que TP seja alcançável
+          // DIAGNÓSTICO: R:R 3.0 resultou em R:R real de 0.37 (TP nunca atingido)
+          // CORREÇÃO: SL 1.2% + TP 2.4% = R:R 2.0 alcançável
+          let minSlPct = 0.012; // v4: 1.2% (era 1.8% — muito largo, perdia muito por trade)
+          let rr = 2.0; // v4: 1:2.0 REALISTA (era 3.0 — TP inalcançável)
+          
+          // BTC precisa de SL mais apertado (alta liquidez, menos wicks)
+          if (symbol === 'BTCUSDT') {
+            minSlPct = 0.008; // 0.8% para BTC
+            rr = 2.0;
+          }
           
           if (mlAutoCorrectEnabled && mlAutoConfig) {
-            // Usar parâmetros corrigidos pelo ML mas NUNCA abaixo do mínimo
-            const mlSlRaw = (mlAutoConfig.stopLossPct || 1.5) / 100;
-            minSlPct = Math.max(0.015, mlSlRaw); // NUNCA abaixo de 1.5%
-            const tpPct = minSlPct * rr; // Forçar R:R 2.5
+            const mlSlRaw = (mlAutoConfig.stopLossPct || 1.2) / 100;
+            minSlPct = Math.max(0.008, Math.min(0.020, mlSlRaw)); // Cap entre 0.8% e 2.0%
+            const tpPct = minSlPct * rr;
             console.log(`🔧 ML SL/TP: SL=${(minSlPct * 100).toFixed(2)}%, TP=${(tpPct * 100).toFixed(2)}%, R:R=${rr.toFixed(1)}`);
           }
           
@@ -1191,57 +1198,52 @@ export const MultiAssetTrader = () => {
           const tpNum = parseFloat(takeProfit);
 
           if (analysisResult.action === 'BUY') {
-            // BUY: SL abaixo, TP acima
             if (!Number.isFinite(slNum) || slNum >= currentPrice) {
-              const corrected = (currentPrice * (1 - minSlPct)).toFixed(6);
-              console.log(`⚠️ SL BUY corrigido: ${stopLoss} → ${corrected} (preço: ${currentPrice})`);
-              stopLoss = corrected;
+              stopLoss = (currentPrice * (1 - minSlPct)).toFixed(6);
             }
-            // Verificar se SL está pelo menos 1.5% abaixo
             const slDist = (currentPrice - parseFloat(stopLoss)) / currentPrice;
             if (slDist < minSlPct) {
               stopLoss = (currentPrice * (1 - minSlPct)).toFixed(6);
             }
+            // v4: Limitar SL máximo a 2% para reduzir perda por trade
+            if (slDist > 0.020) {
+              stopLoss = (currentPrice * (1 - 0.020)).toFixed(6);
+            }
             if (!Number.isFinite(tpNum) || tpNum <= currentPrice) {
-              const corrected = (currentPrice * (1 + minSlPct * rr)).toFixed(6);
-              console.log(`⚠️ TP BUY corrigido: ${takeProfit} → ${corrected} (preço: ${currentPrice})`);
-              takeProfit = corrected;
+              takeProfit = (currentPrice * (1 + minSlPct * rr)).toFixed(6);
             }
           } else {
-            // SELL: SL acima, TP abaixo
             if (!Number.isFinite(slNum) || slNum <= currentPrice) {
-              const corrected = (currentPrice * (1 + minSlPct)).toFixed(6);
-              console.log(`⚠️ SL SELL corrigido: ${stopLoss} → ${corrected} (preço: ${currentPrice})`);
-              stopLoss = corrected;
+              stopLoss = (currentPrice * (1 + minSlPct)).toFixed(6);
             }
-            // Verificar se SL está pelo menos 1.5% acima
             const slDist = (parseFloat(stopLoss) - currentPrice) / currentPrice;
             if (slDist < minSlPct) {
               stopLoss = (currentPrice * (1 + minSlPct)).toFixed(6);
             }
+            // v4: Limitar SL máximo a 2%
+            if (slDist > 0.020) {
+              stopLoss = (currentPrice * (1 + 0.020)).toFixed(6);
+            }
             if (!Number.isFinite(tpNum) || tpNum >= currentPrice) {
-              const corrected = (currentPrice * (1 - minSlPct * rr)).toFixed(6);
-              console.log(`⚠️ TP SELL corrigido: ${takeProfit} → ${corrected} (preço: ${currentPrice})`);
-              takeProfit = corrected;
+              takeProfit = (currentPrice * (1 - minSlPct * rr)).toFixed(6);
             }
           }
 
-          // 🔒 VALIDAÇÃO FINAL R:R — v3: mínimo 1:2.5 obrigatório
+          // 🔒 VALIDAÇÃO FINAL R:R — v4: mínimo 1:1.8, target 1:2.0
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);
             const slDist = Math.abs(currentPrice - finalSL);
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
-            if (actualRR < 2.5) {
-              // Recalcular TP para forçar R:R 3.0
-              const forcedTPDist = slDist * 3.0;
+            if (actualRR < 1.8) {
+              const forcedTPDist = slDist * 2.0;
               if (analysisResult.action === 'BUY') {
                 takeProfit = (currentPrice + forcedTPDist).toFixed(6);
               } else {
                 takeProfit = (currentPrice - forcedTPDist).toFixed(6);
               }
-              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 2.5 → forçado 3.0 (TP: ${takeProfit})`);
+              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 1.8 → forçado 2.0 (TP: ${takeProfit})`);
             } else {
               console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 OK`);
             }
