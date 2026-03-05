@@ -523,7 +523,7 @@ export const MultiAssetTrader = () => {
           unrealizedPnl: parseFloat(p.unrealisedPnl),
           leverage: parseFloat(p.leverage),
         }));
-        await processOpenPositions(positionsData, mlConfig, volatilityMap);
+        await processOpenPositions(positionsData, mlConfig, volatilityMap, { enablePartialExit: partialExitEnabled });
       }
 
       // Detectar posições que fecharam e sincronizar PnL
@@ -555,7 +555,7 @@ export const MultiAssetTrader = () => {
     } catch (error) {
       console.error('Erro ao atualizar smart exits:', error);
     }
-  }, [smartExitEnabled, trailingStopEnabled, isTestnet, mlConfig, processOpenPositions, positionTracking, syncClosedPositionsPnL, clearPositionState, refetch]);
+  }, [smartExitEnabled, trailingStopEnabled, partialExitEnabled, isTestnet, mlConfig, processOpenPositions, positionTracking, syncClosedPositionsPnL, clearPositionState, refetch]);
 
   const analyzeAndTrade = async () => {
     // 🔒 Mutex: impedir execuções concorrentes
