@@ -46,16 +46,16 @@ export function useSmartExitManager() {
     breakEvenActivated: new Map(),
   });
 
-  // TRAILING PROGRESSIVO: quanto mais lucro, mais apertado - MAS nunca ultra-apertado
-  // PROBLEMA ANTERIOR: trailing de 0.15% fecha winners cedo demais, destruindo R:R
+  // TRAILING PROGRESSIVO v5: mais agressivo para TRANCAR lucro rápido
+  // PROBLEMA: mercado volta contra antes de atingir targets → precisa proteger lucro cedo
   const getProgressiveTrailingPct = useCallback((profitPct: number, baseTrailingPct: number): number => {
-    // Níveis progressivos - trailing aperta MAS mantém espaço para respirar
-    if (profitPct >= 8.0) return Math.max(baseTrailingPct * 0.35, 0.5);  // 8%+ → 0.5% mínimo
-    if (profitPct >= 5.0) return Math.max(baseTrailingPct * 0.45, 0.6);  // 5%+ → 0.6% mínimo
-    if (profitPct >= 3.0) return Math.max(baseTrailingPct * 0.55, 0.7);  // 3%+ → 0.7% mínimo
-    if (profitPct >= 2.0) return Math.max(baseTrailingPct * 0.65, 0.8);  // 2%+ → 0.8% mínimo
-    if (profitPct >= 1.0) return Math.max(baseTrailingPct * 0.8, 0.9);   // 1%+ → 0.9% mínimo
-    return baseTrailingPct; // Abaixo de 1% → trailing normal (largo)
+    if (profitPct >= 5.0) return Math.max(baseTrailingPct * 0.25, 0.25); // 5%+ → 0.25% (tranca forte)
+    if (profitPct >= 3.0) return Math.max(baseTrailingPct * 0.30, 0.30); // 3%+ → 0.30%
+    if (profitPct >= 2.0) return Math.max(baseTrailingPct * 0.40, 0.35); // 2%+ → 0.35%
+    if (profitPct >= 1.5) return Math.max(baseTrailingPct * 0.50, 0.40); // 1.5%+ → 0.40%
+    if (profitPct >= 1.0) return Math.max(baseTrailingPct * 0.60, 0.45); // 1%+ → 0.45%
+    if (profitPct >= 0.6) return Math.max(baseTrailingPct * 0.75, 0.50); // 0.6%+ → 0.50%
+    return baseTrailingPct;
   }, []);
 
   // Configurações de trailing stop - MAIS PACIENTES para evitar cortar lucro cedo
@@ -66,33 +66,34 @@ export function useSmartExitManager() {
     if (mlConfig?.is_enabled && mlConfig?.optimal_patterns?.dynamicStops) {
       const dynamicStops = mlConfig.optimal_patterns.dynamicStops;
       
+      // v5: ativação MAIS RÁPIDA para proteger lucro antes do mercado reverter
       if (volatility < 2) {
         baseConfig = {
-          activationPct: 2.0,
-          trailingPct: Math.max(dynamicStops.lowVolatility || 1.0, 1.0),
-          breakEvenPct: 1.2,
+          activationPct: 0.8,
+          trailingPct: Math.max(dynamicStops.lowVolatility || 0.5, 0.5),
+          breakEvenPct: 0.5,
         };
       } else if (volatility < 5) {
         baseConfig = {
-          activationPct: 2.8,
-          trailingPct: Math.max(dynamicStops.mediumVolatility || 1.2, 1.2),
-          breakEvenPct: 1.6,
+          activationPct: 1.2,
+          trailingPct: Math.max(dynamicStops.mediumVolatility || 0.6, 0.6),
+          breakEvenPct: 0.7,
         };
       } else {
         baseConfig = {
-          activationPct: 3.5,
-          trailingPct: Math.max(dynamicStops.highVolatility || 1.5, 1.5),
-          breakEvenPct: 2.0,
+          activationPct: 1.5,
+          trailingPct: Math.max(dynamicStops.highVolatility || 0.8, 0.8),
+          breakEvenPct: 0.9,
         };
       }
     } else {
-      // Fallback sem ML
+      // Fallback sem ML - v5: thresholds agressivos
       if (volatility < 2) {
-        baseConfig = { activationPct: 2.0, trailingPct: 1.0, breakEvenPct: 1.2 };
+        baseConfig = { activationPct: 0.8, trailingPct: 0.5, breakEvenPct: 0.5 };
       } else if (volatility < 5) {
-        baseConfig = { activationPct: 2.8, trailingPct: 1.2, breakEvenPct: 1.6 };
+        baseConfig = { activationPct: 1.2, trailingPct: 0.6, breakEvenPct: 0.7 };
       } else {
-        baseConfig = { activationPct: 3.5, trailingPct: 1.5, breakEvenPct: 2.0 };
+        baseConfig = { activationPct: 1.5, trailingPct: 0.8, breakEvenPct: 0.9 };
       }
     }
 
@@ -106,23 +107,23 @@ export function useSmartExitManager() {
 
   // Configurações de saída parcial baseadas em ML
   const getPartialExitConfig = useCallback((mlConfig: any): PartialExitConfig => {
+    // v5: saídas parciais MAIS CEDO para garantir lucro antes de reversão
     if (mlConfig?.is_enabled && mlConfig?.optimal_patterns?.dynamicTP) {
       const dynamicTP = mlConfig.optimal_patterns.dynamicTP;
       return {
-        // Mais paciente: captura lucro parcial menor e deixa runner maior
-        firstExitPct: Math.max(dynamicTP.lowVolatility || 2.2, 2.2),
-        firstExitSize: 0.3, // 30% da posição
-        secondExitPct: Math.max(dynamicTP.mediumVolatility || 4.5, 4.5),
-        secondExitSize: 0.7, // 70% restante
+        firstExitPct: Math.max(dynamicTP.lowVolatility || 1.0, 1.0),
+        firstExitSize: 0.5, // 50% da posição (garantir metade do lucro rápido)
+        secondExitPct: Math.max(dynamicTP.mediumVolatility || 2.0, 2.0),
+        secondExitSize: 0.5, // 50% restante
       };
     }
 
-    // Config padrão (foco em melhorar R:R efetivo)
+    // Config padrão v5: capturar lucro mais cedo
     return {
-      firstExitPct: 2.2,
-      firstExitSize: 0.3,
-      secondExitPct: 4.5,
-      secondExitSize: 0.7,
+      firstExitPct: 1.0,   // 1% de lucro → fecha 50%
+      firstExitSize: 0.5,
+      secondExitPct: 2.0,  // 2% de lucro → fecha resto
+      secondExitSize: 0.5,
     };
   }, []);
 
