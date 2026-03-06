@@ -330,7 +330,7 @@ async function makeBybitRequest(
   }
   
   // Handle non-critical Bybit errors
-  const nonCriticalErrors = [110043, 110025, 110017, 10001];
+  const nonCriticalErrors = [110043, 110025, 110017, 110012, 10001];
   
   const retCodeNum = Number(data.retCode);
 
