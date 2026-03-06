@@ -75,7 +75,7 @@ const GLOBAL_BLACKLIST = new Set([
   'NOTUSDT',       // Poucos dados, PnL marginal
 ]);
 
-// 🟢 SÍMBOLOS PREMIUM - Comprovados + BTC (alta liquidez)
+// 🟢 SÍMBOLOS PREMIUM - Comprovados + BTC/SOL (alta liquidez)
 const PREMIUM_SYMBOLS = new Map([
   ['NIGHTUSDT', { avgWinRate: 84.4, totalPnl: 3.11 }],
   ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }],
@@ -83,6 +83,7 @@ const PREMIUM_SYMBOLS = new Map([
   ['JELLYJELLYUSDT', { avgWinRate: 60, totalPnl: 1.46 }],
   ['FLUXUSDT', { avgWinRate: 66.7, totalPnl: 0.11 }],
   ['BTCUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP mais apertados
+  ['SOLUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP apertados
 ]);
 
 // 📊 Configurações otimizadas v4 — R:R REALISTA para aumentar Profit Factor
