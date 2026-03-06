@@ -75,7 +75,7 @@ const GLOBAL_BLACKLIST = new Set([
   'NOTUSDT',       // Poucos dados, PnL marginal
 ]);
 
-// 🟢 SÍMBOLOS PREMIUM - Comprovados + BTC (alta liquidez)
+// 🟢 SÍMBOLOS PREMIUM - Comprovados + BTC/SOL (alta liquidez)
 const PREMIUM_SYMBOLS = new Map([
   ['NIGHTUSDT', { avgWinRate: 84.4, totalPnl: 3.11 }],
   ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }],
@@ -83,6 +83,7 @@ const PREMIUM_SYMBOLS = new Map([
   ['JELLYJELLYUSDT', { avgWinRate: 60, totalPnl: 1.46 }],
   ['FLUXUSDT', { avgWinRate: 66.7, totalPnl: 0.11 }],
   ['BTCUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP mais apertados
+  ['SOLUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP apertados
 ]);
 
 // 📊 Configurações otimizadas v4 — R:R REALISTA para aumentar Profit Factor
@@ -280,8 +281,8 @@ export const useDataDrivenStrategy = () => {
     // v4: R:R 2.0 para TODOS — TP alcançável
     let rrMultiplier = 2.0;
     
-    // BTC: SL ainda mais apertado (alta liquidez)
-    if (symbol === 'BTCUSDT') {
+    // BTC/SOL: SL ainda mais apertado (alta liquidez)
+    if (symbol === 'BTCUSDT' || symbol === 'SOLUSDT') {
       slPercent = Math.max(0.5, Math.min(1.0, volatility * 0.06));
       rrMultiplier = 2.0;
     }
