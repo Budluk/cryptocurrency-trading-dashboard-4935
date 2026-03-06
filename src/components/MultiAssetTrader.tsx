@@ -81,7 +81,7 @@ export const MultiAssetTrader = () => {
   const { analyzeSignal, fetchComprehensiveAI, fetchBTCTrend } = useSignalAnalysis();
   const { isPatternBlocked, recordTradeResult, getBlockedStats, blockedCount, forceUnblock, loadHistoricalPatterns } = useLosingPatternBlocker();
   const { 
-    analyzeSymbol, shouldTradeDataDriven, getOptimalStopTakeProfit, 
+    analyzeSymbol, shouldTradeDataDriven, 
     filterAssetsDataDriven, hasAssetsForCurrentHour, getAssetsForCurrentHour, getStrategyStats,
     GLOBAL_BLACKLIST, PREMIUM_SYMBOLS, HOUR_ASSET_MAP
   } = useDataDrivenStrategy();
@@ -1149,87 +1149,56 @@ export const MultiAssetTrader = () => {
 
           if (parseFloat(orderValueUSD) < 5) continue;
 
-          // 🆕 Calcular SL/TP baseado em DADOS HISTÓRICOS + estrutura de preço
+          // 🆕 Calcular SL/TP UNIFICADO — sem duplicação
           const priceRange = highPrice - lowPrice;
           const atrPercent = (priceRange / currentPrice) * 100;
           
-          // Usar cálculo data-driven para símbolos ideais ou premium
-          let stopLoss: string, takeProfit: string;
-          if (isOptimalForHour || isPremiumSymbol) {
-            const optimalSLTP = getOptimalStopTakeProfit(
-              symbol, 
-              currentPrice, 
-              analysisResult.action === 'BUY' ? 'Buy' : 'Sell',
-              volatility
-            );
-            stopLoss = optimalSLTP.stopLoss.toFixed(6);
-            takeProfit = optimalSLTP.takeProfit.toFixed(6);
-            console.log(`📊 ${symbol} SL/TP otimizado: ${optimalSLTP.reason}`);
-          } else {
-            const sltp = calculateStopTakeProfit(
-              currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfig,
-              highPrice, lowPrice
-            );
-            stopLoss = sltp.stopLoss;
-            takeProfit = sltp.takeProfit;
-          }
+          const symbolProfile = {
+            isOptimalForHour: isOptimalForHour,
+            isPremium: isPremiumSymbol,
+            hourWinRate: symbolAnalysis.hourWinRate,
+            isBTCOrSOL: symbol === 'BTCUSDT' || symbol === 'SOLUSDT'
+          };
           
-          // 🔧 v4: R:R REALISTA — 1:2.0 para que TP seja alcançável
-          // DIAGNÓSTICO: R:R 3.0 resultou em R:R real de 0.37 (TP nunca atingido)
-          // CORREÇÃO: SL 1.2% + TP 2.4% = R:R 2.0 alcançável
-          let minSlPct = 0.012; // v4: 1.2% (era 1.8% — muito largo, perdia muito por trade)
-          let rr = 2.0; // v4: 1:2.0 REALISTA (era 3.0 — TP inalcançável)
-          
-          // BTC precisa de SL mais apertado (alta liquidez, menos wicks)
-          if (symbol === 'BTCUSDT') {
-            minSlPct = 0.008; // 0.8% para BTC
-            rr = 2.0;
-          }
-          
+          // ML Auto-Corrector override
+          let mlConfigForSLTP = mlConfig;
           if (mlAutoCorrectEnabled && mlAutoConfig) {
-            const mlSlRaw = (mlAutoConfig.stopLossPct || 1.2) / 100;
-            minSlPct = Math.max(0.008, Math.min(0.020, mlSlRaw)); // Cap entre 0.8% e 2.0%
-            const tpPct = minSlPct * rr;
-            console.log(`🔧 ML SL/TP: SL=${(minSlPct * 100).toFixed(2)}%, TP=${(tpPct * 100).toFixed(2)}%, R:R=${rr.toFixed(1)}`);
+            mlConfigForSLTP = {
+              ...mlConfig,
+              is_enabled: true,
+              recommended_stop_loss_pct: Math.max(0.8, Math.min(2.0, mlAutoConfig.stopLossPct || 1.2)),
+              recommended_take_profit_pct: Math.max(1.6, Math.min(4.0, (mlAutoConfig.stopLossPct || 1.2) * 2.0)),
+            };
           }
           
-          // 🔒 VALIDAÇÃO CRÍTICA: Garantir SL/TP no lado correto do preço
+          const sltp = calculateStopTakeProfit(
+            currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfigForSLTP,
+            highPrice, lowPrice, symbolProfile
+          );
+          let stopLoss = sltp.stopLoss;
+          let takeProfit = sltp.takeProfit;
+
+          // 🔒 VALIDAÇÃO: Garantir SL/TP no lado correto do preço
           const slNum = parseFloat(stopLoss);
           const tpNum = parseFloat(takeProfit);
 
           if (analysisResult.action === 'BUY') {
             if (!Number.isFinite(slNum) || slNum >= currentPrice) {
-              stopLoss = (currentPrice * (1 - minSlPct)).toFixed(6);
-            }
-            const slDist = (currentPrice - parseFloat(stopLoss)) / currentPrice;
-            if (slDist < minSlPct) {
-              stopLoss = (currentPrice * (1 - minSlPct)).toFixed(6);
-            }
-            // v4: Limitar SL máximo a 2% para reduzir perda por trade
-            if (slDist > 0.020) {
-              stopLoss = (currentPrice * (1 - 0.020)).toFixed(6);
+              stopLoss = (currentPrice * (1 - sltp.stopLossPct)).toFixed(6);
             }
             if (!Number.isFinite(tpNum) || tpNum <= currentPrice) {
-              takeProfit = (currentPrice * (1 + minSlPct * rr)).toFixed(6);
+              takeProfit = (currentPrice * (1 + sltp.takeProfitPct)).toFixed(6);
             }
           } else {
             if (!Number.isFinite(slNum) || slNum <= currentPrice) {
-              stopLoss = (currentPrice * (1 + minSlPct)).toFixed(6);
-            }
-            const slDist = (parseFloat(stopLoss) - currentPrice) / currentPrice;
-            if (slDist < minSlPct) {
-              stopLoss = (currentPrice * (1 + minSlPct)).toFixed(6);
-            }
-            // v4: Limitar SL máximo a 2%
-            if (slDist > 0.020) {
-              stopLoss = (currentPrice * (1 + 0.020)).toFixed(6);
+              stopLoss = (currentPrice * (1 + sltp.stopLossPct)).toFixed(6);
             }
             if (!Number.isFinite(tpNum) || tpNum >= currentPrice) {
-              takeProfit = (currentPrice * (1 - minSlPct * rr)).toFixed(6);
+              takeProfit = (currentPrice * (1 - sltp.takeProfitPct)).toFixed(6);
             }
           }
 
-          // 🔒 VALIDAÇÃO FINAL R:R — v4: mínimo 1:1.8, target 1:2.0
+          // 🔒 VALIDAÇÃO FINAL R:R — mínimo 1:1.8
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);

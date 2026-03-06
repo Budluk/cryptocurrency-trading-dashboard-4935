@@ -1,5 +1,12 @@
 import { useCallback, useMemo } from 'react';
 
+export interface SymbolRiskProfile {
+  isOptimalForHour: boolean;
+  isPremium: boolean;
+  hourWinRate: number | null;
+  isBTCOrSOL: boolean;
+}
+
 // 🎯 Hook para cálculos de trading reutilizáveis
 export const useTradingCalculations = () => {
   
@@ -137,43 +144,53 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ Calcular Stop Loss e Take Profit - CORRIGIDO PARA REDUZIR STOP-OUTS
-  // ⚠️ Taxa de stop-out de 56% indica SL muito apertado
+  // 🛡️ Calcular Stop Loss e Take Profit UNIFICADO
+  // Combina: dados históricos do símbolo + estrutura de preço + ML + volatilidade
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
-    atrPercent: number, // ATR em % (ex: 5.0 = 5%)
+    atrPercent: number,
     isScalpAsset: boolean,
     mlConfig: any,
     highPrice?: number,
-    lowPrice?: number
+    lowPrice?: number,
+    symbolProfile?: SymbolRiskProfile
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
-    let stopLoss: number;
-    let takeProfit: number;
+    const targetRR = 2.0;
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🔧 v4: SL APERTADO + R:R 2.0 REALISTA
-    // PROBLEMA: R:R 3.0 = TP nunca atingido → R:R real 0.37
-    // SOLUÇÃO: SL 1.0-2.0% + TP 2.0-4.0% = R:R 2.0 alcançável
-    
-    const volatilityBasedSL = atrPercent * 0.35; // v4: 35% do ATR (era 55%)
-    const minSL = 0.010; // v4: 1.0% mínimo (era 1.5%)
-    const maxSL = 0.025; // v4: 2.5% máximo (era 5.0% — perdia demais)
-    
-    // 🎯 R:R 1:2.0 REALISTA — TP alcançável com win rate > 40%
-    const targetRR = 2.0;
+    // 🔧 BTC/SOL: SL mais apertado (alta liquidez)
+    if (symbolProfile?.isBTCOrSOL) {
+      const volSL = Math.max(0.5, Math.min(1.0, atrPercent * 0.06));
+      stopLossPct = volSL / 100;
+      takeProfitPct = stopLossPct * targetRR;
+    }
+    // Ativo ideal para esta hora com alto WR
+    else if (symbolProfile?.isOptimalForHour && symbolProfile.hourWinRate && symbolProfile.hourWinRate >= 70) {
+      const volSL = Math.max(0.8, Math.min(2.0, atrPercent * 0.08)) * 0.85;
+      stopLossPct = Math.max(0.008, volSL / 100);
+      takeProfitPct = stopLossPct * targetRR;
+    }
+    // Ativo ideal com WR médio
+    else if (symbolProfile?.isOptimalForHour && symbolProfile.hourWinRate && symbolProfile.hourWinRate >= 50) {
+      const volSL = Math.max(1.0, Math.min(2.0, atrPercent * 0.08)) * 0.9;
+      stopLossPct = Math.max(0.010, volSL / 100);
+      takeProfitPct = stopLossPct * targetRR;
+    }
+    // Fallback: volatilidade + estrutura de preço
+    else {
+      const volatilityBasedSL = atrPercent * 0.35;
+      const minSL = 0.010;
+      const maxSL = 0.025;
 
-    if (highPrice && lowPrice && highPrice > lowPrice) {
-      const { swingStop, swingTarget } = findSwingLevels(highPrice, lowPrice, currentPrice, action);
-      
-      const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
-      const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
-      
-      stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.1)); // v4: buffer 10% (era 30%)
-      takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, swingTargetPct));
-    } else {
-      if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
+      if (highPrice && lowPrice && highPrice > lowPrice) {
+        const { swingStop, swingTarget } = findSwingLevels(highPrice, lowPrice, currentPrice, action);
+        const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
+        const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
+        stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.1));
+        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, swingTargetPct));
+      } else if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
         const mlSL = mlConfig.recommended_stop_loss_pct / 100;
         stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL));
         takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, mlConfig.recommended_take_profit_pct / 100));
@@ -182,23 +199,28 @@ export const useTradingCalculations = () => {
         takeProfitPct = stopLossPct * targetRR;
       }
     }
-    
-    // Alta volatilidade = SL maior mas CAPPED
+
+    // Alta volatilidade = SL maior mas CAPPED em 2%
     if (atrPercent > 10) {
-      stopLossPct = Math.max(stopLossPct, 0.018); // 1.8% em alta vol
+      stopLossPct = Math.max(stopLossPct, 0.018);
       takeProfitPct = stopLossPct * targetRR;
     } else if (atrPercent > 5) {
-      stopLossPct = Math.max(stopLossPct, 0.012); // 1.2% em vol média
+      stopLossPct = Math.max(stopLossPct, 0.012);
       takeProfitPct = stopLossPct * targetRR;
     }
-    
-    // Scalp assets: SL um pouco menor mas NUNCA abaixo de 1.0%
-    if (isScalpAsset) {
-      stopLossPct = Math.max(0.010, stopLossPct * 0.85); // 1.0% mínimo
+
+    // Scalp assets: SL menor mas NUNCA abaixo de 1.0%
+    if (isScalpAsset && !symbolProfile?.isBTCOrSOL) {
+      stopLossPct = Math.max(0.010, stopLossPct * 0.85);
       takeProfitPct = stopLossPct * targetRR;
     }
-    
+
+    // Cap SL máximo em 2.0%
+    stopLossPct = Math.min(stopLossPct, 0.020);
+    takeProfitPct = stopLossPct * targetRR;
+
     // Aplicar stops
+    let stopLoss: number, takeProfit: number;
     if (action === 'BUY') {
       stopLoss = currentPrice * (1 - stopLossPct);
       takeProfit = currentPrice * (1 + takeProfitPct);
@@ -206,11 +228,10 @@ export const useTradingCalculations = () => {
       stopLoss = currentPrice * (1 + stopLossPct);
       takeProfit = currentPrice * (1 - takeProfitPct);
     }
-    
+
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    
     console.log(`🎯 ${action} ATR: ${atrPercent.toFixed(1)}% → SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}% | R:R ${(takeProfitPct/stopLossPct).toFixed(1)}:1`);
-    
+
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
       takeProfit: takeProfit.toFixed(priceDecimals),

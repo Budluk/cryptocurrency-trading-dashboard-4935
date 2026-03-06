@@ -266,70 +266,6 @@ export const useDataDrivenStrategy = () => {
     };
   }, [analyzeSymbol]);
   
-  // Calcular SL/TP otimizados — v4: R:R 2.0 REALISTA
-  const getOptimalStopTakeProfit = useCallback((
-    symbol: string,
-    entryPrice: number,
-    side: 'Buy' | 'Sell',
-    volatility: number
-  ): { stopLoss: number; takeProfit: number; reason: string } => {
-    const analysis = analyzeSymbol(symbol);
-    
-    // v4: SL mais apertado = perda menor por trade
-    let slPercent = Math.max(0.8, Math.min(2.0, volatility * 0.08));
-    
-    // v4: R:R 2.0 para TODOS — TP alcançável
-    let rrMultiplier = 2.0;
-    
-    // BTC/SOL: SL ainda mais apertado (alta liquidez)
-    if (symbol === 'BTCUSDT' || symbol === 'SOLUSDT') {
-      slPercent = Math.max(0.5, Math.min(1.0, volatility * 0.06));
-      rrMultiplier = 2.0;
-    }
-    // Ativos com alto win rate = podem ter SL menor
-    else if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 70) {
-      slPercent = Math.max(0.8, slPercent * 0.85);
-      rrMultiplier = 2.0;
-    }
-    // Win rate médio
-    else if (analysis.isOptimalForHour && analysis.hourWinRate && analysis.hourWinRate >= 50) {
-      slPercent = Math.max(1.0, slPercent * 0.9);
-      rrMultiplier = 2.0;
-    }
-    // Premium/desconhecido — SL um pouco maior mas R:R igual
-    else {
-      slPercent = Math.max(1.2, slPercent);
-      rrMultiplier = 2.0;
-    }
-    
-    let tpPercent = slPercent * rrMultiplier;
-    
-    // v4: Volatilidade alta = SL maior mas CAPPED em 2.0%
-    if (volatility > 15) {
-      slPercent = Math.max(slPercent, 2.0);
-      tpPercent = slPercent * rrMultiplier;
-    } else if (volatility > 10) {
-      slPercent = Math.max(slPercent, 1.5);
-      tpPercent = slPercent * rrMultiplier;
-    } else if (volatility > 5) {
-      slPercent = Math.max(slPercent, 1.0);
-      tpPercent = slPercent * rrMultiplier;
-    }
-    
-    const slDecimal = slPercent / 100;
-    const tpDecimal = tpPercent / 100;
-    
-    const slMultiplier = side === 'Buy' ? (1 - slDecimal) : (1 + slDecimal);
-    const tpMultiplier = side === 'Buy' ? (1 + tpDecimal) : (1 - tpDecimal);
-    
-    console.log(`📊 ${symbol} Vol: ${volatility.toFixed(1)}% → SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}% | R:R ${rrMultiplier}:1`);
-    
-    return {
-      stopLoss: entryPrice * slMultiplier,
-      takeProfit: entryPrice * tpMultiplier,
-      reason: `SL: ${slPercent.toFixed(2)}% | TP: ${tpPercent.toFixed(2)}% | R:R ${rrMultiplier}:1`
-    };
-  }, [analyzeSymbol]);
   
   // Filtrar ativos para hora atual
   const filterAssetsDataDriven = useCallback((assets: any[]): any[] => {
@@ -383,7 +319,6 @@ export const useDataDrivenStrategy = () => {
   return {
     analyzeSymbol,
     shouldTradeDataDriven,
-    getOptimalStopTakeProfit,
     filterAssetsDataDriven,
     getOptimalConfig,
     hasAssetsForCurrentHour,
