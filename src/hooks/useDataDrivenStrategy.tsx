@@ -281,8 +281,8 @@ export const useDataDrivenStrategy = () => {
     // v4: R:R 2.0 para TODOS — TP alcançável
     let rrMultiplier = 2.0;
     
-    // BTC: SL ainda mais apertado (alta liquidez)
-    if (symbol === 'BTCUSDT') {
+    // BTC/SOL: SL ainda mais apertado (alta liquidez)
+    if (symbol === 'BTCUSDT' || symbol === 'SOLUSDT') {
       slPercent = Math.max(0.5, Math.min(1.0, volatility * 0.06));
       rrMultiplier = 2.0;
     }
