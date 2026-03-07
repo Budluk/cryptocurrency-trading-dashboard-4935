@@ -46,31 +46,27 @@ export function useSmartExitManager() {
     breakEvenActivated: new Map(),
   });
 
-  // TRAILING PROGRESSIVO v6: ULTRA-AGRESSIVO para scalping rápido
-  // PROBLEMA REAL: R:R 0.34 → lucros minúsculos, TP nunca atingido, operações ficam abertas demais
-  // SOLUÇÃO: Trancar qualquer lucro imediatamente, sair rápido
+  // TRAILING PROGRESSIVO v7: mais espaço no início, apertar com lucro alto
+  // v6 era ultra-agressivo → stopava no ruído antes de atingir lucro bom
   const getProgressiveTrailingPct = useCallback((profitPct: number, baseTrailingPct: number): number => {
-    if (profitPct >= 3.0) return 0.15; // 3%+ → trailing ultra-apertado
-    if (profitPct >= 2.0) return 0.20; // 2%+ → 0.20%
-    if (profitPct >= 1.0) return 0.25; // 1%+ → 0.25%
-    if (profitPct >= 0.5) return 0.30; // 0.5%+ → 0.30%
-    if (profitPct >= 0.3) return 0.35; // 0.3%+ → 0.35%
-    return baseTrailingPct;
+    if (profitPct >= 3.0) return 0.20;
+    if (profitPct >= 2.0) return 0.30;
+    if (profitPct >= 1.0) return 0.40;
+    if (profitPct >= 0.5) return 0.50;
+    return baseTrailingPct; // v7: não apertar cedo demais
   }, []);
 
-  // Configurações de trailing stop - MAIS PACIENTES para evitar cortar lucro cedo
-  // Regras agora usam % de movimento de preço (não multiplicado pela alavancagem)
+  // v7: Trailing mais paciente — deixar lucro crescer antes de travar
   const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any, profitPct?: number): TrailingStopConfig => {
     let baseConfig: TrailingStopConfig;
 
-    // v6: ativação MUITO MAIS RÁPIDA — scalping precisa sair rápido
-    // Breakeven em 0.3%, trailing ativa em 0.4-0.6%
+    // v7: breakeven em 0.5% (era 0.3%), trailing ativa em 0.7-1.0%
     if (volatility < 2) {
-      baseConfig = { activationPct: 0.4, trailingPct: 0.35, breakEvenPct: 0.3 };
+      baseConfig = { activationPct: 0.7, trailingPct: 0.50, breakEvenPct: 0.5 };
     } else if (volatility < 5) {
-      baseConfig = { activationPct: 0.5, trailingPct: 0.40, breakEvenPct: 0.3 };
+      baseConfig = { activationPct: 0.8, trailingPct: 0.60, breakEvenPct: 0.5 };
     } else {
-      baseConfig = { activationPct: 0.6, trailingPct: 0.50, breakEvenPct: 0.4 };
+      baseConfig = { activationPct: 1.0, trailingPct: 0.70, breakEvenPct: 0.6 };
     }
 
     // Aplicar trailing progressivo se já tem lucro
@@ -81,15 +77,14 @@ export function useSmartExitManager() {
     return baseConfig;
   }, [getProgressiveTrailingPct]);
 
-  // Configurações de saída parcial baseadas em ML
+  // v7: Saídas parciais mais pacientes — deixar lucro crescer
+  // v6 fechava tudo em 0.8% → ganhos minúsculos não compensavam losses
   const getPartialExitConfig = useCallback((_mlConfig: any): PartialExitConfig => {
-    // v6: saídas parciais ULTRA-RÁPIDAS — problema é que TP nunca é atingido
-    // Solução: realizar lucro em 0.4% e fechar tudo em 0.8%
     return {
-      firstExitPct: 0.4,   // 0.4% de lucro → fecha 60% (garante lucro REAL)
-      firstExitSize: 0.6,
-      secondExitPct: 0.8,  // 0.8% de lucro → fecha resto
-      secondExitSize: 0.4,
+      firstExitPct: 0.6,   // v7: 0.6% lucro → fecha 50% (era 0.4%/60%)
+      firstExitSize: 0.5,
+      secondExitPct: 1.2,  // v7: 1.2% lucro → fecha resto (era 0.8%)
+      secondExitSize: 0.5,
     };
   }, []);
 
@@ -352,13 +347,12 @@ export function useSmartExitManager() {
     const minutesOpen = (now - openTime) / (1000 * 60);
     const profitPct = calculateProfitPct(position);
     
-    // Regra 1: >8 min com prejuízo → fechar imediatamente
-    // Regra 2: >5 min flat (lucro < 0.1%) → fechar para liberar capital
-    // Regra 3: >12 min qualquer situação → fechar (scalping não deve durar tanto)
+    // v7: Mais paciente — dar tempo para o trade se desenvolver
+    // v6 fechava em 5min flat → não dava tempo de atingir saída parcial (0.6%)
     const shouldClose = 
-      (minutesOpen > 8 && profitPct < 0) ||
-      (minutesOpen > 5 && profitPct < 0.1) ||
-      (minutesOpen > 12);
+      (minutesOpen > 12 && profitPct < -0.3) || // 12min com loss significativo
+      (minutesOpen > 10 && profitPct < 0.1) ||   // 10min flat
+      (minutesOpen > 20);                         // 20min hard cap (era 12)
     
     if (!shouldClose) return false;
     

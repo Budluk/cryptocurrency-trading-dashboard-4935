@@ -10,31 +10,31 @@ export interface SymbolRiskProfile {
 // 🎯 Hook para cálculos de trading reutilizáveis
 export const useTradingCalculations = () => {
   
-  // 🎯 Alavancagem para scalping baseada na volatilidade
-  // 🔧 REDUZIDO: Leverage menor = SL mais largo = menos stop-outs
+  // 🎯 v7: Leverage MUITO MENOR = SL efetivo mais largo = menos stop-outs por ruído
+  // PROBLEMA v6: 15-18x leverage + 0.3% SL = stopado por spread/wicks
   const getLeverageForScalping = useCallback((volatility: number): number => {
     if (volatility > 10.0) return 5;
-    if (volatility > 5.0) return 8;
-    if (volatility > 3.0) return 10;
-    if (volatility > 2.0) return 12;
-    if (volatility > 1.0) return 15;
-    return 18; // Mínimo garantido: 5x (capped no caller)
+    if (volatility > 5.0) return 5;
+    if (volatility > 3.0) return 6;
+    if (volatility > 2.0) return 8;
+    if (volatility > 1.0) return 10;
+    return 12; // v7: MAX 12x (era 18x)
   }, []);
 
   // Alavancagem baseada no bankroll e win rate
-  // 🔧 REDUZIDO: Leverage menor para dar mais espaço ao SL
+  // v7: Leverage conservadora — proteger capital
   const getLeverageForBalance = useCallback((balance: number, winRate: number): number => {
-    let baseLeverage = 10;
-    if (balance < 5) baseLeverage = 15;
-    else if (balance < 10) baseLeverage = 12;
-    else if (balance < 20) baseLeverage = 10;
-    else if (balance < 50) baseLeverage = 8;
-    else baseLeverage = 6;
+    let baseLeverage = 8;
+    if (balance < 5) baseLeverage = 10;
+    else if (balance < 10) baseLeverage = 8;
+    else if (balance < 20) baseLeverage = 7;
+    else if (balance < 50) baseLeverage = 6;
+    else baseLeverage = 5;
 
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 20);
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 3, 5);
+    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 2, 12);
+    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 2, 5);
 
-    return Math.max(5, baseLeverage); // NUNCA abaixo de 5x
+    return Math.max(5, Math.min(12, baseLeverage)); // v7: MAX 12x
   }, []);
 
   // 💼 Gerenciamento de capital dinâmico
@@ -144,9 +144,10 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ Calcular Stop Loss e Take Profit UNIFICADO v6
-  // PROBLEMA: R:R 2.0 = TP nunca atingido → PF 0.49
-  // SOLUÇÃO: R:R 1.5 com SL mais apertado = TP alcançável + scalping rápido
+  // 🛡️ v7: SL/TP UNIFICADO — SL MAIS LARGO para aguentar ruído
+  // PROBLEMA v6: SL 0.3-0.6% com leverage 15x = stopado por spread/wick
+  // SOLUÇÃO v7: SL 0.8-1.5% com leverage 5-12x = mesma exposição, menos stop-outs
+  // As saídas parciais (0.4%/0.8% lucro) são o mecanismo REAL de profit-taking
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -157,42 +158,42 @@ export const useTradingCalculations = () => {
     lowPrice?: number,
     symbolProfile?: SymbolRiskProfile
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
-    const targetRR = 1.5; // v6: REDUZIDO de 2.0 → 1.5 (TP alcançável!)
+    const targetRR = 1.5;
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🔧 BTC/SOL: SL ultra-apertado (alta liquidez, spreads baixos)
+    // v7: BTC/SOL — SL 0.5-0.8% (era 0.3-0.6% → stopado demais)
     if (symbolProfile?.isBTCOrSOL) {
-      stopLossPct = Math.max(0.003, Math.min(0.006, atrPercent * 0.04 / 100)); // 0.3%-0.6%
+      stopLossPct = Math.max(0.005, Math.min(0.008, atrPercent * 0.06 / 100));
       takeProfitPct = stopLossPct * targetRR;
     }
     // Ativo ideal para esta hora com alto WR
     else if (symbolProfile?.isOptimalForHour && symbolProfile.hourWinRate && symbolProfile.hourWinRate >= 70) {
-      stopLossPct = Math.max(0.005, Math.min(0.010, atrPercent * 0.06 / 100)); // 0.5%-1.0%
+      stopLossPct = Math.max(0.008, Math.min(0.012, atrPercent * 0.08 / 100));
       takeProfitPct = stopLossPct * targetRR;
     }
     // Ativo ideal com WR médio
     else if (symbolProfile?.isOptimalForHour && symbolProfile.hourWinRate && symbolProfile.hourWinRate >= 50) {
-      stopLossPct = Math.max(0.006, Math.min(0.012, atrPercent * 0.06 / 100)); // 0.6%-1.2%
+      stopLossPct = Math.max(0.008, Math.min(0.015, atrPercent * 0.08 / 100));
       takeProfitPct = stopLossPct * targetRR;
     }
-    // Fallback: volatilidade
+    // Fallback geral
     else {
-      stopLossPct = Math.max(0.006, Math.min(0.012, atrPercent * 0.20 / 100)); // 0.6%-1.2%
+      stopLossPct = Math.max(0.010, Math.min(0.015, atrPercent * 0.20 / 100));
       takeProfitPct = stopLossPct * targetRR;
     }
 
-    // Alta volatilidade = SL ligeiramente maior mas CAPPED em 1.2%
+    // Alta volatilidade = SL maior para não ser stopado
     if (atrPercent > 10) {
-      stopLossPct = Math.max(stopLossPct, 0.010);
+      stopLossPct = Math.max(stopLossPct, 0.012);
       takeProfitPct = stopLossPct * targetRR;
     } else if (atrPercent > 5) {
-      stopLossPct = Math.max(stopLossPct, 0.008);
+      stopLossPct = Math.max(stopLossPct, 0.010);
       takeProfitPct = stopLossPct * targetRR;
     }
 
-    // Cap SL máximo em 1.2% (v6: reduzido de 2.0%)
-    stopLossPct = Math.min(stopLossPct, 0.012);
+    // v7: Cap SL máximo em 1.5% (era 1.2%)
+    stopLossPct = Math.min(stopLossPct, 0.015);
     takeProfitPct = stopLossPct * targetRR;
 
     // Aplicar stops
@@ -206,7 +207,7 @@ export const useTradingCalculations = () => {
     }
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    console.log(`🎯 ${action} ATR: ${atrPercent.toFixed(1)}% → SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}% | R:R ${targetRR}:1`);
+    console.log(`🎯 v7 ${action} ATR: ${atrPercent.toFixed(1)}% → SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}% | R:R ${targetRR}:1`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
