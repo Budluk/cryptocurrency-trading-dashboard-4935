@@ -927,8 +927,8 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS v3: mais restritivos ===
-          let scoreThreshold = 45; // Aumentado de 40
+          // === THRESHOLDS v7: score ALTO para evitar entradas fracas ===
+          let scoreThreshold = 50; // v7: AUMENTADO de 45 → 50
           let minConfirmations = 2;
           
           if (mlDecisionsEnabled && mlConfig?.is_enabled) {
@@ -938,25 +938,25 @@ export const MultiAssetTrader = () => {
             if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 2;
           }
           
-          // Bonus para ativo ideal da hora (menor bonus que antes)
+          // Bonus para ativo ideal da hora
           if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
-            scoreThreshold -= 3; // Reduzido de -5
+            scoreThreshold -= 3;
             minConfirmations = 1;
           }
           
           // Mercado muito volátil: exigir mais
           if (volatility > 12) {
-            scoreThreshold += 3; // Aumentado de +1
+            scoreThreshold += 5; // v7: +5 (era +3)
             minConfirmations = Math.max(2, minConfirmations);
           }
           
-          // v3: Sem dados históricos = score MUITO alto exigido
+          // Sem dados históricos = score MUITO alto exigido
           if (!isOptimalForHour && !symbolAnalysis.isPremium) {
-            scoreThreshold += 10; // Penalidade para símbolos desconhecidos
+            scoreThreshold += 12; // v7: +12 (era +10)
           }
           
-          // Mínimo score (NUNCA abaixo de 42)
-          scoreThreshold = Math.max(42, scoreThreshold);
+          // v7: Mínimo NUNCA abaixo de 47 (era 42)
+          scoreThreshold = Math.max(47, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
@@ -1018,7 +1018,7 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          const leverage = Math.max(5, Math.floor(dynamicLeverage)); // NUNCA abaixo de 5x
+          const leverage = Math.max(5, Math.min(12, Math.floor(dynamicLeverage))); // v7: MAX 12x
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
@@ -1208,21 +1208,22 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          // 🔒 VALIDAÇÃO FINAL R:R — mínimo 1:1.8
+          // 🔒 v7: R:R mínimo 1.4 (era 1.8) — saídas parciais são o mecanismo real
+          // Forçar TP inalcançável = pior que R:R menor com saídas parciais
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);
             const slDist = Math.abs(currentPrice - finalSL);
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
-            if (actualRR < 1.8) {
-              const forcedTPDist = slDist * 2.0;
+            if (actualRR < 1.4) {
+              const forcedTPDist = slDist * 1.5;
               if (analysisResult.action === 'BUY') {
                 takeProfit = (currentPrice + forcedTPDist).toFixed(6);
               } else {
                 takeProfit = (currentPrice - forcedTPDist).toFixed(6);
               }
-              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 1.8 → forçado 2.0 (TP: ${takeProfit})`);
+              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 1.4 → forçado 1.5 (TP: ${takeProfit})`);
             } else {
               console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 OK`);
             }
@@ -1473,15 +1474,15 @@ export const MultiAssetTrader = () => {
     // Executar imediatamente
     analyzeAndTrade();
 
-    // Intervalo principal: 45s (era 30s)
+    // v7: Intervalo principal: 60s (era 45s) — menos overtrading
     const interval = setInterval(() => {
       if (isRunning) analyzeAndTrade();
-    }, 45000);
+    }, 60000);
 
-    // Smart exits: 30s (era 15s)
+    // Smart exits: 25s — manter responsivo para trailing/parciais
     const exitInterval = setInterval(() => {
       void updateSmartExits();
-    }, 30000);
+    }, 25000);
 
     // Sincronizar PnL a cada 60s para alimentar sistema anti-loss
     const pnlSyncInterval = setInterval(() => {
