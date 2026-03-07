@@ -534,6 +534,7 @@ export const MultiAssetTrader = () => {
             openedAtMap 
           });
         }
+      }
 
       // Detectar posições que fecharam e sincronizar PnL
       const openSymbols = new Set(openPositionsData.map((p: any) => p.symbol));
