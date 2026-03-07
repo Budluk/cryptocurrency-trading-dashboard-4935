@@ -144,8 +144,9 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ Calcular Stop Loss e Take Profit UNIFICADO
-  // Combina: dados históricos do símbolo + estrutura de preço + ML + volatilidade
+  // 🛡️ Calcular Stop Loss e Take Profit UNIFICADO v6
+  // PROBLEMA: R:R 2.0 = TP nunca atingido → PF 0.49
+  // SOLUÇÃO: R:R 1.5 com SL mais apertado = TP alcançável + scalping rápido
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -156,67 +157,42 @@ export const useTradingCalculations = () => {
     lowPrice?: number,
     symbolProfile?: SymbolRiskProfile
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
-    const targetRR = 2.0;
+    const targetRR = 1.5; // v6: REDUZIDO de 2.0 → 1.5 (TP alcançável!)
     let stopLossPct: number;
     let takeProfitPct: number;
 
-    // 🔧 BTC/SOL: SL mais apertado (alta liquidez)
+    // 🔧 BTC/SOL: SL ultra-apertado (alta liquidez, spreads baixos)
     if (symbolProfile?.isBTCOrSOL) {
-      const volSL = Math.max(0.5, Math.min(1.0, atrPercent * 0.06));
-      stopLossPct = volSL / 100;
+      stopLossPct = Math.max(0.003, Math.min(0.006, atrPercent * 0.04 / 100)); // 0.3%-0.6%
       takeProfitPct = stopLossPct * targetRR;
     }
     // Ativo ideal para esta hora com alto WR
     else if (symbolProfile?.isOptimalForHour && symbolProfile.hourWinRate && symbolProfile.hourWinRate >= 70) {
-      const volSL = Math.max(0.8, Math.min(2.0, atrPercent * 0.08)) * 0.85;
-      stopLossPct = Math.max(0.008, volSL / 100);
+      stopLossPct = Math.max(0.005, Math.min(0.010, atrPercent * 0.06 / 100)); // 0.5%-1.0%
       takeProfitPct = stopLossPct * targetRR;
     }
     // Ativo ideal com WR médio
     else if (symbolProfile?.isOptimalForHour && symbolProfile.hourWinRate && symbolProfile.hourWinRate >= 50) {
-      const volSL = Math.max(1.0, Math.min(2.0, atrPercent * 0.08)) * 0.9;
-      stopLossPct = Math.max(0.010, volSL / 100);
+      stopLossPct = Math.max(0.006, Math.min(0.012, atrPercent * 0.06 / 100)); // 0.6%-1.2%
       takeProfitPct = stopLossPct * targetRR;
     }
-    // Fallback: volatilidade + estrutura de preço
+    // Fallback: volatilidade
     else {
-      const volatilityBasedSL = atrPercent * 0.35;
-      const minSL = 0.010;
-      const maxSL = 0.025;
-
-      if (highPrice && lowPrice && highPrice > lowPrice) {
-        const { swingStop, swingTarget } = findSwingLevels(highPrice, lowPrice, currentPrice, action);
-        const swingStopPct = Math.abs((currentPrice - swingStop) / currentPrice);
-        const swingTargetPct = Math.abs((swingTarget - currentPrice) / currentPrice);
-        stopLossPct = Math.max(minSL, Math.min(maxSL, swingStopPct * 1.1));
-        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, swingTargetPct));
-      } else if (mlConfig?.is_enabled && mlConfig?.recommended_stop_loss_pct) {
-        const mlSL = mlConfig.recommended_stop_loss_pct / 100;
-        stopLossPct = Math.max(minSL, Math.min(maxSL, mlSL));
-        takeProfitPct = Math.max(stopLossPct * targetRR, Math.min(maxSL * 2, mlConfig.recommended_take_profit_pct / 100));
-      } else {
-        stopLossPct = Math.max(minSL, Math.min(maxSL, volatilityBasedSL / 100));
-        takeProfitPct = stopLossPct * targetRR;
-      }
+      stopLossPct = Math.max(0.006, Math.min(0.012, atrPercent * 0.20 / 100)); // 0.6%-1.2%
+      takeProfitPct = stopLossPct * targetRR;
     }
 
-    // Alta volatilidade = SL maior mas CAPPED em 2%
+    // Alta volatilidade = SL ligeiramente maior mas CAPPED em 1.2%
     if (atrPercent > 10) {
-      stopLossPct = Math.max(stopLossPct, 0.018);
+      stopLossPct = Math.max(stopLossPct, 0.010);
       takeProfitPct = stopLossPct * targetRR;
     } else if (atrPercent > 5) {
-      stopLossPct = Math.max(stopLossPct, 0.012);
+      stopLossPct = Math.max(stopLossPct, 0.008);
       takeProfitPct = stopLossPct * targetRR;
     }
 
-    // Scalp assets: SL menor mas NUNCA abaixo de 1.0%
-    if (isScalpAsset && !symbolProfile?.isBTCOrSOL) {
-      stopLossPct = Math.max(0.010, stopLossPct * 0.85);
-      takeProfitPct = stopLossPct * targetRR;
-    }
-
-    // Cap SL máximo em 2.0%
-    stopLossPct = Math.min(stopLossPct, 0.020);
+    // Cap SL máximo em 1.2% (v6: reduzido de 2.0%)
+    stopLossPct = Math.min(stopLossPct, 0.012);
     takeProfitPct = stopLossPct * targetRR;
 
     // Aplicar stops
@@ -230,7 +206,7 @@ export const useTradingCalculations = () => {
     }
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    console.log(`🎯 ${action} ATR: ${atrPercent.toFixed(1)}% → SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}% | R:R ${(takeProfitPct/stopLossPct).toFixed(1)}:1`);
+    console.log(`🎯 ${action} ATR: ${atrPercent.toFixed(1)}% → SL: ${(stopLossPct*100).toFixed(2)}% | TP: ${(takeProfitPct*100).toFixed(2)}% | R:R ${targetRR}:1`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
@@ -238,7 +214,7 @@ export const useTradingCalculations = () => {
       stopLossPct,
       takeProfitPct
     };
-  }, [findSwingLevels]);
+  }, []);
 
   return {
     getLeverageForScalping,

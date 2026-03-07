@@ -484,11 +484,17 @@ export const MultiAssetTrader = () => {
           .order('opened_at', { ascending: false })
           .limit(1000);
 
+        // Mapear opened_at para cada posição (para saída por tempo)
+        const openedAtMap = new Map<string, string>();
+
         if (!dbErr && dbRows?.length) {
           const latestIdByKey = new Map<string, string>();
           for (const r of dbRows) {
             const key = `${r.symbol}-${r.side}`;
-            if (!latestIdByKey.has(key)) latestIdByKey.set(key, r.id);
+            if (!latestIdByKey.has(key)) {
+              latestIdByKey.set(key, r.id);
+              openedAtMap.set(key, r.opened_at);
+            }
           }
 
           await Promise.all(
@@ -511,19 +517,23 @@ export const MultiAssetTrader = () => {
             })
           );
         }
-      }
 
-      if (smartExitEnabled && mlConfig?.is_enabled) {
-        const positionsData = openPositionsData.map((p: any) => ({
-          symbol: p.symbol,
-          side: p.side,
-          size: parseFloat(p.size),
-          entryPrice: parseFloat(p.avgPrice),
-          currentPrice: parseFloat(p.markPrice),
-          unrealizedPnl: parseFloat(p.unrealisedPnl),
-          leverage: parseFloat(p.leverage),
-        }));
-        await processOpenPositions(positionsData, mlConfig, volatilityMap, { enablePartialExit: partialExitEnabled });
+        // ⏰ Passar openedAtMap para processOpenPositions (saída por tempo)
+        if (smartExitEnabled) {
+          const positionsData = openPositionsData.map((p: any) => ({
+            symbol: p.symbol,
+            side: p.side,
+            size: parseFloat(p.size),
+            entryPrice: parseFloat(p.avgPrice),
+            currentPrice: parseFloat(p.markPrice),
+            unrealizedPnl: parseFloat(p.unrealisedPnl),
+            leverage: parseFloat(p.leverage),
+          }));
+          await processOpenPositions(positionsData, mlConfig, volatilityMap, { 
+            enablePartialExit: partialExitEnabled,
+            openedAtMap 
+          });
+        }
       }
 
       // Detectar posições que fecharam e sincronizar PnL
