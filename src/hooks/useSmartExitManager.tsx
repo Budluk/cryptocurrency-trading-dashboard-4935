@@ -341,17 +341,91 @@ export function useSmartExitManager() {
     });
   };
 
+  // ⏰ SAÍDA POR TEMPO: fecha posições que ficam abertas demais sem lucro
+  const checkTimeBasedExit = useCallback(async (
+    position: PositionData & { openedAt?: string }
+  ): Promise<boolean> => {
+    if (!position.openedAt) return false;
+    
+    const openTime = new Date(position.openedAt).getTime();
+    const now = Date.now();
+    const minutesOpen = (now - openTime) / (1000 * 60);
+    const profitPct = calculateProfitPct(position);
+    
+    // Regra 1: >8 min com prejuízo → fechar imediatamente
+    // Regra 2: >5 min flat (lucro < 0.1%) → fechar para liberar capital
+    // Regra 3: >12 min qualquer situação → fechar (scalping não deve durar tanto)
+    const shouldClose = 
+      (minutesOpen > 8 && profitPct < 0) ||
+      (minutesOpen > 5 && profitPct < 0.1) ||
+      (minutesOpen > 12);
+    
+    if (!shouldClose) return false;
+    
+    const reason = profitPct < 0 
+      ? `⏰ TIME EXIT: ${position.symbol} aberta ${minutesOpen.toFixed(0)}min com ${profitPct.toFixed(2)}% prejuízo`
+      : `⏰ TIME EXIT: ${position.symbol} aberta ${minutesOpen.toFixed(0)}min - lucro insuficiente (${profitPct.toFixed(2)}%)`;
+    
+    console.log(reason);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('bybit-trading', {
+        body: {
+          action: 'place_order',
+          isTestnet: false,
+          params: {
+            category: 'linear',
+            symbol: position.symbol,
+            side: position.side === 'Buy' ? 'Sell' : 'Buy',
+            orderType: 'Market',
+            qty: String(position.size),
+            reduceOnly: true,
+            positionIdx: 0,
+          }
+        }
+      });
+      
+      if (!error && data?.success) {
+        const userId = await getUserId();
+        await supabase.from('auto_trader_logs').insert({
+          user_id: userId,
+          log_type: 'TIME_EXIT',
+          message: reason,
+          symbol: position.symbol,
+          metadata: { minutesOpen, profitPct, side: position.side }
+        });
+        
+        toast({
+          title: "⏰ Saída por Tempo",
+          description: `${position.symbol}: fechada após ${minutesOpen.toFixed(0)}min (${profitPct.toFixed(2)}%)`,
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error('Erro na saída por tempo:', err);
+    }
+    return false;
+  }, [calculateProfitPct, toast]);
+
   // Processar todas as posições abertas
   const processOpenPositions = useCallback(async (
     positions: PositionData[],
     mlConfig: any,
     volatilityMap: Map<string, number>,
-    options?: { enablePartialExit?: boolean }
+    options?: { enablePartialExit?: boolean; openedAtMap?: Map<string, string> }
   ) => {
     const results = [];
     const shouldUsePartialExit = options?.enablePartialExit ?? true;
 
     for (const position of positions) {
+      // ⏰ Verificar saída por tempo PRIMEIRO (prioridade máxima)
+      const openedAt = options?.openedAtMap?.get(`${position.symbol}-${position.side}`);
+      const timeExited = await checkTimeBasedExit({ ...position, openedAt });
+      if (timeExited) {
+        results.push({ symbol: position.symbol, action: 'TIME_EXIT' });
+        continue;
+      }
+
       const volatility = volatilityMap.get(position.symbol) || 2;
       const currentProfit = calculateProfitPct(position);
       const trailingConfig = getAdaptiveTrailingConfig(volatility, mlConfig, currentProfit);
@@ -367,7 +441,7 @@ export function useSmartExitManager() {
             action: 'PARTIAL_EXIT',
             level: partialResult.level,
           });
-          continue; // Não processar trailing se acabou de fazer saída parcial
+          continue;
         }
       }
 
@@ -375,7 +449,6 @@ export function useSmartExitManager() {
       const trailingResult = calculateTrailingStop(position, trailingConfig);
 
       if (trailingResult.newStop) {
-        // Atualizar stop loss na Bybit
         try {
           await supabase.functions.invoke('bybit-trading', {
             body: {
@@ -404,7 +477,7 @@ export function useSmartExitManager() {
     }
 
     return results;
-  }, [getAdaptiveTrailingConfig, getPartialExitConfig, checkPartialExit, calculateTrailingStop]);
+  }, [getAdaptiveTrailingConfig, getPartialExitConfig, checkPartialExit, calculateTrailingStop, checkTimeBasedExit, calculateProfitPct]);
 
   // Limpar estado de uma posição fechada
   const clearPositionState = useCallback((symbol: string) => {
