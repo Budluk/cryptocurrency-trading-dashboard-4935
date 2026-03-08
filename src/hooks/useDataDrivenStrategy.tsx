@@ -209,7 +209,7 @@ export const useDataDrivenStrategy = () => {
       };
     }
     
-    // Símbolo sem dados — PENALIZAR MAIS para evitar trades cegos
+    // v8: Símbolo sem dados — permitir com cautela (liquidez já filtrada pelo scoring)
     return {
       symbol,
       isBlacklisted: false,
@@ -217,9 +217,9 @@ export const useDataDrivenStrategy = () => {
       hourWinRate: null,
       hourPnl: null,
       isPremium: false,
-      recommendation: 'AVOID', // v3: AVOID em vez de CAUTION para desconhecidos
-      confidenceBoost: -25, // v3: penalidade maior (era -10)
-      reason: `🚫 Sem histórico para ${currentHourUTC}h UTC - EVITAR`
+      recommendation: 'CAUTION', // v8: CAUTION (permite trade se score alto)
+      confidenceBoost: -5, // v8: penalidade LEVE (era -25) — deixar score decidir
+      reason: `🟡 Sem histórico para ${currentHourUTC}h UTC - score decide`
     };
   }, []);
   
@@ -236,10 +236,7 @@ export const useDataDrivenStrategy = () => {
       return { shouldTrade: false, adjustedScore: 0, reason: analysis.reason };
     }
     
-    // v3: Desconhecidos = AVOID por padrão
-    if (analysis.recommendation === 'AVOID') {
-      return { shouldTrade: false, adjustedScore: 0, reason: analysis.reason };
-    }
+    // v8: AVOID apenas para blacklist (desconhecidos agora são CAUTION)
     
     // Ajustar score
     const adjustedScore = Math.min(100, Math.max(0, signalScore + analysis.confidenceBoost));
