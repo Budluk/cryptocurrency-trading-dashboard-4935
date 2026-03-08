@@ -921,13 +921,13 @@ export const MultiAssetTrader = () => {
             minConfirmations = Math.max(2, minConfirmations);
           }
           
-          // Sem dados históricos = score MUITO alto exigido
+          // v8: Sem dados históricos = penalidade MODERADA (era +12)
           if (!isOptimalForHour && !symbolAnalysis.isPremium) {
-            scoreThreshold += 12; // v7: +12 (era +10)
+            scoreThreshold += 5; // v8: +5 (era +12) — deixar entrar se score bom
           }
           
-          // v7: Mínimo NUNCA abaixo de 47 (era 42)
-          scoreThreshold = Math.max(47, scoreThreshold);
+          // v8: Mínimo NUNCA abaixo de 45 (era 47)
+          scoreThreshold = Math.max(45, scoreThreshold);
           
           // Passar symbol e BTC trend para análise
           const analysisResult = analyzeSignal({
