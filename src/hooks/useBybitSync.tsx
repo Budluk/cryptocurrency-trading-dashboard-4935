@@ -231,9 +231,9 @@ export function useBybitSync(isTestnet: boolean) {
           return t.volatility > minVol && t.volume24h > minVolume && t.score > minScore;
         })
         .sort((a: AssetScore, b: AssetScore) => b.score - a.score)
-        .slice(0, 20);
+        .slice(0, 50); // v8: EXPANDIDO de 20→50 para cobrir mais ativos lucrativos
 
-      const topSymbols = scoredList.slice(0, 10).map(t => t.symbol);
+      const topSymbols = scoredList.slice(0, 25).map(t => t.symbol); // v8: 25 top symbols
 
       if (topSymbols.length > 0) {
         cache.volatileAssets = {
