@@ -781,7 +781,7 @@ export const MultiAssetTrader = () => {
           if (!a.isWhitelisted && b.isWhitelisted) return 1;
           return b.assetScore - a.assetScore;
         })
-        .slice(0, 30);
+        .slice(0, 50); // v8: EXPANDIDO de 30→50 ativos
       
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
 
@@ -837,11 +837,11 @@ export const MultiAssetTrader = () => {
         ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side }))
         : openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
       
-      // === LIMITES POR CICLO — v3: mais restritivo ===
+      // === LIMITES POR CICLO — v8: mais agressivo para mais entradas ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 1; // v3: máximo 1 por direção
-      const MAX_TRADES_PER_CYCLE = 2; // v3: reduzido de 3 para 2
+      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // v8: 2 por direção (era 1)
+      const MAX_TRADES_PER_CYCLE = 4; // v8: 4 por ciclo (era 2)
       
       // Contar posições abertas por direção (incluir demo se ativo)
       const allOpenPositions = isDemoMode ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side })) : openPositions;
@@ -852,65 +852,10 @@ export const MultiAssetTrader = () => {
       // 🚫 BLOQUEAR HEDGE: símbolos já com posição aberta
       const symbolsWithOpenPosition = new Set(allOpenPositions.map(p => p.symbol));
       
-      // 🎯 Símbolos permitidos: EXPANDIDO - todos os ativos com liquidez razoável
-      // Em vez de whitelist restritiva, usar os top ativos já filtrados por volume/volatilidade
-      const ALLOWED_SYMBOLS = new Set([
-        // Major caps
-        'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
-        'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-        'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'NEARUSDT', 'APTUSDT',
-        // Mid caps com liquidez
-        'SUIUSDT', 'OPUSDT', 'ARBUSDT', 'INJUSDT', 'TIAUSDT',
-        'SEIUSDT', 'JUPUSDT', 'WLDUSDT', 'STXUSDT', 'IMXUSDT',
-        'RUNEUSDT', 'FETUSDT', 'RENDERUSDT', 'AGLDUSDT', 'BELUSDT',
-        'CYBERUSDT', 'ENSOUSDT', 'HYPEUSDT', 'PROMPTUSDT', 'AZTECUSDT',
-        // Memes e altcoins populares
-        'PEPEUSDT', '1000PEPEUSDT', 'SHIBUSDT', '1000SHIBUSDT', 'FLOKIUSDT',
-        '1000FLOKIUSDT', 'BONKUSDT', '1000BONKUSDT', 'WIFUSDT', 'MEMEUSDT',
-        // DeFi
-        'AAVEUSDT', 'UNIUSDT', 'MKRUSDT', 'COMPUSDT', 'CRVUSDT',
-        'LDOUSDT', 'PENDLEUSDT', 'GMXUSDT', 'DYDXUSDT',
-        // Layer 1/2
-        'FILUSDT', 'ALGOUSDT', 'FTMUSDT', 'MANAUSDT', 'SANDUSDT',
-        'GALAUSDT', 'AXSUSDT', 'APEUSDT', 'BLURUSDT', 'CFXUSDT',
-        'KASUSDT', 'TONUSDT', 'TRXUSDT', 'VETUSDT', 'EGLDUSDT',
-        'ICPUSDT', 'HBARUSDT', 'QNTUSDT', 'ARUSDT', 'GRTUSDT',
-        // Outros com volume
-        'ORDIUSDT', 'LUNA2USDT', 'LRCUSDT', 'ENAUSDT', 'PYTHUSDT',
-        'JITOUSDT', 'ONDOUSDT', 'ETHFIUSDT', 'EIGENUSDT', 'ZROUSDT',
-        // Dinâmico: adicionar todos os top ativos do ciclo atual
-        ...topVolatileAssets.map(a => a.instrument.symbol)
-      ]);
+      // v8: SEM whitelist estática — todos os ativos que passaram no scoring de qualidade são permitidos
+      // A blacklist global e os filtros de ML já protegem contra ativos ruins
       
       // 🔧 ML Auto-Corrector: Obter símbolos bloqueados pela correção automática
-      const mlBlockedSymbols = new Set(mlAutoConfig?.blockedSymbols || []);
-      
-      for (const assetData of topVolatileAssets) {
-        if (!isRunning || shouldStopTrading) break;
-        
-        // LIMITE DE TRADES POR CICLO
-        if (openedThisCycle >= MAX_TRADES_PER_CYCLE) {
-          console.log(`⚠️ Limite de ${MAX_TRADES_PER_CYCLE} trades/ciclo atingido`);
-          break;
-        }
-
-        const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
-        const symbol = instrument.symbol;
-        const isScalpAsset = topVolNow.includes(symbol);
-        
-        // 🆕 ANÁLISE BASEADA EM DADOS POR HORA
-        const symbolAnalysis = analyzeSymbol(symbol);
-        const isOptimalForHour = symbolAnalysis.isOptimalForHour;
-        const isPremiumSymbol = symbolAnalysis.isPremium;
-        
-        // 🎯 Verificar se símbolo está na lista permitida (base) - Demo é mais flexível
-        if (!isTestnet && !isDemoMode && !ALLOWED_SYMBOLS.has(symbol)) {
-          const reason = `Fora da lista de símbolos permitidos`;
-          skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
-          continue;
-        }
-        
-        // 🔧 ML PRIMEIRO: Verificar se ML bloqueou este símbolo
         if (mlAutoCorrectEnabled && mlBlockedSymbols.has(symbol)) {
           console.log(`🔧 ML BLOQUEOU SÍMBOLO: ${symbol} (WR ruim)`);
           continue;
