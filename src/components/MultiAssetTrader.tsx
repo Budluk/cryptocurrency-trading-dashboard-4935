@@ -856,6 +856,32 @@ export const MultiAssetTrader = () => {
       // A blacklist global e os filtros de ML já protegem contra ativos ruins
       
       // 🔧 ML Auto-Corrector: Obter símbolos bloqueados pela correção automática
+      const mlBlockedSymbols = new Set(mlAutoConfig?.blockedSymbols || []);
+      
+      for (const assetData of topVolatileAssets) {
+        if (!isRunning || shouldStopTrading) break;
+        
+        // LIMITE DE TRADES POR CICLO
+        if (openedThisCycle >= MAX_TRADES_PER_CYCLE) {
+          console.log(`⚠️ Limite de ${MAX_TRADES_PER_CYCLE} trades/ciclo atingido`);
+          break;
+        }
+
+        const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
+        const symbol = instrument.symbol;
+        const isScalpAsset = topVolNow.includes(symbol);
+        
+        // 🆕 ANÁLISE BASEADA EM DADOS POR HORA
+        const symbolAnalysis = analyzeSymbol(symbol);
+        const isOptimalForHour = symbolAnalysis.isOptimalForHour;
+        const isPremiumSymbol = symbolAnalysis.isPremium;
+        
+        // 🚫 BLACKLIST GLOBAL: nunca operar
+        if (symbolAnalysis.isBlacklisted) {
+          continue;
+        }
+        
+        // 🔧 ML PRIMEIRO: Verificar se ML bloqueou este símbolo
         if (mlAutoCorrectEnabled && mlBlockedSymbols.has(symbol)) {
           console.log(`🔧 ML BLOQUEOU SÍMBOLO: ${symbol} (WR ruim)`);
           continue;
