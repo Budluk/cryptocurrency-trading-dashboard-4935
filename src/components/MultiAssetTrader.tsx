@@ -782,7 +782,7 @@ export const MultiAssetTrader = () => {
           if (!a.isWhitelisted && b.isWhitelisted) return 1;
           return b.assetScore - a.assetScore;
         })
-        .slice(0, 50); // v8: EXPANDIDO de 30→50 ativos
+        .slice(0, 15); // v13: REDUZIDO de 50→15 — foco em qualidade
       
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
 

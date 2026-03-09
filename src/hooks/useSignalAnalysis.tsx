@@ -253,7 +253,9 @@ export const useSignalAnalysis = () => {
       if (emaCrossover === 'bearish') sellScore += 15;
       if (rsi >= 37 && rsi <= 48) sellScore += 10;
       if (m1.volumeRatio && m1.volumeRatio > 1.5) sellScore += 10;
+      if (m1.volumeRatio && m1.volumeRatio > 2.0) sellScore += 5;
       if (compositeScore && compositeScore < -20) sellScore += 10;
+      if (compositeScore && compositeScore < -35) sellScore += 5;
       if (aiConfidence && aiConfidence > 70) sellScore += 5;
       signalScore = sellScore;
       
