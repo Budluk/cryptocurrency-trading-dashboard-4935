@@ -303,6 +303,15 @@ async function fetchTechnicalAnalysis(symbol: string): Promise<MultiTimeframeTec
         pricePosition,
         signal,
         score,
+        // v11: Strict scalping data
+        emaCrossover,
+        volumeAboveAvg,
+        volumeRatio,
+        isLateral,
+        priceAboveVwap,
+        priceBelowVwap,
+        currentVolume,
+        avgVolume20,
       };
     } catch (error) {
       console.error(`Technical ${name} error:`, error);
