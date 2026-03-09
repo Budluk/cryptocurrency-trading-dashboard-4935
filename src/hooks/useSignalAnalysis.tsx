@@ -232,12 +232,13 @@ export const useSignalAnalysis = () => {
     
     if (allLongMet) {
       action = 'BUY';
-      // Score based on condition strength
-      buyScore = 60; // Base for all conditions met
+      buyScore = 60;
       if (emaCrossover === 'bullish') buyScore += 15; // Fresh cross > already above
       if (rsi >= 52 && rsi <= 60) buyScore += 10; // Sweet spot RSI
       if (m1.volumeRatio && m1.volumeRatio > 1.5) buyScore += 10; // Strong volume
+      if (m1.volumeRatio && m1.volumeRatio > 2.0) buyScore += 5; // Very strong volume
       if (compositeScore && compositeScore > 20) buyScore += 10; // AI confirms
+      if (compositeScore && compositeScore > 35) buyScore += 5; // Strong AI
       if (aiConfidence && aiConfidence > 70) buyScore += 5;
       signalScore = buyScore;
       
@@ -252,7 +253,9 @@ export const useSignalAnalysis = () => {
       if (emaCrossover === 'bearish') sellScore += 15;
       if (rsi >= 37 && rsi <= 48) sellScore += 10;
       if (m1.volumeRatio && m1.volumeRatio > 1.5) sellScore += 10;
+      if (m1.volumeRatio && m1.volumeRatio > 2.0) sellScore += 5;
       if (compositeScore && compositeScore < -20) sellScore += 10;
+      if (compositeScore && compositeScore < -35) sellScore += 5;
       if (aiConfidence && aiConfidence > 70) sellScore += 5;
       signalScore = sellScore;
       
@@ -281,11 +284,12 @@ export const useSignalAnalysis = () => {
     }
     
     // === DETERMINE QUALITY ===
+    // v13: Thresholds mais rigorosos — só high/premium passam
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     if (action) {
-      if (signalScore >= 85) signalQuality = 'premium';
+      if (signalScore >= 90) signalQuality = 'premium';
       else if (signalScore >= 70) signalQuality = 'high';
-      else if (signalScore >= 60) signalQuality = 'medium';
+      else signalQuality = 'medium'; // medium NÃO passa (shouldTrade = false)
     }
     
     // === SKIP REASON FOR NON-ENTRY ===
@@ -313,7 +317,8 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    const shouldTrade = action !== null && signalQuality !== 'low';
+    // v13: APENAS high e premium passam — medium = loss
+    const shouldTrade = action !== null && (signalQuality === 'high' || signalQuality === 'premium');
     const momentumScore = Math.abs(priceChange) * (volumeAboveAvg ? 1.5 : 1);
     const marketRegime: 'trending' | 'ranging' | 'volatile' = 
       volatility > 12 ? 'volatile' : Math.abs(priceChange) > 1.5 ? 'trending' : 'ranging';

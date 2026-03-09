@@ -731,12 +731,13 @@ export const MultiAssetTrader = () => {
         if (a.lastPrice < 0.001) return false;
         
         // 5. Priorizar majors e ativos conhecidos (no REAL), mas sem travar o treino em TESTNET
-        const majorSymbols = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT', 'SOLUSDT'];
-        const isMajor = majorSymbols.includes(symbol);
-        
-        // Se não é major, exigir volume maior
-        const nonMajorMinVol = isTestnet ? 500000 : 2000000;
-        if (!isMajor && a.volume24h < nonMajorMinVol) return false;
+        // v13: APENAS MAJORS COM LIQUIDEZ COMPROVADA — shitcoins = loss
+        const ALLOWED_SYMBOLS = new Set([
+          'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT',
+          'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
+          'SUIUSDT', 'APTUSDT', 'NEARUSDT', 'ARBUSDT', 'OPUSDT',
+        ]);
+        if (!isTestnet && !ALLOWED_SYMBOLS.has(symbol)) return false;
         
         return true;
       });
@@ -781,7 +782,7 @@ export const MultiAssetTrader = () => {
           if (!a.isWhitelisted && b.isWhitelisted) return 1;
           return b.assetScore - a.assetScore;
         })
-        .slice(0, 50); // v8: EXPANDIDO de 30→50 ativos
+        .slice(0, 15); // v13: REDUZIDO de 50→15 — foco em qualidade
       
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
 
@@ -840,8 +841,8 @@ export const MultiAssetTrader = () => {
       // === LIMITES POR CICLO — v8: mais agressivo para mais entradas ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // v8: 2 por direção (era 1)
-      const MAX_TRADES_PER_CYCLE = 4; // v8: 4 por ciclo (era 2)
+      const MAX_SAME_DIRECTION_PER_CYCLE = 1; // v13: 1 por direção — precisão > quantidade
+      const MAX_TRADES_PER_CYCLE = 1; // v13: 1 trade por ciclo — sniper mode
       
       // Contar posições abertas por direção (incluir demo se ativo)
       const allOpenPositions = isDemoMode ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side })) : openPositions;
@@ -938,6 +939,23 @@ export const MultiAssetTrader = () => {
             const reason = analysisResult.skipReason || 'Sem motivo';
             skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
             continue;
+          }
+          
+          // v13: FEAR & GREED DIRECTION FILTER — operar COM o mercado, não contra
+          if (fearGreed) {
+            const fgValue = fearGreed.value;
+            // F&G < 25 (medo) → SÓ compra (mercado em pânico = oportunidade de compra)
+            if (fgValue < 25 && analysisResult.action === 'SELL') {
+              console.log(`🚫 ${symbol}: F&G ${fgValue} (medo) → SHORT bloqueado, só LONG permitido`);
+              skipCounts.set('F&G: Short bloqueado (medo)', (skipCounts.get('F&G: Short bloqueado (medo)') || 0) + 1);
+              continue;
+            }
+            // F&G > 75 (ganância) → SÓ venda
+            if (fgValue > 75 && analysisResult.action === 'BUY') {
+              console.log(`🚫 ${symbol}: F&G ${fgValue} (ganância) → LONG bloqueado, só SHORT permitido`);
+              skipCounts.set('F&G: Long bloqueado (ganância)', (skipCounts.get('F&G: Long bloqueado (ganância)') || 0) + 1);
+              continue;
+            }
           }
           
           // 🆕 CONTROLE DE DIVERSIFICAÇÃO - evitar muitos trades na mesma direção
