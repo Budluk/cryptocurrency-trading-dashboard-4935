@@ -1179,25 +1179,14 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          // 🔒 v7: R:R mínimo 1.4 (era 1.8) — saídas parciais são o mecanismo real
-          // Forçar TP inalcançável = pior que R:R menor com saídas parciais
+          // 🔒 v11: R:R FIXO 1:2 (SL 0.4%, TP 0.8%) — já garantido pelo calculateStopTakeProfit
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);
             const slDist = Math.abs(currentPrice - finalSL);
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
-            if (actualRR < 1.4) {
-              const forcedTPDist = slDist * 1.5;
-              if (analysisResult.action === 'BUY') {
-                takeProfit = (currentPrice + forcedTPDist).toFixed(6);
-              } else {
-                takeProfit = (currentPrice - forcedTPDist).toFixed(6);
-              }
-              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 1.4 → forçado 1.5 (TP: ${takeProfit})`);
-            } else {
-              console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 OK`);
-            }
+            console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 | SL: 0.4% | TP: 0.8%`);
           }
 
           // 🧠 VALIDAÇÃO COM INTELIGÊNCIA DE MERCADO (Notícias, Whales, Fear & Greed)
