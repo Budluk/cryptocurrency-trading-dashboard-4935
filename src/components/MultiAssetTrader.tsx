@@ -762,8 +762,8 @@ export const MultiAssetTrader = () => {
           whitelistBonus = 0.20;
         }
         
-        // Bonus para majors (exceto os blacklistados)
-        const majorBonus = ['ETHUSDT', 'XRPUSDT'].includes(symbol) ? 0.10 : 0;
+         // Bonus para majors prioritários
+         const priorityBonus = ['BTCUSDT', 'ETHUSDT'].includes(symbol) ? 0.25 : ['XRPUSDT', 'SOLUSDT'].includes(symbol) ? 0.10 : 0;
         
         // Penalidade para spread alto
         const spreadPenalty = a!.spread > 0.03 ? 0.1 : 0;
