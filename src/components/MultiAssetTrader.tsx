@@ -731,12 +731,13 @@ export const MultiAssetTrader = () => {
         if (a.lastPrice < 0.001) return false;
         
         // 5. Priorizar majors e ativos conhecidos (no REAL), mas sem travar o treino em TESTNET
-        const majorSymbols = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT', 'SOLUSDT'];
-        const isMajor = majorSymbols.includes(symbol);
-        
-        // Se não é major, exigir volume maior
-        const nonMajorMinVol = isTestnet ? 500000 : 2000000;
-        if (!isMajor && a.volume24h < nonMajorMinVol) return false;
+        // v13: APENAS MAJORS COM LIQUIDEZ COMPROVADA — shitcoins = loss
+        const ALLOWED_SYMBOLS = new Set([
+          'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT',
+          'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
+          'SUIUSDT', 'APTUSDT', 'NEARUSDT', 'ARBUSDT', 'OPUSDT',
+        ]);
+        if (!isTestnet && !ALLOWED_SYMBOLS.has(symbol)) return false;
         
         return true;
       });
