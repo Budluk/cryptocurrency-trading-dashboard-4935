@@ -232,12 +232,13 @@ export const useSignalAnalysis = () => {
     
     if (allLongMet) {
       action = 'BUY';
-      // Score based on condition strength
-      buyScore = 60; // Base for all conditions met
+      buyScore = 60;
       if (emaCrossover === 'bullish') buyScore += 15; // Fresh cross > already above
       if (rsi >= 52 && rsi <= 60) buyScore += 10; // Sweet spot RSI
       if (m1.volumeRatio && m1.volumeRatio > 1.5) buyScore += 10; // Strong volume
+      if (m1.volumeRatio && m1.volumeRatio > 2.0) buyScore += 5; // Very strong volume
       if (compositeScore && compositeScore > 20) buyScore += 10; // AI confirms
+      if (compositeScore && compositeScore > 35) buyScore += 5; // Strong AI
       if (aiConfidence && aiConfidence > 70) buyScore += 5;
       signalScore = buyScore;
       
