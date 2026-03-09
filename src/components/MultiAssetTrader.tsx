@@ -841,8 +841,8 @@ export const MultiAssetTrader = () => {
       // === LIMITES POR CICLO — v8: mais agressivo para mais entradas ===
       let buyCountThisCycle = 0;
       let sellCountThisCycle = 0;
-      const MAX_SAME_DIRECTION_PER_CYCLE = 2; // v8: 2 por direção (era 1)
-      const MAX_TRADES_PER_CYCLE = 4; // v8: 4 por ciclo (era 2)
+      const MAX_SAME_DIRECTION_PER_CYCLE = 1; // v13: 1 por direção — precisão > quantidade
+      const MAX_TRADES_PER_CYCLE = 1; // v13: 1 trade por ciclo — sniper mode
       
       // Contar posições abertas por direção (incluir demo se ativo)
       const allOpenPositions = isDemoMode ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side })) : openPositions;

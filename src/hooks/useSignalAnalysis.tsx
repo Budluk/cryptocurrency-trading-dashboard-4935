@@ -313,7 +313,8 @@ export const useSignalAnalysis = () => {
       }
     }
     
-    const shouldTrade = action !== null && signalQuality !== 'low';
+    // v13: APENAS high e premium passam — medium = loss
+    const shouldTrade = action !== null && (signalQuality === 'high' || signalQuality === 'premium');
     const momentumScore = Math.abs(priceChange) * (volumeAboveAvg ? 1.5 : 1);
     const marketRegime: 'trending' | 'ranging' | 'volatile' = 
       volatility > 12 ? 'volatile' : Math.abs(priceChange) > 1.5 ? 'trending' : 'ranging';
