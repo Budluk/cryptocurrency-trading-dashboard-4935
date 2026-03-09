@@ -7,20 +7,19 @@ export interface SymbolRiskProfile {
   isBTCOrSOL: boolean;
 }
 
-// 🎯 v11: Scalper profissional — 1% risco, 0.4% SL, 0.8% TP, 5-10x leverage
+// 🎯 v12: Scalper pro — SL/TP adaptativo por volatilidade, R:R mínimo 1:2
 export const useTradingCalculations = () => {
   
-  // v11: Leverage 5-10x baseada em volatilidade
+  // v12: Leverage 5-10x baseada em volatilidade
   const getLeverageForScalping = useCallback((volatility: number): number => {
     if (volatility > 8) return 5;
     if (volatility > 5) return 6;
     if (volatility > 3) return 7;
     if (volatility > 2) return 8;
     if (volatility > 1) return 9;
-    return 10; // Max 10x para vol muito baixa
+    return 10;
   }, []);
 
-  // v11: Leverage baseada no balance — sempre 5-10x
   const getLeverageForBalance = useCallback((balance: number, winRate: number): number => {
     let baseLeverage = 7;
     if (balance < 10) baseLeverage = 10;
@@ -28,16 +27,13 @@ export const useTradingCalculations = () => {
     else if (balance < 50) baseLeverage = 7;
     else baseLeverage = 5;
 
-    // Win rate adjustment (minor)
     if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 1, 10);
     else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 1, 5);
 
     return Math.max(5, Math.min(10, baseLeverage));
   }, []);
 
-  // 💼 v11: Position sizing — risco EXATO de 1% por trade
-  // Fórmula: usdSize = (balance * 0.01) / 0.004
-  // Com SL de 0.4%, perder 1% do capital por stop-out
+  // 💼 v12: Position sizing — 1% risco por trade
   const calculatePositionSize = useCallback((
     balance: number, 
     leverage: number, 
@@ -46,21 +42,19 @@ export const useTradingCalculations = () => {
     currentOpenPositions: number,
     maxOpenPositions: number
   ) => {
-    const RISK_PER_TRADE = 0.01; // 1% do capital
-    const STOP_LOSS_PCT = 0.004; // 0.4% SL
+    const RISK_PER_TRADE = 0.01;
     
-    // USD size = quanto de capital arriscar dividido pela % de perda
-    let usdSize = (balance * RISK_PER_TRADE) / STOP_LOSS_PCT;
+    // v12: SL adaptativo por volatilidade
+    const stopLossPct = getAdaptiveStopLoss(volatility);
     
-    // Limitar ao máximo razoável
-    const maxUsdSize = balance * 0.20; // Máximo 20% do capital por posição
+    let usdSize = (balance * RISK_PER_TRADE) / stopLossPct;
+    
+    const maxUsdSize = balance * 0.20;
     usdSize = Math.min(usdSize, maxUsdSize);
     
-    // Mínimo para operar
     const minPositionSize = 2;
     usdSize = Math.max(minPositionSize, usdSize);
     
-    // Reduzir se muitas posições abertas
     const positionSizeMultiplier = currentOpenPositions === 0 
       ? 1.0 
       : Math.max(0.5, 1 - (currentOpenPositions / maxOpenPositions) * 0.3);
@@ -77,15 +71,22 @@ export const useTradingCalculations = () => {
     };
   }, []);
 
-  // 🧠 Trailing stop dinâmico
+  // v12: SL adaptativo por volatilidade (não mais fixo)
+  const getAdaptiveStopLoss = (volatility: number): number => {
+    if (volatility > 8) return 0.006;  // 0.6% — mercado muito volátil
+    if (volatility > 5) return 0.005;  // 0.5%
+    if (volatility > 3) return 0.004;  // 0.4% — padrão
+    if (volatility > 1) return 0.0035; // 0.35% — baixa vol
+    return 0.003;                       // 0.3% — vol muito baixa
+  };
+
   const calculateDynamicTrailingStop = useCallback((volatility: number): number => {
-    if (volatility < 2) return 0.3;
-    if (volatility < 5) return 0.4;
-    if (volatility < 10) return 0.6;
-    return 0.8;
+    if (volatility < 2) return 0.25;
+    if (volatility < 5) return 0.35;
+    if (volatility < 10) return 0.50;
+    return 0.60;
   }, []);
 
-  // 📊 Calcular quantidade válida para ordem
   const calculateValidQuantity = useCallback((
     usdSize: number,
     currentPrice: number,
@@ -113,7 +114,6 @@ export const useTradingCalculations = () => {
     return { qty, qtyStr, orderValueUSD };
   }, []);
 
-  // 🔍 Swing levels para stops estruturais
   const findSwingLevels = useCallback((
     highPrice: number,
     lowPrice: number,
@@ -130,7 +130,7 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ v11: SL/TP FIXO — 0.4% SL / 0.8% TP = R:R 1:2
+  // 🛡️ v12: SL/TP ADAPTATIVO por volatilidade — R:R mínimo 1:2
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -139,10 +139,28 @@ export const useTradingCalculations = () => {
     _mlConfig: any,
     _highPrice?: number,
     _lowPrice?: number,
-    _symbolProfile?: SymbolRiskProfile
+    symbolProfile?: SymbolRiskProfile
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
-    const stopLossPct = 0.004;  // 0.4% FIXO
-    const takeProfitPct = 0.008; // 0.8% FIXO (R:R 1:2)
+    // v12: SL adaptativo baseado em volatilidade/perfil
+    let stopLossPct: number;
+    let rrRatio = 2.0; // R:R mínimo 1:2
+
+    if (symbolProfile?.isBTCOrSOL) {
+      // BTC/SOL: stops mais conservadores
+      stopLossPct = 0.004; // 0.4%
+    } else if (_atrPercent > 8) {
+      stopLossPct = 0.006; // 0.6% alta vol
+    } else if (_atrPercent > 5) {
+      stopLossPct = 0.005; // 0.5%
+    } else if (_atrPercent > 3) {
+      stopLossPct = 0.004; // 0.4% padrão
+    } else if (_atrPercent > 1) {
+      stopLossPct = 0.0035; // 0.35%
+    } else {
+      stopLossPct = 0.003; // 0.3% vol baixa
+    }
+
+    const takeProfitPct = stopLossPct * rrRatio;
 
     let stopLoss: number, takeProfit: number;
     if (action === 'BUY') {
@@ -154,7 +172,7 @@ export const useTradingCalculations = () => {
     }
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    console.log(`🎯 v11 ${action} SL: 0.40% | TP: 0.80% | R:R 1:2`);
+    console.log(`🎯 v12 ${action} SL: ${(stopLossPct * 100).toFixed(2)}% | TP: ${(takeProfitPct * 100).toFixed(2)}% | R:R 1:${rrRatio}`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),

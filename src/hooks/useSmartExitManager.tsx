@@ -15,16 +15,13 @@ interface PositionData {
 }
 
 interface TrailingStopConfig {
-  activationPct: number; // % de lucro para ativar trailing (ex: 1%)
-  trailingPct: number; // % de recuo para stop (ex: 0.5%)
-  breakEvenPct: number; // % de lucro para mover stop para breakeven
+  activationPct: number;
+  trailingPct: number;
+  breakEvenPct: number;
 }
 
 interface PartialExitConfig {
-  firstExitPct: number; // % de lucro para primeira saída (ex: 1.5%)
-  firstExitSize: number; // % da posição para fechar (ex: 0.5 = 50%)
-  secondExitPct: number; // % de lucro para segunda saída (ex: 3%)
-  secondExitSize: number; // % restante para fechar
+  levels: { pct: number; size: number }[];
 }
 
 interface SmartExitState {
@@ -33,6 +30,7 @@ interface SmartExitState {
   trailingActive: Map<string, boolean>;
   partialExitsExecuted: Map<string, number[]>;
   breakEvenActivated: Map<string, boolean>;
+  lastPrices: Map<string, number[]>; // v12: track price momentum
 }
 
 export function useSmartExitManager() {
@@ -44,61 +42,81 @@ export function useSmartExitManager() {
     trailingActive: new Map(),
     partialExitsExecuted: new Map(),
     breakEvenActivated: new Map(),
+    lastPrices: new Map(),
   });
 
-  // TRAILING PROGRESSIVO v7: mais espaço no início, apertar com lucro alto
-  // v6 era ultra-agressivo → stopava no ruído antes de atingir lucro bom
-  const getProgressiveTrailingPct = useCallback((profitPct: number, baseTrailingPct: number): number => {
+  // ============================================================
+  // v12: TRAILING PROGRESSIVO MELHORADO
+  // Mais níveis, aperta proporcional ao lucro
+  // ============================================================
+  const getProgressiveTrailingPct = useCallback((profitPct: number): number => {
+    if (profitPct >= 4.0) return 0.15; // Lucro grande → stop ultra apertado
     if (profitPct >= 3.0) return 0.20;
-    if (profitPct >= 2.0) return 0.30;
-    if (profitPct >= 1.0) return 0.40;
-    if (profitPct >= 0.5) return 0.50;
-    return baseTrailingPct; // v7: não apertar cedo demais
+    if (profitPct >= 2.0) return 0.25;
+    if (profitPct >= 1.5) return 0.30;
+    if (profitPct >= 1.0) return 0.35;
+    if (profitPct >= 0.6) return 0.40;
+    if (profitPct >= 0.4) return 0.45;
+    return 0.50;
   }, []);
 
-  // v7: Trailing mais paciente — deixar lucro crescer antes de travar
-  const getAdaptiveTrailingConfig = useCallback((volatility: number, mlConfig: any, profitPct?: number): TrailingStopConfig => {
+  // v12: Trailing config adaptativo — breakeven rápido em 0.25%
+  const getAdaptiveTrailingConfig = useCallback((volatility: number, _mlConfig: any, profitPct?: number): TrailingStopConfig => {
     let baseConfig: TrailingStopConfig;
 
-    // v7: breakeven em 0.5% (era 0.3%), trailing ativa em 0.7-1.0%
+    // v12: breakeven mais cedo (0.25%), trailing ativa mais cedo
     if (volatility < 2) {
-      baseConfig = { activationPct: 0.7, trailingPct: 0.50, breakEvenPct: 0.5 };
+      baseConfig = { activationPct: 0.5, trailingPct: 0.45, breakEvenPct: 0.25 };
     } else if (volatility < 5) {
-      baseConfig = { activationPct: 0.8, trailingPct: 0.60, breakEvenPct: 0.5 };
+      baseConfig = { activationPct: 0.6, trailingPct: 0.50, breakEvenPct: 0.30 };
     } else {
-      baseConfig = { activationPct: 1.0, trailingPct: 0.70, breakEvenPct: 0.6 };
+      baseConfig = { activationPct: 0.8, trailingPct: 0.55, breakEvenPct: 0.35 };
     }
 
     // Aplicar trailing progressivo se já tem lucro
-    if (profitPct && profitPct > 0) {
-      baseConfig.trailingPct = getProgressiveTrailingPct(profitPct, baseConfig.trailingPct);
+    if (profitPct && profitPct > 0.3) {
+      baseConfig.trailingPct = getProgressiveTrailingPct(profitPct);
     }
 
     return baseConfig;
   }, [getProgressiveTrailingPct]);
 
-  // v11: Saídas parciais alinhadas com 0.4% SL / 0.8% TP
+  // ============================================================
+  // v12: SAÍDAS PARCIAIS EM 3 NÍVEIS
+  // Protege lucro mais cedo sem cortar potencial
+  // ============================================================
   const getPartialExitConfig = useCallback((_mlConfig: any): PartialExitConfig => {
     return {
-      firstExitPct: 0.4,   // v11: 0.4% lucro → fecha 50% (metade do TP)
-      firstExitSize: 0.5,
-      secondExitPct: 0.8,  // v11: 0.8% lucro → fecha resto (= TP)
-      secondExitSize: 0.5,
+      levels: [
+        { pct: 0.35, size: 0.30 }, // Nível 1: 30% da posição a 0.35% lucro
+        { pct: 0.60, size: 0.35 }, // Nível 2: 35% a 0.6% lucro
+        { pct: 0.80, size: 0.35 }, // Nível 3: 35% restante a 0.8% (= TP)
+      ],
     };
   }, []);
 
-  // Calcular lucro % atual de uma posição
-  // IMPORTANTE: usar movimento de preço puro (sem multiplicar por alavancagem)
-  // para evitar ativações prematuras de trailing/saídas parciais.
+  // Calcular lucro % (preço puro, sem alavancagem)
   const calculateProfitPct = useCallback((position: PositionData): number => {
     const priceDiff = position.side === 'Buy' 
       ? position.currentPrice - position.entryPrice
       : position.entryPrice - position.currentPrice;
-    
     return (priceDiff / position.entryPrice) * 100;
   }, []);
 
-  // Verificar e executar saída parcial
+  // v12: Detectar perda de momentum (preço caindo após pico)
+  const detectMomentumLoss = useCallback((position: PositionData): boolean => {
+    const key = position.symbol;
+    const highest = exitState.highestPrice.get(key) || position.entryPrice;
+    const profitFromPeak = position.side === 'Buy'
+      ? ((position.currentPrice - highest) / highest) * 100
+      : ((highest - position.currentPrice) / highest) * 100;
+    
+    // Se caiu mais de 0.25% do pico E já teve lucro → momentum perdido
+    const currentProfit = calculateProfitPct(position);
+    return currentProfit > 0.1 && profitFromPeak < -0.25;
+  }, [exitState.highestPrice, calculateProfitPct]);
+
+  // Verificar e executar saída parcial (v12: 3 níveis)
   const checkPartialExit = useCallback(async (
     position: PositionData,
     config: PartialExitConfig
@@ -107,125 +125,70 @@ export function useSmartExitManager() {
     const executed = exitState.partialExitsExecuted.get(key) || [];
     const profitPct = calculateProfitPct(position);
 
-    // Primeira saída: 50% quando atingir firstExitPct
-    if (profitPct >= config.firstExitPct && !executed.includes(1)) {
-      // Buscar instrumento para obter qtyStep
-      const { data: instData } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
-      });
+    for (let i = 0; i < config.levels.length; i++) {
+      const levelNum = i + 1;
+      const level = config.levels[i];
       
-      const instrument = instData?.data?.list?.[0];
-      const lotSizeFilter = instrument?.lotSizeFilter || {};
-      const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.001');
-      const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.001');
-      
-      // Calcular e formatar qty corretamente
-      let exitQty = Math.floor((position.size * config.firstExitSize) / qtyStep) * qtyStep;
-      exitQty = Math.max(exitQty, minOrderQty);
-      
-      const qtyStepStr = qtyStep.toString();
-      const decimalPlaces = qtyStepStr.includes('.') ? qtyStepStr.split('.')[1].length : 0;
-      const exitQtyStr = exitQty.toFixed(decimalPlaces);
-      
-      console.log(`📊 SAÍDA PARCIAL 1: ${position.symbol} - Fechando ${(config.firstExitSize * 100)}% @ ${profitPct.toFixed(2)}% lucro`);
-      
-      try {
-        const { data, error } = await supabase.functions.invoke('bybit-trading', {
-          body: {
-            action: 'place_order',
-            isTestnet: false,
-            params: {
-              category: 'linear',
-              symbol: position.symbol,
-              side: position.side === 'Buy' ? 'Sell' : 'Buy',
-              orderType: 'Market',
-              qty: exitQtyStr,
-              reduceOnly: true,
-              positionIdx: 0,
-            }
-          }
+      if (profitPct >= level.pct && !executed.includes(levelNum)) {
+        // Buscar instrumento para qtyStep
+        const { data: instData } = await supabase.functions.invoke('bybit-trading', {
+          body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
         });
-
-        if (!error && data?.success) {
-          // Atualizar estado
-          setExitState(prev => {
-            const newExecuted = new Map(prev.partialExitsExecuted);
-            newExecuted.set(key, [...executed, 1]);
-            return { ...prev, partialExitsExecuted: newExecuted };
-          });
-
-          toast({
-            title: "📊 Saída Parcial Executada",
-            description: `${position.symbol}: ${(config.firstExitSize * 100)}% fechado @ ${profitPct.toFixed(2)}% lucro`,
-          });
-
-          // Registrar no banco
-          await logPartialExit(position, 1, profitPct, exitQty);
-
-          return { executed: true, level: 1 };
+        
+        const instrument = instData?.data?.list?.[0];
+        const lotSizeFilter = instrument?.lotSizeFilter || {};
+        const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.001');
+        const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.001');
+        
+        let exitQty = Math.floor((position.size * level.size) / qtyStep) * qtyStep;
+        exitQty = Math.max(exitQty, minOrderQty);
+        
+        // Para último nível, fechar todo o restante
+        if (levelNum === config.levels.length) {
+          exitQty = position.size;
         }
-      } catch (err) {
-        console.error('Erro na saída parcial 1:', err);
-      }
-    }
-
-    // Segunda saída: resto quando atingir secondExitPct
-    if (profitPct >= config.secondExitPct && executed.includes(1) && !executed.includes(2)) {
-      // Buscar instrumento para obter qtyStep
-      const { data: instData } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_instruments', isTestnet: false, params: { category: 'linear', symbol: position.symbol } }
-      });
-      
-      const instrument = instData?.data?.list?.[0];
-      const lotSizeFilter = instrument?.lotSizeFilter || {};
-      const qtyStep = parseFloat(lotSizeFilter.qtyStep || '0.001');
-      const minOrderQty = parseFloat(lotSizeFilter.minOrderQty || '0.001');
-      
-      // Calcular e formatar qty corretamente
-      let exitQty = Math.floor((position.size * config.secondExitSize) / qtyStep) * qtyStep;
-      exitQty = Math.max(exitQty, minOrderQty);
-      
-      const qtyStepStr = qtyStep.toString();
-      const decimalPlaces = qtyStepStr.includes('.') ? qtyStepStr.split('.')[1].length : 0;
-      const exitQtyStr = exitQty.toFixed(decimalPlaces);
-      
-      console.log(`📊 SAÍDA PARCIAL 2: ${position.symbol} - Fechando ${(config.secondExitSize * 100)}% @ ${profitPct.toFixed(2)}% lucro`);
-      
-      try {
-        const { data, error } = await supabase.functions.invoke('bybit-trading', {
-          body: {
-            action: 'place_order',
-            isTestnet: false,
-            params: {
-              category: 'linear',
-              symbol: position.symbol,
-              side: position.side === 'Buy' ? 'Sell' : 'Buy',
-              orderType: 'Market',
-              qty: exitQtyStr,
-              reduceOnly: true,
-              positionIdx: 0,
+        
+        const qtyStepStr = qtyStep.toString();
+        const decimalPlaces = qtyStepStr.includes('.') ? qtyStepStr.split('.')[1].length : 0;
+        const exitQtyStr = exitQty.toFixed(decimalPlaces);
+        
+        console.log(`📊 SAÍDA PARCIAL ${levelNum}/3: ${position.symbol} - ${(level.size * 100).toFixed(0)}% @ ${profitPct.toFixed(2)}% lucro`);
+        
+        try {
+          const { data, error } = await supabase.functions.invoke('bybit-trading', {
+            body: {
+              action: 'place_order',
+              isTestnet: false,
+              params: {
+                category: 'linear',
+                symbol: position.symbol,
+                side: position.side === 'Buy' ? 'Sell' : 'Buy',
+                orderType: 'Market',
+                qty: exitQtyStr,
+                reduceOnly: true,
+                positionIdx: 0,
+              }
             }
+          });
+
+          if (!error && data?.success) {
+            setExitState(prev => {
+              const newExecuted = new Map(prev.partialExitsExecuted);
+              newExecuted.set(key, [...executed, levelNum]);
+              return { ...prev, partialExitsExecuted: newExecuted };
+            });
+
+            toast({
+              title: levelNum === 3 ? "✅ Posição Fechada" : `📊 Saída Parcial ${levelNum}/3`,
+              description: `${position.symbol}: ${(level.size * 100).toFixed(0)}% @ ${profitPct.toFixed(2)}% lucro`,
+            });
+
+            await logPartialExit(position, levelNum, profitPct, exitQty);
+            return { executed: true, level: levelNum };
           }
-        });
-
-        if (!error && data?.success) {
-          setExitState(prev => {
-            const newExecuted = new Map(prev.partialExitsExecuted);
-            newExecuted.set(key, [...executed, 2]);
-            return { ...prev, partialExitsExecuted: newExecuted };
-          });
-
-          toast({
-            title: "✅ Posição Totalmente Fechada",
-            description: `${position.symbol}: Lucro total de ${profitPct.toFixed(2)}%`,
-          });
-
-          await logPartialExit(position, 2, profitPct, exitQty);
-
-          return { executed: true, level: 2 };
+        } catch (err) {
+          console.error(`Erro na saída parcial ${levelNum}:`, err);
         }
-      } catch (err) {
-        console.error('Erro na saída parcial 2:', err);
       }
     }
 
@@ -242,11 +205,9 @@ export function useSmartExitManager() {
     const isActive = exitState.trailingActive.get(key) || false;
     const isBreakeven = exitState.breakEvenActivated.get(key) || false;
 
-    // Buscar preços extremos
     const highest = exitState.highestPrice.get(key) || position.entryPrice;
     const lowest = exitState.lowestPrice.get(key) || position.entryPrice;
 
-    // Atualizar preços extremos
     let newHighest = highest;
     let newLowest = lowest;
 
@@ -260,7 +221,7 @@ export function useSmartExitManager() {
         });
       }
     } else {
-      if (position.currentPrice < lowest) {
+      if (position.currentPrice < lowest || lowest === position.entryPrice) {
         newLowest = position.currentPrice;
         setExitState(prev => {
           const newMap = new Map(prev.lowestPrice);
@@ -270,7 +231,7 @@ export function useSmartExitManager() {
       }
     }
 
-    // Verificar ativação do break-even
+    // v12: Breakeven mais rápido (0.25%)
     if (!isBreakeven && profitPct >= config.breakEvenPct) {
       setExitState(prev => {
         const newMap = new Map(prev.breakEvenActivated);
@@ -278,17 +239,15 @@ export function useSmartExitManager() {
         return { ...prev, breakEvenActivated: newMap };
       });
       
-      // Mover stop para breakeven (entry price + pequena margem)
       const breakEvenStop = position.side === 'Buy'
-        ? position.entryPrice * 1.001 // +0.1% acima do entry
-        : position.entryPrice * 0.999; // -0.1% abaixo do entry
+        ? position.entryPrice * 1.0005 // +0.05% margem
+        : position.entryPrice * 0.9995;
 
-      console.log(`🛡️ BREAKEVEN ${position.symbol}: Stop movido para ${breakEvenStop.toFixed(4)}`);
-
+      console.log(`🛡️ BREAKEVEN ${position.symbol}: Stop → ${breakEvenStop.toFixed(4)} @ ${profitPct.toFixed(2)}% lucro`);
       return { newStop: breakEvenStop, shouldActivate: false, isBreakeven: true };
     }
 
-    // Verificar ativação do trailing
+    // Ativação do trailing
     if (!isActive && profitPct >= config.activationPct) {
       setExitState(prev => {
         const newMap = new Map(prev.trailingActive);
@@ -296,14 +255,14 @@ export function useSmartExitManager() {
         return { ...prev, trailingActive: newMap };
       });
       
-      console.log(`🎯 TRAILING ATIVADO ${position.symbol}: @ ${profitPct.toFixed(2)}% lucro`);
-      
+      console.log(`🎯 TRAILING ON ${position.symbol}: @ ${profitPct.toFixed(2)}% lucro`);
       return { newStop: null, shouldActivate: true, isBreakeven: false };
     }
 
-    // Se trailing ativo, calcular novo stop
+    // Se trailing ativo, calcular novo stop progressivo
     if (isActive) {
-      const trailingDistance = config.trailingPct / 100;
+      const trailingPct = getProgressiveTrailingPct(profitPct);
+      const trailingDistance = trailingPct / 100;
       
       const newStop = position.side === 'Buy'
         ? newHighest * (1 - trailingDistance)
@@ -313,29 +272,23 @@ export function useSmartExitManager() {
     }
 
     return { newStop: null, shouldActivate: false, isBreakeven: false };
-  }, [exitState, calculateProfitPct]);
+  }, [exitState, calculateProfitPct, getProgressiveTrailingPct]);
 
-  // Registrar saída parcial no banco
   const logPartialExit = async (position: PositionData, level: number, profitPct: number, qty: number) => {
     const userId = await getUserId();
-    
     await supabase.from('auto_trader_logs').insert({
       user_id: userId,
       log_type: 'PARTIAL_EXIT',
-      message: `Saída parcial ${level}: ${position.symbol} - ${qty} unidades @ ${profitPct.toFixed(2)}% lucro`,
+      message: `Saída parcial ${level}/3: ${position.symbol} - ${qty} unidades @ ${profitPct.toFixed(2)}% lucro`,
       symbol: position.symbol,
-      metadata: {
-        level,
-        profitPct,
-        qty,
-        side: position.side,
-        entryPrice: position.entryPrice,
-        exitPrice: position.currentPrice,
-      }
+      metadata: { level, profitPct, qty, side: position.side, entryPrice: position.entryPrice, exitPrice: position.currentPrice }
     });
   };
 
-  // ⏰ SAÍDA POR TEMPO: fecha posições que ficam abertas demais sem lucro
+  // ============================================================
+  // v12: TIME-BASED EXITS COM DETECÇÃO DE MOMENTUM
+  // Mais inteligente — considera tendência recente
+  // ============================================================
   const checkTimeBasedExit = useCallback(async (
     position: PositionData & { openedAt?: string }
   ): Promise<boolean> => {
@@ -345,18 +298,27 @@ export function useSmartExitManager() {
     const now = Date.now();
     const minutesOpen = (now - openTime) / (1000 * 60);
     const profitPct = calculateProfitPct(position);
+    const momentumLost = detectMomentumLoss(position);
     
-    // v11: Saídas por tempo mais rápidas para scalping
+    // v12: Regras de tempo mais inteligentes
     const shouldClose = 
-      (minutesOpen > 8 && profitPct < -0.2) ||  // 8min com loss → fechar
-      (minutesOpen > 6 && profitPct < 0.05) ||   // 6min flat → fechar
-      (minutesOpen > 15);                         // 15min hard cap
+      // 1. Momentum perdido após ter lucro → fechar rápido (qualquer tempo)
+      (minutesOpen > 3 && momentumLost && profitPct < 0.15) ||
+      // 2. 5min com prejuízo crescente → cortar loss cedo
+      (minutesOpen > 5 && profitPct < -0.15) ||
+      // 3. 7min flat (sem direção) → capital preso
+      (minutesOpen > 7 && Math.abs(profitPct) < 0.08) ||
+      // 4. 10min com qualquer prejuízo → fechar
+      (minutesOpen > 10 && profitPct < 0) ||
+      // 5. 12min hard cap (exceto se lucro > 0.3%)
+      (minutesOpen > 12 && profitPct < 0.3);
     
     if (!shouldClose) return false;
     
-    const reason = profitPct < 0 
-      ? `⏰ TIME EXIT: ${position.symbol} aberta ${minutesOpen.toFixed(0)}min com ${profitPct.toFixed(2)}% prejuízo`
-      : `⏰ TIME EXIT: ${position.symbol} aberta ${minutesOpen.toFixed(0)}min - lucro insuficiente (${profitPct.toFixed(2)}%)`;
+    let reason = '';
+    if (momentumLost) reason = `⚡ MOMENTUM LOST: ${position.symbol} @ ${profitPct.toFixed(2)}%`;
+    else if (profitPct < 0) reason = `⏰ TIME CUT: ${position.symbol} ${minutesOpen.toFixed(0)}min @ ${profitPct.toFixed(2)}%`;
+    else reason = `⏰ TIME FLAT: ${position.symbol} ${minutesOpen.toFixed(0)}min @ ${profitPct.toFixed(2)}%`;
     
     console.log(reason);
     
@@ -384,12 +346,12 @@ export function useSmartExitManager() {
           log_type: 'TIME_EXIT',
           message: reason,
           symbol: position.symbol,
-          metadata: { minutesOpen, profitPct, side: position.side }
+          metadata: { minutesOpen, profitPct, side: position.side, momentumLost }
         });
         
         toast({
-          title: "⏰ Saída por Tempo",
-          description: `${position.symbol}: fechada após ${minutesOpen.toFixed(0)}min (${profitPct.toFixed(2)}%)`,
+          title: momentumLost ? "⚡ Momentum Perdido" : "⏰ Saída por Tempo",
+          description: `${position.symbol}: ${profitPct.toFixed(2)}% após ${minutesOpen.toFixed(0)}min`,
         });
         return true;
       }
@@ -397,7 +359,7 @@ export function useSmartExitManager() {
       console.error('Erro na saída por tempo:', err);
     }
     return false;
-  }, [calculateProfitPct, toast]);
+  }, [calculateProfitPct, detectMomentumLoss, toast]);
 
   // Processar todas as posições abertas
   const processOpenPositions = useCallback(async (
@@ -410,7 +372,7 @@ export function useSmartExitManager() {
     const shouldUsePartialExit = options?.enablePartialExit ?? true;
 
     for (const position of positions) {
-      // ⏰ Verificar saída por tempo PRIMEIRO (prioridade máxima)
+      // ⏰ Verificar saída por tempo PRIMEIRO
       const openedAt = options?.openedAtMap?.get(`${position.symbol}-${position.side}`);
       const timeExited = await checkTimeBasedExit({ ...position, openedAt });
       if (timeExited) {
@@ -423,16 +385,11 @@ export function useSmartExitManager() {
       const trailingConfig = getAdaptiveTrailingConfig(volatility, mlConfig, currentProfit);
       const partialConfig = getPartialExitConfig(mlConfig);
 
-      // Verificar saída parcial primeiro (se habilitado)
+      // Verificar saída parcial
       if (shouldUsePartialExit) {
         const partialResult = await checkPartialExit(position, partialConfig);
-        
         if (partialResult.executed) {
-          results.push({
-            symbol: position.symbol,
-            action: 'PARTIAL_EXIT',
-            level: partialResult.level,
-          });
+          results.push({ symbol: position.symbol, action: 'PARTIAL_EXIT', level: partialResult.level });
           continue;
         }
       }
@@ -450,6 +407,7 @@ export function useSmartExitManager() {
                 category: 'linear',
                 symbol: position.symbol,
                 stopLoss: trailingResult.newStop.toFixed(4),
+                slTriggerBy: 'MarkPrice',
                 positionIdx: 0,
               }
             }
@@ -461,7 +419,7 @@ export function useSmartExitManager() {
             newStop: trailingResult.newStop,
           });
 
-          console.log(`✅ Stop atualizado ${position.symbol}: ${trailingResult.newStop.toFixed(4)}`);
+          console.log(`✅ Stop ${trailingResult.isBreakeven ? 'BE' : 'TRAIL'} ${position.symbol}: ${trailingResult.newStop.toFixed(4)}`);
         } catch (err) {
           console.error(`Erro ao atualizar stop ${position.symbol}:`, err);
         }
@@ -471,7 +429,7 @@ export function useSmartExitManager() {
     return results;
   }, [getAdaptiveTrailingConfig, getPartialExitConfig, checkPartialExit, calculateTrailingStop, checkTimeBasedExit, calculateProfitPct]);
 
-  // Limpar estado de uma posição fechada
+  // Limpar estado de posição fechada
   const clearPositionState = useCallback((symbol: string) => {
     setExitState(prev => {
       const newHighest = new Map(prev.highestPrice);
@@ -479,12 +437,14 @@ export function useSmartExitManager() {
       const newTrailing = new Map(prev.trailingActive);
       const newPartial = new Map(prev.partialExitsExecuted);
       const newBreakeven = new Map(prev.breakEvenActivated);
+      const newLastPrices = new Map(prev.lastPrices);
 
       newHighest.delete(symbol);
       newLowest.delete(symbol);
       newTrailing.delete(symbol);
       newPartial.delete(symbol);
       newBreakeven.delete(symbol);
+      newLastPrices.delete(symbol);
 
       return {
         highestPrice: newHighest,
@@ -492,6 +452,7 @@ export function useSmartExitManager() {
         trailingActive: newTrailing,
         partialExitsExecuted: newPartial,
         breakEvenActivated: newBreakeven,
+        lastPrices: newLastPrices,
       };
     });
   }, []);
