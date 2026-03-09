@@ -284,11 +284,12 @@ export const useSignalAnalysis = () => {
     }
     
     // === DETERMINE QUALITY ===
+    // v13: Thresholds mais rigorosos — só high/premium passam
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     if (action) {
-      if (signalScore >= 85) signalQuality = 'premium';
+      if (signalScore >= 90) signalQuality = 'premium';
       else if (signalScore >= 70) signalQuality = 'high';
-      else if (signalScore >= 60) signalQuality = 'medium';
+      else signalQuality = 'medium'; // medium NÃO passa (shouldTrade = false)
     }
     
     // === SKIP REASON FOR NON-ENTRY ===
