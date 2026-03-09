@@ -989,7 +989,7 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          const leverage = Math.max(5, Math.min(12, Math.floor(dynamicLeverage))); // v7: MAX 12x
+          const leverage = Math.max(5, Math.min(10, Math.floor(dynamicLeverage))); // v11: 5-10x ONLY
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
