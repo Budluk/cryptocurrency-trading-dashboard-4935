@@ -235,6 +235,34 @@ async function fetchTechnicalAnalysis(symbol: string): Promise<MultiTimeframeTec
       if (ema9 > ema21 && ema21 > ema50 && currentPrice > ema9) trend = 'up';
       else if (ema9 < ema21 && ema21 < ema50 && currentPrice < ema9) trend = 'down';
       
+      // === v11: STRICT SCALPING INDICATORS ===
+      // EMA Crossover detection (current vs previous candle)
+      const prevCloses = closes.slice(0, -1);
+      const prevEma9 = calculateEMA(prevCloses, 9);
+      const prevEma21 = calculateEMA(prevCloses, 21);
+      const emaCrossover = (ema9 > ema21 && prevEma9 <= prevEma21) ? 'bullish' 
+        : (ema9 < ema21 && prevEma9 >= prevEma21) ? 'bearish' 
+        : (ema9 > ema21) ? 'above' : 'below';
+      
+      // Volume vs 20-candle average
+      const recentVolumes = volumes.slice(-21, -1); // last 20 candles excluding current
+      const avgVolume20 = recentVolumes.length > 0 ? recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length : 0;
+      const currentVolume = volumes[volumes.length - 1] || 0;
+      const volumeAboveAvg = currentVolume > avgVolume20;
+      const volumeRatio = avgVolume20 > 0 ? currentVolume / avgVolume20 : 0;
+      
+      // Lateral market detection (range of last 20 candles < 0.8%)
+      const last20Highs = highs.slice(-20);
+      const last20Lows = lows.slice(-20);
+      const rangeHigh = Math.max(...last20Highs);
+      const rangeLow = Math.min(...last20Lows);
+      const rangePct = rangeLow > 0 ? ((rangeHigh - rangeLow) / rangeLow) * 100 : 0;
+      const isLateral = rangePct < 0.8;
+      
+      // Price vs VWAP
+      const priceAboveVwap = currentPrice > vwap;
+      const priceBelowVwap = currentPrice < vwap;
+      
       // Calculate score
       let score = 0;
       
