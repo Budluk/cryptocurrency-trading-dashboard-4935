@@ -941,6 +941,23 @@ export const MultiAssetTrader = () => {
             continue;
           }
           
+          // v13: FEAR & GREED DIRECTION FILTER — operar COM o mercado, não contra
+          if (fearGreed) {
+            const fgValue = fearGreed.value;
+            // F&G < 25 (medo) → SÓ compra (mercado em pânico = oportunidade de compra)
+            if (fgValue < 25 && analysisResult.action === 'SELL') {
+              console.log(`🚫 ${symbol}: F&G ${fgValue} (medo) → SHORT bloqueado, só LONG permitido`);
+              skipCounts.set('F&G: Short bloqueado (medo)', (skipCounts.get('F&G: Short bloqueado (medo)') || 0) + 1);
+              continue;
+            }
+            // F&G > 75 (ganância) → SÓ venda
+            if (fgValue > 75 && analysisResult.action === 'BUY') {
+              console.log(`🚫 ${symbol}: F&G ${fgValue} (ganância) → LONG bloqueado, só SHORT permitido`);
+              skipCounts.set('F&G: Long bloqueado (ganância)', (skipCounts.get('F&G: Long bloqueado (ganância)') || 0) + 1);
+              continue;
+            }
+          }
+          
           // 🆕 CONTROLE DE DIVERSIFICAÇÃO - evitar muitos trades na mesma direção
           const isBuy = analysisResult.action === 'BUY';
           const isSell = analysisResult.action === 'SELL';
