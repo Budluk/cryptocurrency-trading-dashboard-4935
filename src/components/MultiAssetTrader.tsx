@@ -731,7 +731,7 @@ export const MultiAssetTrader = () => {
         if (a.lastPrice < 0.001) return false;
         
         // 5. Priorizar majors e ativos conhecidos (no REAL), mas sem travar o treino em TESTNET
-        const majorSymbols = ['ETHUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT'];
+        const majorSymbols = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'TRXUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'OPUSDT', 'ARBUSDT', 'SUIUSDT', 'APTUSDT', 'INJUSDT', 'SEIUSDT', 'WIFUSDT', 'PEPEUSDT', 'BONKUSDT', 'FLOKIUSDT', 'ORDIUSDT', 'TIAUSDT', 'JUPUSDT', 'WLDUSDT', 'SOLUSDT'];
         const isMajor = majorSymbols.includes(symbol);
         
         // Se não é major, exigir volume maior
@@ -762,13 +762,13 @@ export const MultiAssetTrader = () => {
           whitelistBonus = 0.20;
         }
         
-        // Bonus para majors (exceto os blacklistados)
-        const majorBonus = ['ETHUSDT', 'XRPUSDT'].includes(symbol) ? 0.10 : 0;
+         // Bonus para majors prioritários
+         const priorityBonus = ['BTCUSDT', 'ETHUSDT'].includes(symbol) ? 0.25 : ['XRPUSDT', 'SOLUSDT'].includes(symbol) ? 0.10 : 0;
         
         // Penalidade para spread alto
         const spreadPenalty = a!.spread > 0.03 ? 0.1 : 0;
         
-        const assetScore = (normalizedLiquidity * 0.25) + (normalizedVolatility * 0.20) + (normalizedVolume * 0.25) + whitelistBonus + majorBonus - spreadPenalty;
+        const assetScore = (normalizedLiquidity * 0.25) + (normalizedVolatility * 0.20) + (normalizedVolume * 0.25) + whitelistBonus + priorityBonus - spreadPenalty;
         
         return { ...a!, assetScore, isWhitelisted: symbolAnalysis.isOptimalForHour || symbolAnalysis.isPremium };
       });
