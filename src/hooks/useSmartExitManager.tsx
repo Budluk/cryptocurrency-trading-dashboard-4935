@@ -77,13 +77,12 @@ export function useSmartExitManager() {
     return baseConfig;
   }, [getProgressiveTrailingPct]);
 
-  // v7: Saídas parciais mais pacientes — deixar lucro crescer
-  // v6 fechava tudo em 0.8% → ganhos minúsculos não compensavam losses
+  // v11: Saídas parciais alinhadas com 0.4% SL / 0.8% TP
   const getPartialExitConfig = useCallback((_mlConfig: any): PartialExitConfig => {
     return {
-      firstExitPct: 0.6,   // v7: 0.6% lucro → fecha 50% (era 0.4%/60%)
+      firstExitPct: 0.4,   // v11: 0.4% lucro → fecha 50% (metade do TP)
       firstExitSize: 0.5,
-      secondExitPct: 1.2,  // v7: 1.2% lucro → fecha resto (era 0.8%)
+      secondExitPct: 0.8,  // v11: 0.8% lucro → fecha resto (= TP)
       secondExitSize: 0.5,
     };
   }, []);
@@ -347,12 +346,11 @@ export function useSmartExitManager() {
     const minutesOpen = (now - openTime) / (1000 * 60);
     const profitPct = calculateProfitPct(position);
     
-    // v7: Mais paciente — dar tempo para o trade se desenvolver
-    // v6 fechava em 5min flat → não dava tempo de atingir saída parcial (0.6%)
+    // v11: Saídas por tempo mais rápidas para scalping
     const shouldClose = 
-      (minutesOpen > 12 && profitPct < -0.3) || // 12min com loss significativo
-      (minutesOpen > 10 && profitPct < 0.1) ||   // 10min flat
-      (minutesOpen > 20);                         // 20min hard cap (era 12)
+      (minutesOpen > 8 && profitPct < -0.2) ||  // 8min com loss → fechar
+      (minutesOpen > 6 && profitPct < 0.05) ||   // 6min flat → fechar
+      (minutesOpen > 15);                         // 15min hard cap
     
     if (!shouldClose) return false;
     

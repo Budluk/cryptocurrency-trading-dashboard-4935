@@ -898,43 +898,40 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // === THRESHOLDS v7: score ALTO para evitar entradas fracas ===
-          let scoreThreshold = 50; // v7: AUMENTADO de 45 → 50
-          let minConfirmations = 2;
-          
-          if (mlDecisionsEnabled && mlConfig?.is_enabled) {
-            const patterns = mlConfig.optimal_patterns || {};
-            if (patterns.bestSymbols?.includes(symbol)) scoreThreshold -= 3;
-            const currentHour = new Date().getUTCHours();
-            if (patterns.bestHours?.includes(currentHour)) scoreThreshold -= 2;
+          // v11: PRE-FETCH AI data for strict condition validation
+          let comprehensiveAI = null;
+          const cached = aiAnalysisCache.current.get(symbol);
+          if (cached && Date.now() - cached.timestamp < 30000) {
+            comprehensiveAI = cached.data;
+          } else {
+            try {
+              comprehensiveAI = await fetchComprehensiveAI(symbol);
+              if (comprehensiveAI) {
+                aiAnalysisCache.current.set(symbol, { data: comprehensiveAI, timestamp: Date.now() });
+              }
+            } catch (e) {
+              console.log(`⚠️ AI fetch falhou para ${symbol}, pulando`);
+              continue; // v11: Sem AI = sem validação estrita = não operar
+            }
           }
           
-          // Bonus para ativo ideal da hora
-          if (isOptimalForHour && symbolAnalysis.hourWinRate && symbolAnalysis.hourWinRate >= 70) {
-            scoreThreshold -= 3;
-            minConfirmations = 1;
+          // v11: Sem dados AI, não é possível validar condições estritas
+          if (!comprehensiveAI?.technical?.m1) {
+            console.log(`⚠️ ${symbol}: Sem dados técnicos AI - pulando`);
+            continue;
           }
           
-          // Mercado muito volátil: exigir mais
-          if (volatility > 12) {
-            scoreThreshold += 5; // v7: +5 (era +3)
-            minConfirmations = Math.max(2, minConfirmations);
-          }
+          // v11: Thresholds simplificados (condições estritas já filtram)
+          const scoreThreshold = 55;
+          const minConfirmations = 4; // Todas as 5 condições devem ser atendidas
           
-          // v8: Sem dados históricos = penalidade MODERADA (era +12)
-          if (!isOptimalForHour && !symbolAnalysis.isPremium) {
-            scoreThreshold += 5; // v8: +5 (era +12) — deixar entrar se score bom
-          }
-          
-          // v8: Mínimo NUNCA abaixo de 45 (era 47)
-          scoreThreshold = Math.max(45, scoreThreshold);
-          
-          // Passar symbol e BTC trend para análise
+          // Passar symbol, BTC trend E dados AI para análise
           const analysisResult = analyzeSignal({
             currentPrice, highPrice, lowPrice, priceChange, volume24h, volatility,
             scoreThreshold, minConfirmations, currentBalance: balanceNow,
             symbol,
             btcPriceChange: btcTrend,
+            comprehensiveAI, // v11: CRITICAL - passa dados para validação estrita
           });
 
           if (!analysisResult.shouldTrade || !analysisResult.action) {
@@ -989,7 +986,7 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          const leverage = Math.max(5, Math.min(12, Math.floor(dynamicLeverage))); // v7: MAX 12x
+          const leverage = Math.max(5, Math.min(10, Math.floor(dynamicLeverage))); // v11: 5-10x ONLY
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
@@ -1179,25 +1176,14 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          // 🔒 v7: R:R mínimo 1.4 (era 1.8) — saídas parciais são o mecanismo real
-          // Forçar TP inalcançável = pior que R:R menor com saídas parciais
+          // 🔒 v11: R:R FIXO 1:2 (SL 0.4%, TP 0.8%) — já garantido pelo calculateStopTakeProfit
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);
             const slDist = Math.abs(currentPrice - finalSL);
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
-            if (actualRR < 1.4) {
-              const forcedTPDist = slDist * 1.5;
-              if (analysisResult.action === 'BUY') {
-                takeProfit = (currentPrice + forcedTPDist).toFixed(6);
-              } else {
-                takeProfit = (currentPrice - forcedTPDist).toFixed(6);
-              }
-              console.log(`⚠️ ${symbol}: R:R ${actualRR.toFixed(2)} < 1.4 → forçado 1.5 (TP: ${takeProfit})`);
-            } else {
-              console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 OK`);
-            }
+            console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 | SL: 0.4% | TP: 0.8%`);
           }
 
           // 🧠 VALIDAÇÃO COM INTELIGÊNCIA DE MERCADO (Notícias, Whales, Fear & Greed)
