@@ -32,8 +32,8 @@ interface AnalysisParams {
   minConfirmations: number;
   currentBalance: number;
   symbol?: string;
-  btcPriceChange?: number; // BTC trend for correlation
-  previousPrice?: number; // For pullback detection
+  btcPriceChange?: number;
+  previousPrice?: number;
   comprehensiveAI?: {
     compositeScore: number;
     scalpingConfig: {
@@ -43,8 +43,17 @@ interface AnalysisParams {
       resistance5m: number;
     };
     technical: {
-      m1: { signal: string; rsi: number; score: number };
-      m5: { trend: string; support: number; resistance: number };
+      m1: { 
+        signal: string; rsi: number; score: number;
+        emaCrossover?: string; volumeAboveAvg?: boolean; volumeRatio?: number;
+        isLateral?: boolean; priceAboveVwap?: boolean; priceBelowVwap?: boolean;
+        ema?: { ema9: number; ema21: number; ema50: number };
+        vwap?: number;
+      };
+      m5: { 
+        trend: string; support: number; resistance: number;
+        emaCrossover?: string; isLateral?: boolean;
+      };
       m15?: { trend: string };
       alignment: string;
     };
@@ -62,7 +71,6 @@ const btcCache = {
 export const useSignalAnalysis = () => {
   const lastAIFetch = useRef<Map<string, number>>(new Map());
   const aiCache = useRef<Map<string, any>>(new Map());
-  const priceHistory = useRef<Map<string, number[]>>(new Map());
 
   const fetchComprehensiveAI = useCallback(async (symbol: string): Promise<any | null> => {
     const now = Date.now();
@@ -110,163 +118,10 @@ export const useSignalAnalysis = () => {
     return btcCache.priceChange;
   }, []);
 
-  // Detect market regime (trending vs ranging vs volatile)
-  const detectMarketRegime = useCallback((
-    priceChange: number,
-    volatility: number,
-    atrPercent: number,
-    pricePosition: number
-  ): 'trending' | 'ranging' | 'volatile' => {
-    // High volatility = volatile market
-    if (volatility > 12 || atrPercent > 8) {
-      return 'volatile';
-    }
-    
-    // Strong directional move = trending
-    if (Math.abs(priceChange) > 2.0) {
-      return 'trending';
-    }
-    
-    // Low volatility + price in middle = ranging
-    if (volatility < 3 && pricePosition > 0.3 && pricePosition < 0.7 && Math.abs(priceChange) < 1.5) {
-      return 'ranging';
-    }
-    
-    // Default to trending if there's movement
-    if (Math.abs(priceChange) > 0.8) {
-      return 'trending';
-    }
-    
-    return 'ranging';
-  }, []);
-
-  // Check if price has pulled back (not chasing)
-  const checkPullback = useCallback((
-    symbol: string,
-    currentPrice: number,
-    action: 'BUY' | 'SELL' | null,
-    priceChange: number
-  ): boolean => {
-    const history = priceHistory.current.get(symbol) || [];
-    
-    // Update price history (keep last 10 prices)
-    history.push(currentPrice);
-    if (history.length > 10) history.shift();
-    priceHistory.current.set(symbol, history);
-    
-    if (history.length < 3) return true; // Not enough data, allow entry
-    
-    const recentHigh = Math.max(...history.slice(-5));
-    const recentLow = Math.min(...history.slice(-5));
-    const recentRange = recentHigh - recentLow;
-    
-    if (recentRange === 0) return true;
-    
-    // For BUY: price should have pulled back from recent high (not at top)
-    if (action === 'BUY') {
-      const pullbackFromHigh = (recentHigh - currentPrice) / recentRange;
-      // Allow if pulled back at least 20% from recent high OR if overall bearish (bounce)
-      return pullbackFromHigh >= 0.15 || priceChange < -0.5;
-    }
-    
-    // For SELL: price should have bounced from recent low (not at bottom)
-    if (action === 'SELL') {
-      const bounceFromLow = (currentPrice - recentLow) / recentRange;
-      // Allow if bounced at least 20% from recent low OR if overall bullish (top)
-      return bounceFromLow >= 0.15 || priceChange > 0.5;
-    }
-    
-    return true;
-  }, []);
-
-  // Check BTC correlation (don't trade alts against BTC)
-  const checkBTCCorrelation = useCallback((
-    symbol: string,
-    action: 'BUY' | 'SELL' | null,
-    btcPriceChange: number
-  ): boolean => {
-    // BTC and stablecoins don't need correlation check
-    if (symbol.includes('BTC') || symbol.includes('USD')) return true;
-    
-    // If BTC is moving strongly, alts should follow
-    const btcStrong = Math.abs(btcPriceChange) > 2;
-    
-    if (btcStrong) {
-      // BTC pumping hard - don't short alts
-      if (btcPriceChange > 3 && action === 'SELL') {
-        return false;
-      }
-      // BTC dumping hard - don't long alts
-      if (btcPriceChange < -3 && action === 'BUY') {
-        return false;
-      }
-    }
-    
-    return true;
-  }, []);
-
-  // Check trading hours - crypto opera 24/7, sem bloqueio
-  const checkTradingHours = useCallback((): { isGoodHour: boolean; reason: string } => {
-    // Crypto opera 24/7 - não bloquear nenhum horário
-    return { isGoodHour: true, reason: 'Crypto 24/7' };
-  }, []);
-
-  // Check multi-timeframe alignment
-  const checkMultiTimeframeAlignment = useCallback((
-    comprehensiveAI: AnalysisParams['comprehensiveAI'],
-    action: 'BUY' | 'SELL' | null
-  ): { aligned: boolean; strength: number } => {
-    if (!comprehensiveAI?.technical) {
-      return { aligned: true, strength: 0 };
-    }
-
-    const { m1, m5, m15, alignment } = comprehensiveAI.technical;
-    
-    let alignedCount = 0;
-    let totalChecks = 0;
-
-    // Check M1
-    if (m1?.signal) {
-      totalChecks++;
-      if ((action === 'BUY' && m1.signal === 'buy') || 
-          (action === 'SELL' && m1.signal === 'sell')) {
-        alignedCount++;
-      }
-    }
-
-    // Check M5 trend
-    if (m5?.trend) {
-      totalChecks++;
-      if ((action === 'BUY' && (m5.trend === 'bullish' || m5.trend === 'strong_bullish')) ||
-          (action === 'SELL' && (m5.trend === 'bearish' || m5.trend === 'strong_bearish'))) {
-        alignedCount++;
-      }
-    }
-
-    // Check M15 if available
-    if (m15?.trend) {
-      totalChecks++;
-      if ((action === 'BUY' && (m15.trend === 'bullish' || m15.trend === 'strong_bullish')) ||
-          (action === 'SELL' && (m15.trend === 'bearish' || m15.trend === 'strong_bearish'))) {
-        alignedCount++;
-      }
-    }
-
-    // Check overall alignment
-    if (alignment) {
-      if ((action === 'BUY' && (alignment === 'strong_buy' || alignment === 'buy')) ||
-          (action === 'SELL' && (alignment === 'strong_sell' || alignment === 'sell'))) {
-        alignedCount++;
-      }
-      totalChecks++;
-    }
-
-    const strength = totalChecks > 0 ? alignedCount / totalChecks : 0;
-    const aligned = strength >= 0.5; // At least 50% timeframes aligned
-
-    return { aligned, strength };
-  }, []);
-
+  // ============================================================
+  // v11: STRICT SCALPING SIGNAL ANALYSIS
+  // ALL conditions must be TRUE simultaneously for entry
+  // ============================================================
   const analyzeSignal = useCallback((params: AnalysisParams): SignalAnalysisResult => {
     const {
       currentPrice, highPrice, lowPrice, priceChange,
@@ -274,356 +129,194 @@ export const useSignalAnalysis = () => {
       comprehensiveAI, symbol, btcPriceChange
     } = params;
 
+    const confirmations: string[] = [];
     const priceRange = highPrice - lowPrice;
     const atrPercent = (priceRange / currentPrice) * 100;
-    const pricePosition = priceRange > 0 ? (currentPrice - lowPrice) / priceRange : 0.5;
     
-    // === MARKET REGIME DETECTION ===
-    const marketRegime = detectMarketRegime(priceChange, volatility, atrPercent, pricePosition);
+    // === EXTRACT STRICT INDICATORS FROM AI ===
+    const m1 = comprehensiveAI?.technical?.m1;
+    const m5 = comprehensiveAI?.technical?.m5;
+    const aiConfidence = comprehensiveAI?.scalpingConfig?.confidence;
+    const compositeScore = comprehensiveAI?.compositeScore;
+    const m5Support = comprehensiveAI?.scalpingConfig?.support5m;
+    const m5Resistance = comprehensiveAI?.scalpingConfig?.resistance5m;
     
-    // === TRADING HOURS CHECK ===
-    const { isGoodHour, reason: hourReason } = checkTradingHours();
-    
-    // === VALIDAÇÕES BASE ===
-    const hasMinVolume = volume24h > 80000;
-    const hasGoodVolume = volume24h > 300000;
-    const hasStrongVolume = volume24h > 700000;
-    const hasVolumeSpike = volume24h > 1500000;
-    
-    // Volatilidade ideal (ajustada por regime)
-    const volInRange = marketRegime === 'volatile' 
-      ? volatility > 2 && volatility < 25  // Mais tolerante em mercado volátil
-      : volatility > 0.5 && volatility < 18;
-    const volIdeal = volatility > 1.5 && volatility < 10;
-    
-    // === ANÁLISE DE TENDÊNCIA ===
-    const strongBullish = priceChange > 2.5;
-    const bullish = priceChange > 1.2;
-    const mildBullish = priceChange > 0.5;
-    
-    const strongBearish = priceChange < -2.5;
-    const bearish = priceChange < -1.2;
-    const mildBearish = priceChange < -0.5;
-    
-    // === ZONAS DE S/R ===
-    let nearSupport = pricePosition < 0.20;
-    let nearResistance = pricePosition > 0.80;
-    let inMiddle = pricePosition >= 0.35 && pricePosition <= 0.65;
-    
-    if (comprehensiveAI?.scalpingConfig) {
-      const { support5m, resistance5m } = comprehensiveAI.scalpingConfig;
-      if (support5m > 0 && resistance5m > 0) {
-        const range5m = resistance5m - support5m;
-        if (range5m > 0) {
-          const pos5m = (currentPrice - support5m) / range5m;
-          nearSupport = pos5m < 0.20;
-          nearResistance = pos5m > 0.80;
-          inMiddle = pos5m >= 0.35 && pos5m <= 0.65;
-        }
-      }
+    // If no AI data, we can't validate strict conditions - skip
+    if (!m1 || !m5) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: [], shouldTrade: false, skipReason: '⏳ Sem dados AI para validação estrita',
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
     }
     
-    // === CONDIÇÕES DE REVERSÃO ===
-    const oversold = priceChange < -4.0;
-    const mildOversold = priceChange < -2.5 && priceChange >= -4.0;
-    const overbought = priceChange > 4.0;
-    const mildOverbought = priceChange > 2.5 && priceChange <= 4.0;
+    // === STRICT INDICATOR VALUES ===
+    const rsi = m1.rsi ?? 50;
+    const emaCrossover = m1.emaCrossover || 'below';
+    const volumeAboveAvg = m1.volumeAboveAvg ?? false;
+    const isLateral = m1.isLateral ?? false;
+    const priceAboveVwap = m1.priceAboveVwap ?? false;
+    const priceBelowVwap = m1.priceBelowVwap ?? false;
+    const m5Trend = m5.trend || 'sideways';
+    const m5Lateral = m5.isLateral ?? false;
     
-    const confirmations: string[] = [];
+    // === QUALITY FILTERS (block trade if ANY is true) ===
     
-    // === PENALIDADES PARA MERCADO RANGING ===
-    const rangingPenalty = marketRegime === 'ranging' ? 0.7 : 1;
-    
-    // === PONTUAÇÃO BUY ===
-    let buyScore = 0;
-    
-    // 1. Tendência + Volume
-    if (strongBullish && hasVolumeSpike) {
-      buyScore += 35 * rangingPenalty;
-      confirmations.push('📈 Tendência forte + volume spike');
-    } else if (bullish && hasStrongVolume) {
-      buyScore += 28 * rangingPenalty;
-      confirmations.push('📈 Tendência bullish confirmada');
-    } else if (bullish && hasGoodVolume) {
-      buyScore += 22 * rangingPenalty;
-      confirmations.push('📈 Tendência bullish');
-    } else if (mildBullish && hasStrongVolume) {
-      buyScore += 18 * rangingPenalty;
-      confirmations.push('Momentum bullish + volume');
+    // 1. Lateral market (20+ candles) → NO TRADE
+    if (isLateral || m5Lateral) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: ['🚫 Mercado lateral'], shouldTrade: false,
+        skipReason: '📊 Mercado lateral > 20 velas',
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
     }
     
-    // 2. Reversão em suporte (sempre ok, mesmo em ranging)
-    if (oversold && nearSupport && hasVolumeSpike) {
-      buyScore += 40;
-      confirmations.push('🔄 Reversão forte no suporte');
-    } else if (mildOversold && nearSupport && hasStrongVolume) {
-      buyScore += 32;
-      confirmations.push('🔄 Reversão no suporte');
-    } else if (nearSupport && !bearish && hasGoodVolume) {
-      buyScore += 20;
-      confirmations.push('📍 Zona de suporte + volume');
+    // 2. Volume below average → NO TRADE
+    if (!volumeAboveAvg) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: ['🚫 Volume baixo'], shouldTrade: false,
+        skipReason: '📉 Volume abaixo da média 20 velas',
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
     }
     
-    // 3. Momentum
-    if (pricePosition > 0.55 && mildBullish && volIdeal) {
-      buyScore += 20 * rangingPenalty;
-      confirmations.push('⚡ Momentum forte');
-    } else if (pricePosition > 0.45 && priceChange > 0.3 && volInRange) {
-      buyScore += 12 * rangingPenalty;
-      confirmations.push('Momentum positivo');
+    // 3. Minimum volume $80k
+    if (volume24h < 80000) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: [], shouldTrade: false,
+        skipReason: `Volume $${(volume24h/1e6).toFixed(2)}M muito baixo`,
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
     }
     
-    // 4. ATR ideal
-    if (atrPercent > 1.5 && atrPercent < 6) {
-      buyScore += 15;
-      confirmations.push('ATR ideal para scalp');
-    } else if (atrPercent > 0.8 && atrPercent < 10) {
-      buyScore += 8;
+    // 4. Balance check
+    if (currentBalance < 3) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: [], shouldTrade: false,
+        skipReason: `Saldo $${currentBalance.toFixed(2)} insuficiente`,
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
     }
     
-    // === PONTUAÇÃO SELL ===
-    let sellScore = 0;
+    // === STRICT LONG CONDITIONS (ALL must be true) ===
+    const longEMACross = emaCrossover === 'bullish' || emaCrossover === 'above';
+    const longVWAP = priceAboveVwap;
+    const longRSI = rsi >= 50 && rsi <= 65;
+    const longM5Confirm = m5Trend === 'up';
+    // volumeAboveAvg already checked above
     
-    // 1. Tendência + Volume
-    if (strongBearish && hasVolumeSpike) {
-      sellScore += 35 * rangingPenalty;
-      confirmations.push('📉 Tendência forte + volume spike');
-    } else if (bearish && hasStrongVolume) {
-      sellScore += 28 * rangingPenalty;
-      confirmations.push('📉 Tendência bearish confirmada');
-    } else if (bearish && hasGoodVolume) {
-      sellScore += 22 * rangingPenalty;
-      confirmations.push('📉 Tendência bearish');
-    } else if (mildBearish && hasStrongVolume) {
-      sellScore += 18 * rangingPenalty;
-      confirmations.push('Momentum bearish + volume');
-    }
+    const allLongMet = longEMACross && longVWAP && longRSI && longM5Confirm;
     
-    // 2. Reversão em resistência
-    if (overbought && nearResistance && hasVolumeSpike) {
-      sellScore += 40;
-      confirmations.push('🔄 Reversão forte na resistência');
-    } else if (mildOverbought && nearResistance && hasStrongVolume) {
-      sellScore += 32;
-      confirmations.push('🔄 Reversão na resistência');
-    } else if (nearResistance && !bullish && hasGoodVolume) {
-      sellScore += 20;
-      confirmations.push('📍 Zona de resistência + volume');
-    }
+    // === STRICT SHORT CONDITIONS (ALL must be true) ===
+    const shortEMACross = emaCrossover === 'bearish' || emaCrossover === 'below';
+    const shortVWAP = priceBelowVwap;
+    const shortRSI = rsi >= 35 && rsi <= 50;
+    const shortM5Confirm = m5Trend === 'down';
     
-    // 3. Momentum
-    if (pricePosition < 0.45 && mildBearish && volIdeal) {
-      sellScore += 20 * rangingPenalty;
-      confirmations.push('⚡ Momentum bearish forte');
-    } else if (pricePosition < 0.55 && priceChange < -0.3 && volInRange) {
-      sellScore += 12 * rangingPenalty;
-      confirmations.push('Momentum negativo');
-    }
+    const allShortMet = shortEMACross && shortVWAP && shortRSI && shortM5Confirm;
     
-    // 4. ATR
-    if (atrPercent > 1.5 && atrPercent < 6) {
-      sellScore += 15;
-    } else if (atrPercent > 0.8 && atrPercent < 10) {
-      sellScore += 8;
-    }
-    
-    // === AI BOOST ===
-    let aiBoost = 0;
-    let m1Signal: 'buy' | 'sell' | 'hold' | undefined;
-    let m5Support: number | undefined;
-    let m5Resistance: number | undefined;
-    let compositeScore: number | undefined;
-    let aiConfidence: number | undefined;
-    
-    if (comprehensiveAI) {
-      compositeScore = comprehensiveAI.compositeScore;
-      aiConfidence = comprehensiveAI.scalpingConfig?.confidence;
-      m5Support = comprehensiveAI.scalpingConfig?.support5m;
-      m5Resistance = comprehensiveAI.scalpingConfig?.resistance5m;
-      m1Signal = comprehensiveAI.technical?.m1?.signal as any;
-      
-      if (compositeScore !== undefined && aiConfidence && aiConfidence > 60) {
-        if (compositeScore > 35 && buyScore > sellScore) {
-          buyScore += 20;
-          confirmations.push(`🤖 AI bullish: ${compositeScore.toFixed(0)}%`);
-          aiBoost = 20;
-        } else if (compositeScore < -35 && sellScore > buyScore) {
-          sellScore += 20;
-          confirmations.push(`🤖 AI bearish: ${compositeScore.toFixed(0)}%`);
-          aiBoost = 20;
-        }
-      }
-      
-      // On-chain
-      if (comprehensiveAI.onChain?.signal === 'bullish' && buyScore > sellScore) {
-        buyScore += 10;
-        confirmations.push('📊 On-Chain bullish');
-      } else if (comprehensiveAI.onChain?.signal === 'bearish' && sellScore > buyScore) {
-        sellScore += 10;
-        confirmations.push('📊 On-Chain bearish');
-      }
-      
-      // Funding rate
-      const funding = comprehensiveAI.onChain?.fundingRate || 0;
-      if (funding > 0.05 && sellScore > buyScore) {
-        sellScore += 8;
-        confirmations.push('💰 Funding muito alto');
-      } else if (funding < -0.03 && buyScore > sellScore) {
-        buyScore += 8;
-        confirmations.push('💰 Funding negativo');
-      }
-      
-      // Sentiment
-      const fgi = comprehensiveAI.sentiment?.fearGreedIndex || 50;
-      if (fgi < 20 && buyScore > sellScore) {
-        buyScore += 12;
-        confirmations.push('😱 Fear extremo');
-      } else if (fgi > 80 && sellScore > buyScore) {
-        sellScore += 12;
-        confirmations.push('🤑 Greed extremo');
-      }
-      
-      // 1m signal
-      if (m1Signal === 'buy' && buyScore > sellScore) {
-        buyScore += 10;
-        confirmations.push('📈 1m BUY');
-      } else if (m1Signal === 'sell' && sellScore > buyScore) {
-        sellScore += 10;
-        confirmations.push('📉 1m SELL');
-      }
-    }
-    
-    // === DETERMINAR AÇÃO ===
-    const scoreDiff = Math.abs(buyScore - sellScore);
-    const minDiff = marketRegime === 'trending' ? 10 : marketRegime === 'volatile' ? 12 : 14;
-    
+    // === DETERMINE ACTION ===
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
+    let buyScore = 0;
+    let sellScore = 0;
     
-    // Threshold dinâmico por volatilidade (leve)
-    const volatilityAdjustedThreshold = volatility > 12 
-      ? scoreThreshold + 4
-      : volatility > 8 
-        ? scoreThreshold + 2
-        : scoreThreshold;
+    if (allLongMet) {
+      action = 'BUY';
+      // Score based on condition strength
+      buyScore = 60; // Base for all conditions met
+      if (emaCrossover === 'bullish') buyScore += 15; // Fresh cross > already above
+      if (rsi >= 52 && rsi <= 60) buyScore += 10; // Sweet spot RSI
+      if (m1.volumeRatio && m1.volumeRatio > 1.5) buyScore += 10; // Strong volume
+      if (compositeScore && compositeScore > 20) buyScore += 10; // AI confirms
+      if (aiConfidence && aiConfidence > 70) buyScore += 5;
+      signalScore = buyScore;
+      
+      confirmations.push('✅ EMA9 > EMA21');
+      confirmations.push('✅ Preço > VWAP');
+      confirmations.push(`✅ RSI ${rsi.toFixed(0)} (50-65)`);
+      confirmations.push('✅ Volume > média 20');
+      confirmations.push('✅ M5 tendência UP');
+    } else if (allShortMet) {
+      action = 'SELL';
+      sellScore = 60;
+      if (emaCrossover === 'bearish') sellScore += 15;
+      if (rsi >= 37 && rsi <= 48) sellScore += 10;
+      if (m1.volumeRatio && m1.volumeRatio > 1.5) sellScore += 10;
+      if (compositeScore && compositeScore < -20) sellScore += 10;
+      if (aiConfidence && aiConfidence > 70) sellScore += 5;
+      signalScore = sellScore;
+      
+      confirmations.push('✅ EMA9 < EMA21');
+      confirmations.push('✅ Preço < VWAP');
+      confirmations.push(`✅ RSI ${rsi.toFixed(0)} (35-50)`);
+      confirmations.push('✅ Volume > média 20');
+      confirmations.push('✅ M5 tendência DOWN');
+    }
     
-    if (scoreDiff >= minDiff) {
-      if (buyScore > sellScore && buyScore >= volatilityAdjustedThreshold) {
-        action = 'BUY';
-        signalScore = buyScore;
-      } else if (sellScore > buyScore && sellScore >= volatilityAdjustedThreshold) {
-        action = 'SELL';
-        signalScore = sellScore;
+    // === BTC CORRELATION CHECK ===
+    let btcAligned = true;
+    if (btcPriceChange !== undefined && symbol && !symbol.includes('BTC')) {
+      if (btcPriceChange > 3 && action === 'SELL') btcAligned = false;
+      if (btcPriceChange < -3 && action === 'BUY') btcAligned = false;
+    }
+    
+    if (!btcAligned) {
+      return {
+        action: null, signalScore: 0, buyScore, sellScore,
+        confirmations, shouldTrade: false,
+        skipReason: '🪙 BTC em direção oposta',
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'trending', pullbackReady: true, btcAligned: false,
+      };
+    }
+    
+    // === DETERMINE QUALITY ===
+    let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
+    if (action) {
+      if (signalScore >= 85) signalQuality = 'premium';
+      else if (signalScore >= 70) signalQuality = 'high';
+      else if (signalScore >= 60) signalQuality = 'medium';
+    }
+    
+    // === SKIP REASON FOR NON-ENTRY ===
+    let skipReason = '';
+    if (!action) {
+      const missing: string[] = [];
+      // Check LONG conditions
+      if (!longEMACross) missing.push('EMA cross ↑');
+      if (!longVWAP) missing.push('Preço > VWAP');
+      if (!(rsi >= 50 && rsi <= 65)) missing.push(`RSI ${rsi.toFixed(0)}∉[50-65]`);
+      if (!longM5Confirm) missing.push('M5 ≠ UP');
+      
+      // Check SHORT conditions  
+      const shortMissing: string[] = [];
+      if (!shortEMACross) shortMissing.push('EMA cross ↓');
+      if (!shortVWAP) shortMissing.push('Preço < VWAP');
+      if (!(rsi >= 35 && rsi <= 50)) shortMissing.push(`RSI ${rsi.toFixed(0)}∉[35-50]`);
+      if (!shortM5Confirm) shortMissing.push('M5 ≠ DOWN');
+      
+      // Show the direction with fewer missing conditions
+      if (missing.length <= shortMissing.length) {
+        skipReason = `LONG falta: ${missing.join(', ')}`;
+      } else {
+        skipReason = `SHORT falta: ${shortMissing.join(', ')}`;
       }
     }
     
-    // === MULTI-TIMEFRAME ALIGNMENT ===
-    const { aligned: tfAligned, strength: tfStrength } = checkMultiTimeframeAlignment(comprehensiveAI, action);
-    
-    // Boost se aligned, penalidade leve se não
-    if (tfAligned && tfStrength >= 0.6) {
-      signalScore = Math.round(signalScore * 1.15);
-      confirmations.push(`✅ ${Math.round(tfStrength * 100)}% TFs`);
-    } else if (!tfAligned && tfStrength < 0.3) {
-      signalScore = Math.round(signalScore * 0.85);
-    }
-    
-    // === PULLBACK CHECK (flexível) ===
-    const pullbackReady = symbol ? checkPullback(symbol, currentPrice, action, priceChange) : true;
-    
-    // === BTC CORRELATION ===
-    const btcAligned = btcPriceChange !== undefined && symbol 
-      ? checkBTCCorrelation(symbol, action, btcPriceChange) 
-      : true;
-    
-    // === FILTROS ===
-    const volumeOk = hasMinVolume;
-    const volatilityOk = volInRange;
-    const atrOk = atrPercent > 0.15 && atrPercent < 20;
-    const priceMovementOk = Math.abs(priceChange) > 0.1 && Math.abs(priceChange) < 20;
-    
-    const momentumScore = Math.abs(priceChange) * (hasVolumeSpike ? 2.5 : hasStrongVolume ? 1.8 : hasGoodVolume ? 1.3 : 1);
-    const momentumOk = momentumScore > 0.3;
-    
-    // Reversões com volume forte
-    const isReversal = (
-      (action === 'BUY' && (oversold || mildOversold) && nearSupport && hasStrongVolume) ||
-      (action === 'SELL' && (overbought || mildOverbought) && nearResistance && hasStrongVolume)
-    );
-    
-    // Momentum trade
-    const isMomentumTrade = (
-      (action === 'BUY' && priceChange > 1.5 && hasStrongVolume) ||
-      (action === 'SELL' && priceChange < -1.5 && hasStrongVolume)
-    );
-    
-    const volumeDirectionOk = isReversal || isMomentumTrade ||
-      (action === 'BUY' && priceChange > 0.3) ||
-      (action === 'SELL' && priceChange < -0.3);
-    
-    const positionOk = !inMiddle || scoreDiff >= 15 || isReversal || isMomentumTrade || signalScore >= 50;
-    
-    // === CLASSIFICAÇÃO DE QUALIDADE ===
-    let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
-    
-    if (signalScore >= 80 && hasVolumeSpike && scoreDiff >= 25) {
-      signalQuality = 'premium';
-    } else if (signalScore >= 60 && hasStrongVolume && scoreDiff >= 16) {
-      signalQuality = 'high';
-    } else if (signalScore >= 55 && hasVolumeSpike && scoreDiff >= 14) {
-      signalQuality = 'high';
-    } else if (signalScore >= 45 && hasGoodVolume && scoreDiff >= 12) {
-      signalQuality = 'medium';
-    } else if (signalScore >= 42 && hasStrongVolume && scoreDiff >= 10) {
-      signalQuality = 'medium';
-    } else if (signalScore >= 40 && (isReversal || isMomentumTrade)) {
-      signalQuality = 'medium';
-    }
-    
-    // AI upgrade
-    if (aiBoost >= 10 && signalQuality === 'low' && signalScore >= 38) signalQuality = 'medium';
-    if (aiBoost >= 15 && signalQuality === 'medium' && signalScore >= 50) signalQuality = 'high';
-    if (aiConfidence && aiConfidence > 70 && signalQuality === 'medium' && signalScore >= 45) signalQuality = 'high';
-    
-    // === BLOQUEIO DE RANGING (apenas se score baixo) ===
-    const rangingBlocked = marketRegime === 'ranging' && !isReversal && signalScore < 50;
-    
-    // === DECISÃO FINAL ===
-    const shouldTrade = (
-      action !== null &&
-      signalScore >= volatilityAdjustedThreshold &&
-      scoreDiff >= minDiff &&
-      currentBalance > 3 &&
-      confirmations.length >= minConfirmations &&
-      volumeOk &&
-      (volatilityOk || isReversal || isMomentumTrade || signalScore >= 45) &&
-      atrOk &&
-      priceMovementOk &&
-      (momentumOk || isReversal || signalScore >= 45) &&
-      (volumeDirectionOk || signalScore >= 50) &&
-      (positionOk || signalScore >= 45) &&
-      (signalQuality !== 'low') &&
-      (pullbackReady || isReversal || isMomentumTrade || signalScore >= 50) &&
-      (btcAligned || isReversal || isMomentumTrade || signalScore >= 50) &&
-      !rangingBlocked
-    );
-
-    // Skip reason
-    let skipReason = '';
-    if (!shouldTrade) {
-      if (action === null) skipReason = 'Sem sinal claro';
-      else if (signalScore < scoreThreshold) skipReason = `Score ${signalScore}/${scoreThreshold}`;
-      else if (scoreDiff < minDiff) skipReason = `Diff ${scoreDiff}/${minDiff}`;
-      else if (signalQuality === 'low') skipReason = 'Qualidade baixa';
-      else if (!volumeOk) skipReason = `Vol $${(volume24h/1e6).toFixed(2)}M`;
-      else if (!priceMovementOk) skipReason = `Move ${priceChange.toFixed(1)}%`;
-      else if (!momentumOk && !isReversal && signalScore < 50) skipReason = `Momentum ${momentumScore.toFixed(1)}`;
-      else if (!pullbackReady && !isReversal && !isMomentumTrade && signalScore < 50) skipReason = '⏳ Aguardando pullback';
-      else if (!btcAligned && !isReversal && !isMomentumTrade && signalScore < 55) skipReason = '🪙 BTC contrário';
-      else if (!isGoodHour && !isReversal && !isMomentumTrade && signalScore < 55) skipReason = `⏰ ${hourReason}`;
-      else if (currentBalance <= 2) skipReason = `Saldo $${currentBalance.toFixed(2)}`;
-      else skipReason = 'Filtro geral';
-    }
+    const shouldTrade = action !== null && signalQuality !== 'low';
+    const momentumScore = Math.abs(priceChange) * (volumeAboveAvg ? 1.5 : 1);
+    const marketRegime: 'trending' | 'ranging' | 'volatile' = 
+      volatility > 12 ? 'volatile' : Math.abs(priceChange) > 1.5 ? 'trending' : 'ranging';
 
     return {
       action,
@@ -635,16 +328,16 @@ export const useSignalAnalysis = () => {
       skipReason,
       signalQuality,
       momentumScore,
-      m1Signal,
+      m1Signal: m1.signal as any,
       m5Support,
       m5Resistance,
       compositeScore,
       aiConfidence,
       marketRegime,
-      pullbackReady,
+      pullbackReady: true,
       btcAligned,
     };
-  }, [detectMarketRegime, checkTradingHours, checkMultiTimeframeAlignment, checkPullback, checkBTCCorrelation]);
+  }, []);
 
   return { analyzeSignal, fetchComprehensiveAI, fetchBTCTrend };
 };
