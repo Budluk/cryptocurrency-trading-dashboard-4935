@@ -768,7 +768,7 @@ export const MultiAssetTrader = () => {
         // Penalidade para spread alto
         const spreadPenalty = a!.spread > 0.03 ? 0.1 : 0;
         
-        const assetScore = (normalizedLiquidity * 0.25) + (normalizedVolatility * 0.20) + (normalizedVolume * 0.25) + whitelistBonus + majorBonus - spreadPenalty;
+        const assetScore = (normalizedLiquidity * 0.25) + (normalizedVolatility * 0.20) + (normalizedVolume * 0.25) + whitelistBonus + priorityBonus - spreadPenalty;
         
         return { ...a!, assetScore, isWhitelisted: symbolAnalysis.isOptimalForHour || symbolAnalysis.isPremium };
       });
