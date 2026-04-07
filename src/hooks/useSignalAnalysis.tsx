@@ -257,17 +257,20 @@ export const useSignalAnalysis = () => {
     const longVWAP = priceAboveVwap;
     const longRSI = rsi >= 50 && rsi <= 65;
     const longM5Confirm = m5Trend === 'up';
-    // volumeAboveAvg already checked above
+    const longEMA50 = priceAboveEma50; // Price must be above EMA50
+    const longFearGreed = fearGreed <= 75; // Block LONG in extreme greed
     
-    const allLongMet = longEMACross && longVWAP && longRSI && longM5Confirm;
+    const allLongMet = longEMACross && longVWAP && longRSI && longM5Confirm && longEMA50 && longFearGreed;
     
     // === STRICT SHORT CONDITIONS (ALL must be true) ===
     const shortEMACross = emaCrossover === 'bearish' || emaCrossover === 'below';
     const shortVWAP = priceBelowVwap;
     const shortRSI = rsi >= 35 && rsi <= 50;
     const shortM5Confirm = m5Trend === 'down';
+    const shortEMA50 = priceBelowEma50; // Price must be below EMA50
+    const shortFearGreed = fearGreed >= 25; // Block SHORT in extreme fear
     
-    const allShortMet = shortEMACross && shortVWAP && shortRSI && shortM5Confirm;
+    const allShortMet = shortEMACross && shortVWAP && shortRSI && shortM5Confirm && shortEMA50 && shortFearGreed;
     
     // === DETERMINE ACTION ===
     let action: 'BUY' | 'SELL' | null = null;
