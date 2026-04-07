@@ -202,6 +202,18 @@ export const useSignalAnalysis = () => {
       };
     }
     
+    // 2b. Volume ratio must be >= 1.3x average (not just "above")
+    const volumeRatio = m1.volumeRatio ?? 1.0;
+    if (volumeRatio < 1.3) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: ['🚫 Volume ratio fraco'], shouldTrade: false,
+        skipReason: `📉 Volume ratio ${volumeRatio.toFixed(2)}x < 1.3x mínimo`,
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
+    }
+    
     // 3. Minimum volume $80k
     if (volume24h < 80000) {
       return {
@@ -224,22 +236,41 @@ export const useSignalAnalysis = () => {
       };
     }
     
+    // 5. Fear & Greed Directional Filter
+    const fearGreed = comprehensiveAI?.sentiment?.fearGreedIndex ?? 50;
+    if (fearGreed < 25) {
+      // Extreme Fear → only LONG allowed (contrarian buy)
+      // Block any SHORT setup
+    }
+    if (fearGreed > 75) {
+      // Extreme Greed → only SHORT allowed (contrarian sell)
+      // Block any LONG setup
+    }
+    
+    // 6. EMA50 trend alignment filter
+    const ema50 = m1.ema?.ema50;
+    const priceAboveEma50 = ema50 ? currentPrice > ema50 : true;
+    const priceBelowEma50 = ema50 ? currentPrice < ema50 : true;
+    
     // === STRICT LONG CONDITIONS (ALL must be true) ===
     const longEMACross = emaCrossover === 'bullish' || emaCrossover === 'above';
     const longVWAP = priceAboveVwap;
     const longRSI = rsi >= 50 && rsi <= 65;
     const longM5Confirm = m5Trend === 'up';
-    // volumeAboveAvg already checked above
+    const longEMA50 = priceAboveEma50; // Price must be above EMA50
+    const longFearGreed = fearGreed <= 75; // Block LONG in extreme greed
     
-    const allLongMet = longEMACross && longVWAP && longRSI && longM5Confirm;
+    const allLongMet = longEMACross && longVWAP && longRSI && longM5Confirm && longEMA50 && longFearGreed;
     
     // === STRICT SHORT CONDITIONS (ALL must be true) ===
     const shortEMACross = emaCrossover === 'bearish' || emaCrossover === 'below';
     const shortVWAP = priceBelowVwap;
     const shortRSI = rsi >= 35 && rsi <= 50;
     const shortM5Confirm = m5Trend === 'down';
+    const shortEMA50 = priceBelowEma50; // Price must be below EMA50
+    const shortFearGreed = fearGreed >= 25; // Block SHORT in extreme fear
     
-    const allShortMet = shortEMACross && shortVWAP && shortRSI && shortM5Confirm;
+    const allShortMet = shortEMACross && shortVWAP && shortRSI && shortM5Confirm && shortEMA50 && shortFearGreed;
     
     // === DETERMINE ACTION ===
     let action: 'BUY' | 'SELL' | null = null;
@@ -250,37 +281,45 @@ export const useSignalAnalysis = () => {
     if (allLongMet) {
       action = 'BUY';
       buyScore = 60;
-      if (emaCrossover === 'bullish') buyScore += 15; // Fresh cross > already above
-      if (rsi >= 52 && rsi <= 60) buyScore += 10; // Sweet spot RSI
-      if (m1.volumeRatio && m1.volumeRatio > 1.5) buyScore += 10; // Strong volume
-      if (m1.volumeRatio && m1.volumeRatio > 2.0) buyScore += 5; // Very strong volume
-      if (compositeScore && compositeScore > 20) buyScore += 10; // AI confirms
-      if (compositeScore && compositeScore > 35) buyScore += 5; // Strong AI
+      if (emaCrossover === 'bullish') buyScore += 15;
+      if (rsi >= 52 && rsi <= 60) buyScore += 10;
+      if (volumeRatio > 1.5) buyScore += 10;
+      if (volumeRatio > 2.0) buyScore += 5;
+      if (compositeScore && compositeScore > 20) buyScore += 10;
+      if (compositeScore && compositeScore > 35) buyScore += 5;
       if (aiConfidence && aiConfidence > 70) buyScore += 5;
+      if (fearGreed < 25) buyScore += 10; // Contrarian buy in extreme fear
+      if (ema50 && currentPrice > ema50 * 1.002) buyScore += 5; // Strong above EMA50
       signalScore = buyScore;
       
       confirmations.push('✅ EMA9 > EMA21');
       confirmations.push('✅ Preço > VWAP');
       confirmations.push(`✅ RSI ${rsi.toFixed(0)} (50-65)`);
-      confirmations.push('✅ Volume > média 20');
+      confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x média`);
       confirmations.push('✅ M5 tendência UP');
+      confirmations.push('✅ Preço > EMA50');
+      if (fearGreed < 25) confirmations.push('🎯 Compra contrária (F&G extremo medo)');
     } else if (allShortMet) {
       action = 'SELL';
       sellScore = 60;
       if (emaCrossover === 'bearish') sellScore += 15;
       if (rsi >= 37 && rsi <= 48) sellScore += 10;
-      if (m1.volumeRatio && m1.volumeRatio > 1.5) sellScore += 10;
-      if (m1.volumeRatio && m1.volumeRatio > 2.0) sellScore += 5;
+      if (volumeRatio > 1.5) sellScore += 10;
+      if (volumeRatio > 2.0) sellScore += 5;
       if (compositeScore && compositeScore < -20) sellScore += 10;
       if (compositeScore && compositeScore < -35) sellScore += 5;
       if (aiConfidence && aiConfidence > 70) sellScore += 5;
+      if (fearGreed > 75) sellScore += 10; // Contrarian sell in extreme greed
+      if (ema50 && currentPrice < ema50 * 0.998) sellScore += 5; // Strong below EMA50
       signalScore = sellScore;
       
       confirmations.push('✅ EMA9 < EMA21');
       confirmations.push('✅ Preço < VWAP');
       confirmations.push(`✅ RSI ${rsi.toFixed(0)} (35-50)`);
-      confirmations.push('✅ Volume > média 20');
+      confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x média`);
       confirmations.push('✅ M5 tendência DOWN');
+      confirmations.push('✅ Preço < EMA50');
+      if (fearGreed > 75) confirmations.push('🎯 Venda contrária (F&G extrema ganância)');
     }
     
     // === BTC CORRELATION CHECK ===
@@ -313,18 +352,20 @@ export const useSignalAnalysis = () => {
     let skipReason = '';
     if (!action) {
       const missing: string[] = [];
-      // Check LONG conditions
       if (!longEMACross) missing.push('EMA cross ↑');
       if (!longVWAP) missing.push('Preço > VWAP');
       if (!(rsi >= 50 && rsi <= 65)) missing.push(`RSI ${rsi.toFixed(0)}∉[50-65]`);
       if (!longM5Confirm) missing.push('M5 ≠ UP');
+      if (!priceAboveEma50) missing.push('Preço < EMA50');
+      if (fearGreed > 75) missing.push('F&G > 75 (ganância)');
       
-      // Check SHORT conditions  
       const shortMissing: string[] = [];
       if (!shortEMACross) shortMissing.push('EMA cross ↓');
       if (!shortVWAP) shortMissing.push('Preço < VWAP');
       if (!(rsi >= 35 && rsi <= 50)) shortMissing.push(`RSI ${rsi.toFixed(0)}∉[35-50]`);
       if (!shortM5Confirm) shortMissing.push('M5 ≠ DOWN');
+      if (!priceBelowEma50) shortMissing.push('Preço > EMA50');
+      if (fearGreed < 25) shortMissing.push('F&G < 25 (medo)');
       
       // Show the direction with fewer missing conditions
       if (missing.length <= shortMissing.length) {
