@@ -281,37 +281,45 @@ export const useSignalAnalysis = () => {
     if (allLongMet) {
       action = 'BUY';
       buyScore = 60;
-      if (emaCrossover === 'bullish') buyScore += 15; // Fresh cross > already above
-      if (rsi >= 52 && rsi <= 60) buyScore += 10; // Sweet spot RSI
-      if (m1.volumeRatio && m1.volumeRatio > 1.5) buyScore += 10; // Strong volume
-      if (m1.volumeRatio && m1.volumeRatio > 2.0) buyScore += 5; // Very strong volume
-      if (compositeScore && compositeScore > 20) buyScore += 10; // AI confirms
-      if (compositeScore && compositeScore > 35) buyScore += 5; // Strong AI
+      if (emaCrossover === 'bullish') buyScore += 15;
+      if (rsi >= 52 && rsi <= 60) buyScore += 10;
+      if (volumeRatio > 1.5) buyScore += 10;
+      if (volumeRatio > 2.0) buyScore += 5;
+      if (compositeScore && compositeScore > 20) buyScore += 10;
+      if (compositeScore && compositeScore > 35) buyScore += 5;
       if (aiConfidence && aiConfidence > 70) buyScore += 5;
+      if (fearGreed < 25) buyScore += 10; // Contrarian buy in extreme fear
+      if (ema50 && currentPrice > ema50 * 1.002) buyScore += 5; // Strong above EMA50
       signalScore = buyScore;
       
       confirmations.push('✅ EMA9 > EMA21');
       confirmations.push('✅ Preço > VWAP');
       confirmations.push(`✅ RSI ${rsi.toFixed(0)} (50-65)`);
-      confirmations.push('✅ Volume > média 20');
+      confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x média`);
       confirmations.push('✅ M5 tendência UP');
+      confirmations.push('✅ Preço > EMA50');
+      if (fearGreed < 25) confirmations.push('🎯 Compra contrária (F&G extremo medo)');
     } else if (allShortMet) {
       action = 'SELL';
       sellScore = 60;
       if (emaCrossover === 'bearish') sellScore += 15;
       if (rsi >= 37 && rsi <= 48) sellScore += 10;
-      if (m1.volumeRatio && m1.volumeRatio > 1.5) sellScore += 10;
-      if (m1.volumeRatio && m1.volumeRatio > 2.0) sellScore += 5;
+      if (volumeRatio > 1.5) sellScore += 10;
+      if (volumeRatio > 2.0) sellScore += 5;
       if (compositeScore && compositeScore < -20) sellScore += 10;
       if (compositeScore && compositeScore < -35) sellScore += 5;
       if (aiConfidence && aiConfidence > 70) sellScore += 5;
+      if (fearGreed > 75) sellScore += 10; // Contrarian sell in extreme greed
+      if (ema50 && currentPrice < ema50 * 0.998) sellScore += 5; // Strong below EMA50
       signalScore = sellScore;
       
       confirmations.push('✅ EMA9 < EMA21');
       confirmations.push('✅ Preço < VWAP');
       confirmations.push(`✅ RSI ${rsi.toFixed(0)} (35-50)`);
-      confirmations.push('✅ Volume > média 20');
+      confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x média`);
       confirmations.push('✅ M5 tendência DOWN');
+      confirmations.push('✅ Preço < EMA50');
+      if (fearGreed > 75) confirmations.push('🎯 Venda contrária (F&G extrema ganância)');
     }
     
     // === BTC CORRELATION CHECK ===
