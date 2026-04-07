@@ -130,8 +130,7 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ v14: SL/TP BASEADO EM ATR — como script Python profissional
-  // SL = 1.2x ATR, TP = 2.0x ATR → R:R natural ~1:1.67
+  // 🛡️ v15: SL = min(ATR*1.2, swing structure) — stop mais apertado possível
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -142,25 +141,34 @@ export const useTradingCalculations = () => {
     lowPrice?: number,
     symbolProfile?: SymbolRiskProfile
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
-    // ATR em valor absoluto (priceRange = high - low ≈ ATR de 1 período)
     const atrValue = (atrPercent / 100) * currentPrice;
     
-    // Multiplicadores ATR (baseado no script Python)
-    const slMultiplier = 1.2;  // SL = 1.2x ATR
-    const tpMultiplier = 2.0;  // TP = 2.0x ATR → R:R ~1:1.67
+    // 1) SL por ATR
+    const slATR = atrValue * 1.2;
     
-    const slDistance = atrValue * slMultiplier;
-    const tpDistance = atrValue * tpMultiplier;
+    // 2) SL por estrutura (swing high/low)
+    let slStructure = slATR; // fallback
+    if (highPrice && lowPrice) {
+      const lastSwing = action === 'BUY' ? lowPrice : highPrice;
+      const buffer = (highPrice - lowPrice) * 0.1;
+      slStructure = Math.abs(currentPrice - lastSwing) + buffer;
+    }
     
-    // Limites mínimos/máximos para SL em % do preço
-    const slPctMin = 0.002;  // 0.2% mínimo
-    const slPctMax = 0.008;  // 0.8% máximo
+    // 3) stop_final = min(sl_atr, sl_structure) — o mais apertado
+    const slDistance = Math.min(slATR, slStructure);
+    
+    // Limites: 0.15% min, 0.6% max
+    const slPctMin = 0.0015;
+    const slPctMax = 0.006;
     let stopLossPct = slDistance / currentPrice;
     stopLossPct = Math.max(slPctMin, Math.min(slPctMax, stopLossPct));
     
-    // TP sempre proporcional ao SL real
-    const takeProfitPct = stopLossPct * (tpMultiplier / slMultiplier);
-
+    // TP = 2x ATR (mantém R:R favorável)
+    const tpDistance = atrValue * 2.0;
+    let takeProfitPct = tpDistance / currentPrice;
+    // TP mínimo = 2x SL
+    takeProfitPct = Math.max(takeProfitPct, stopLossPct * 2.0);
+    
     let stopLoss: number, takeProfit: number;
     if (action === 'BUY') {
       stopLoss = currentPrice * (1 - stopLossPct);
@@ -171,7 +179,8 @@ export const useTradingCalculations = () => {
     }
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    console.log(`🎯 v14 ATR ${action} | ATR: ${atrPercent.toFixed(3)}% | SL: ${(stopLossPct * 100).toFixed(3)}% (${slMultiplier}x) | TP: ${(takeProfitPct * 100).toFixed(3)}% (${tpMultiplier}x) | R:R 1:${(tpMultiplier / slMultiplier).toFixed(2)}`);
+    const usedSwing = slStructure < slATR;
+    console.log(`🎯 v15 ${action} | SL_ATR: ${(slATR/currentPrice*100).toFixed(3)}% | SL_SWING: ${(slStructure/currentPrice*100).toFixed(3)}% | FINAL: ${(stopLossPct*100).toFixed(3)}%${usedSwing ? ' (swing)' : ' (atr)'} | TP: ${(takeProfitPct*100).toFixed(3)}%`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
