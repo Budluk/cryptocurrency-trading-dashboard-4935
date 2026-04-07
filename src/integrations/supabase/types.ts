@@ -202,6 +202,60 @@ export type Database = {
         }
         Relationships: []
       }
+      api_rate_limit_log: {
+        Row: {
+          calls_made: number | null
+          created_at: string | null
+          endpoint: string
+          id: string
+          rate_limit_remaining: number | null
+          timestamp: string | null
+          user_id: string | null
+        }
+        Insert: {
+          calls_made?: number | null
+          created_at?: string | null
+          endpoint: string
+          id?: string
+          rate_limit_remaining?: number | null
+          timestamp?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          calls_made?: number | null
+          created_at?: string | null
+          endpoint?: string
+          id?: string
+          rate_limit_remaining?: number | null
+          timestamp?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      asset_correlations: {
+        Row: {
+          asset_1: string
+          asset_2: string
+          correlation_score: number
+          created_at: string | null
+          id: string
+        }
+        Insert: {
+          asset_1: string
+          asset_2: string
+          correlation_score: number
+          created_at?: string | null
+          id?: string
+        }
+        Update: {
+          asset_1?: string
+          asset_2?: string
+          correlation_score?: number
+          created_at?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
       asset_hour_performance: {
         Row: {
           avg_pnl: number | null
@@ -697,11 +751,21 @@ export type Database = {
         Row: {
           api_key_encrypted: string | null
           api_secret_encrypted: string | null
+          cache_enabled: boolean | null
+          connection_status: string | null
           created_at: string | null
+          current_drawdown: number | null
+          error_handling_enabled: boolean | null
           id: string
           is_active: boolean | null
+          is_running: boolean | null
           is_testnet: boolean | null
+          last_activity_at: string | null
+          last_error: string | null
+          last_sync_at: string | null
+          max_drawdown_limit: number | null
           min_price: number | null
+          optimization_enabled: boolean | null
           risk_percent: number | null
           spread_threshold: number | null
           stop_loss_percent: number | null
@@ -709,15 +773,26 @@ export type Database = {
           updated_at: string | null
           user_id: string
           volume_threshold: number | null
+          websocket_enabled: boolean | null
         }
         Insert: {
           api_key_encrypted?: string | null
           api_secret_encrypted?: string | null
+          cache_enabled?: boolean | null
+          connection_status?: string | null
           created_at?: string | null
+          current_drawdown?: number | null
+          error_handling_enabled?: boolean | null
           id?: string
           is_active?: boolean | null
+          is_running?: boolean | null
           is_testnet?: boolean | null
+          last_activity_at?: string | null
+          last_error?: string | null
+          last_sync_at?: string | null
+          max_drawdown_limit?: number | null
           min_price?: number | null
+          optimization_enabled?: boolean | null
           risk_percent?: number | null
           spread_threshold?: number | null
           stop_loss_percent?: number | null
@@ -725,15 +800,26 @@ export type Database = {
           updated_at?: string | null
           user_id: string
           volume_threshold?: number | null
+          websocket_enabled?: boolean | null
         }
         Update: {
           api_key_encrypted?: string | null
           api_secret_encrypted?: string | null
+          cache_enabled?: boolean | null
+          connection_status?: string | null
           created_at?: string | null
+          current_drawdown?: number | null
+          error_handling_enabled?: boolean | null
           id?: string
           is_active?: boolean | null
+          is_running?: boolean | null
           is_testnet?: boolean | null
+          last_activity_at?: string | null
+          last_error?: string | null
+          last_sync_at?: string | null
+          max_drawdown_limit?: number | null
           min_price?: number | null
+          optimization_enabled?: boolean | null
           risk_percent?: number | null
           spread_threshold?: number | null
           stop_loss_percent?: number | null
@@ -741,49 +827,185 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
           volume_threshold?: number | null
+          websocket_enabled?: boolean | null
+        }
+        Relationships: []
+      }
+      bot_errors: {
+        Row: {
+          context: Json | null
+          created_at: string | null
+          error_message: string
+          error_type: string
+          id: string
+          resolved: boolean | null
+          retry_count: number | null
+          timestamp: string | null
+          user_id: string | null
+        }
+        Insert: {
+          context?: Json | null
+          created_at?: string | null
+          error_message: string
+          error_type: string
+          id?: string
+          resolved?: boolean | null
+          retry_count?: number | null
+          timestamp?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          context?: Json | null
+          created_at?: string | null
+          error_message?: string
+          error_type?: string
+          id?: string
+          resolved?: boolean | null
+          retry_count?: number | null
+          timestamp?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      bot_patterns: {
+        Row: {
+          asset: string
+          confidence: number
+          created_at: string | null
+          id: string
+          pattern_score: number
+          pattern_type: string
+          timeframe: string
+          timestamp: string | null
+          user_id: string | null
+        }
+        Insert: {
+          asset: string
+          confidence: number
+          created_at?: string | null
+          id?: string
+          pattern_score: number
+          pattern_type: string
+          timeframe: string
+          timestamp?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          asset?: string
+          confidence?: number
+          created_at?: string | null
+          id?: string
+          pattern_score?: number
+          pattern_type?: string
+          timeframe?: string
+          timestamp?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      bot_performance_analysis: {
+        Row: {
+          asset: string
+          avg_pnl: number | null
+          best_hours: string[] | null
+          best_timeframes: string[] | null
+          created_at: string | null
+          id: string
+          total_trades: number | null
+          user_id: string | null
+          win_rate: number | null
+        }
+        Insert: {
+          asset: string
+          avg_pnl?: number | null
+          best_hours?: string[] | null
+          best_timeframes?: string[] | null
+          created_at?: string | null
+          id?: string
+          total_trades?: number | null
+          user_id?: string | null
+          win_rate?: number | null
+        }
+        Update: {
+          asset?: string
+          avg_pnl?: number | null
+          best_hours?: string[] | null
+          best_timeframes?: string[] | null
+          created_at?: string | null
+          id?: string
+          total_trades?: number | null
+          user_id?: string | null
+          win_rate?: number | null
         }
         Relationships: []
       }
       bot_statistics: {
         Row: {
+          assets_analyzed: string[] | null
           avg_loss: number | null
           avg_win: number | null
+          bottom_assets: Json | null
           created_at: string | null
+          daily_pnl: number | null
           id: string
+          last_optimization_at: string | null
+          last_reset_date: string | null
           losing_trades: number | null
+          loss_count: number | null
+          optimization_applied: boolean | null
+          top_assets: Json | null
           total_pnl: number | null
           total_trades: number | null
           trades_today: number | null
           updated_at: string | null
           user_id: string
+          win_count: number | null
           win_rate: number | null
           winning_trades: number | null
         }
         Insert: {
+          assets_analyzed?: string[] | null
           avg_loss?: number | null
           avg_win?: number | null
+          bottom_assets?: Json | null
           created_at?: string | null
+          daily_pnl?: number | null
           id?: string
+          last_optimization_at?: string | null
+          last_reset_date?: string | null
           losing_trades?: number | null
+          loss_count?: number | null
+          optimization_applied?: boolean | null
+          top_assets?: Json | null
           total_pnl?: number | null
           total_trades?: number | null
           trades_today?: number | null
           updated_at?: string | null
           user_id: string
+          win_count?: number | null
           win_rate?: number | null
           winning_trades?: number | null
         }
         Update: {
+          assets_analyzed?: string[] | null
           avg_loss?: number | null
           avg_win?: number | null
+          bottom_assets?: Json | null
           created_at?: string | null
+          daily_pnl?: number | null
           id?: string
+          last_optimization_at?: string | null
+          last_reset_date?: string | null
           losing_trades?: number | null
+          loss_count?: number | null
+          optimization_applied?: boolean | null
+          top_assets?: Json | null
           total_pnl?: number | null
           total_trades?: number | null
           trades_today?: number | null
           updated_at?: string | null
           user_id?: string
+          win_count?: number | null
           win_rate?: number | null
           winning_trades?: number | null
         }
@@ -792,44 +1014,62 @@ export type Database = {
       bot_trades: {
         Row: {
           created_at: string | null
+          duration_minutes: number | null
           entry_price: number | null
           entry_time: string | null
           exit_price: number | null
           exit_time: string | null
           id: string
+          market_condition: string | null
+          pattern_score: number | null
+          pattern_used: string | null
           pnl: number | null
           pnl_percent: number | null
           quantity: number | null
           status: string | null
+          stop_loss: number | null
           symbol: string
+          take_profit: number | null
           user_id: string
         }
         Insert: {
           created_at?: string | null
+          duration_minutes?: number | null
           entry_price?: number | null
           entry_time?: string | null
           exit_price?: number | null
           exit_time?: string | null
           id?: string
+          market_condition?: string | null
+          pattern_score?: number | null
+          pattern_used?: string | null
           pnl?: number | null
           pnl_percent?: number | null
           quantity?: number | null
           status?: string | null
+          stop_loss?: number | null
           symbol: string
+          take_profit?: number | null
           user_id: string
         }
         Update: {
           created_at?: string | null
+          duration_minutes?: number | null
           entry_price?: number | null
           entry_time?: string | null
           exit_price?: number | null
           exit_time?: string | null
           id?: string
+          market_condition?: string | null
+          pattern_score?: number | null
+          pattern_used?: string | null
           pnl?: number | null
           pnl_percent?: number | null
           quantity?: number | null
           status?: string | null
+          stop_loss?: number | null
           symbol?: string
+          take_profit?: number | null
           user_id?: string
         }
         Relationships: []
@@ -845,6 +1085,8 @@ export type Database = {
           id: string
           low: number | null
           open: number | null
+          quality_score: number | null
+          signal: string | null
           symbol: string
           timeframe: string
           timestamp: string
@@ -860,6 +1102,8 @@ export type Database = {
           id?: string
           low?: number | null
           open?: number | null
+          quality_score?: number | null
+          signal?: string | null
           symbol: string
           timeframe: string
           timestamp: string
@@ -875,6 +1119,8 @@ export type Database = {
           id?: string
           low?: number | null
           open?: number | null
+          quality_score?: number | null
+          signal?: string | null
           symbol?: string
           timeframe?: string
           timestamp?: string
@@ -1093,6 +1339,36 @@ export type Database = {
           },
         ]
       }
+      diagnostic_logs: {
+        Row: {
+          category: string
+          context: Json | null
+          created_at: string
+          error_details: Json | null
+          id: string
+          message: string
+          user_id: string | null
+        }
+        Insert: {
+          category: string
+          context?: Json | null
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          message: string
+          user_id?: string | null
+        }
+        Update: {
+          category?: string
+          context?: Json | null
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          message?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       favorites: {
         Row: {
           created_at: string
@@ -1306,6 +1582,33 @@ export type Database = {
         }
         Relationships: []
       }
+      market_anomalies: {
+        Row: {
+          anomaly_type: string
+          created_at: string | null
+          details: Json | null
+          id: string
+          severity: number
+          symbol: string
+        }
+        Insert: {
+          anomaly_type: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          severity: number
+          symbol: string
+        }
+        Update: {
+          anomaly_type?: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          severity?: number
+          symbol?: string
+        }
+        Relationships: []
+      }
       market_data: {
         Row: {
           close_price: number
@@ -1342,6 +1645,39 @@ export type Database = {
           timeframe?: string
           timestamp?: string
           volume?: number
+        }
+        Relationships: []
+      }
+      market_data_cache: {
+        Row: {
+          asset: string
+          created_at: string | null
+          id: string
+          price: number | null
+          spread: number | null
+          timestamp: string | null
+          ttl_expires_at: string | null
+          volume: number | null
+        }
+        Insert: {
+          asset: string
+          created_at?: string | null
+          id?: string
+          price?: number | null
+          spread?: number | null
+          timestamp?: string | null
+          ttl_expires_at?: string | null
+          volume?: number | null
+        }
+        Update: {
+          asset?: string
+          created_at?: string | null
+          id?: string
+          price?: number | null
+          spread?: number | null
+          timestamp?: string | null
+          ttl_expires_at?: string | null
+          volume?: number | null
         }
         Relationships: []
       }
@@ -1531,34 +1867,103 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_predictions: {
+        Row: {
+          created_at: string | null
+          id: string
+          pnl_range_high: number | null
+          pnl_range_low: number | null
+          recommended_size: number | null
+          symbol: string
+          user_id: string | null
+          win_probability: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          pnl_range_high?: number | null
+          pnl_range_low?: number | null
+          recommended_size?: number | null
+          symbol: string
+          user_id?: string | null
+          win_probability: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          pnl_range_high?: number | null
+          pnl_range_low?: number | null
+          recommended_size?: number | null
+          symbol?: string
+          user_id?: string | null
+          win_probability?: number
+        }
+        Relationships: []
+      }
       monitored_pairs: {
         Row: {
           added_at: string | null
+          current_price: number | null
+          current_volume: number | null
+          ema20_1m: number | null
+          ema20_5m: number | null
+          ema50_5m: number | null
           id: string
           last_price: number | null
+          last_price_update: string | null
+          last_updated: string | null
+          pattern_detected: string | null
+          pattern_score: number | null
+          real_time_price: number | null
+          real_time_volume: number | null
           spread: number | null
           status: string | null
           symbol: string
+          trend: string | null
           user_id: string
           volume_24h: number | null
         }
         Insert: {
           added_at?: string | null
+          current_price?: number | null
+          current_volume?: number | null
+          ema20_1m?: number | null
+          ema20_5m?: number | null
+          ema50_5m?: number | null
           id?: string
           last_price?: number | null
+          last_price_update?: string | null
+          last_updated?: string | null
+          pattern_detected?: string | null
+          pattern_score?: number | null
+          real_time_price?: number | null
+          real_time_volume?: number | null
           spread?: number | null
           status?: string | null
           symbol: string
+          trend?: string | null
           user_id: string
           volume_24h?: number | null
         }
         Update: {
           added_at?: string | null
+          current_price?: number | null
+          current_volume?: number | null
+          ema20_1m?: number | null
+          ema20_5m?: number | null
+          ema50_5m?: number | null
           id?: string
           last_price?: number | null
+          last_price_update?: string | null
+          last_updated?: string | null
+          pattern_detected?: string | null
+          pattern_score?: number | null
+          real_time_price?: number | null
+          real_time_volume?: number | null
           spread?: number | null
           status?: string | null
           symbol?: string
+          trend?: string | null
           user_id?: string
           volume_24h?: number | null
         }
