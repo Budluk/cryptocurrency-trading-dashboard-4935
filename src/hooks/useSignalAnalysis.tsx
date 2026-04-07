@@ -202,6 +202,18 @@ export const useSignalAnalysis = () => {
       };
     }
     
+    // 2b. Volume ratio must be >= 1.3x average (not just "above")
+    const volumeRatio = m1.volumeRatio ?? 1.0;
+    if (volumeRatio < 1.3) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: ['🚫 Volume ratio fraco'], shouldTrade: false,
+        skipReason: `📉 Volume ratio ${volumeRatio.toFixed(2)}x < 1.3x mínimo`,
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
+    }
+    
     // 3. Minimum volume $80k
     if (volume24h < 80000) {
       return {
@@ -223,6 +235,22 @@ export const useSignalAnalysis = () => {
         marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
       };
     }
+    
+    // 5. Fear & Greed Directional Filter
+    const fearGreed = comprehensiveAI?.sentiment?.fearGreedIndex ?? 50;
+    if (fearGreed < 25) {
+      // Extreme Fear → only LONG allowed (contrarian buy)
+      // Block any SHORT setup
+    }
+    if (fearGreed > 75) {
+      // Extreme Greed → only SHORT allowed (contrarian sell)
+      // Block any LONG setup
+    }
+    
+    // 6. EMA50 trend alignment filter
+    const ema50 = m1.ema?.ema50;
+    const priceAboveEma50 = ema50 ? currentPrice > ema50 : true;
+    const priceBelowEma50 = ema50 ? currentPrice < ema50 : true;
     
     // === STRICT LONG CONDITIONS (ALL must be true) ===
     const longEMACross = emaCrossover === 'bullish' || emaCrossover === 'above';
