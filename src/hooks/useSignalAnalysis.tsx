@@ -161,6 +161,23 @@ export const useSignalAnalysis = () => {
     const m5Trend = m5.trend || 'sideways';
     const m5Lateral = m5.isLateral ?? false;
     
+    // === v14: ATR TRENDING FILTER ===
+    // Baseado no script Python: abs(EMA9 - EMA21) > 0.2 * ATR
+    const ema9 = m1.ema?.ema9;
+    const ema21 = m1.ema?.ema21;
+    if (ema9 && ema21 && atrPercent > 0) {
+      const emaDiffPct = Math.abs(ema9 - ema21) / currentPrice * 100;
+      if (emaDiffPct < atrPercent * 0.2) {
+        return {
+          action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+          confirmations: ['🚫 Sem tendência (EMA diff < 0.2*ATR)'], shouldTrade: false,
+          skipReason: `📊 EMA diff ${emaDiffPct.toFixed(4)}% < ${(atrPercent * 0.2).toFixed(4)}% (0.2*ATR)`,
+          signalQuality: 'low', momentumScore: 0,
+          marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+        };
+      }
+    }
+    
     // === QUALITY FILTERS (block trade if ANY is true) ===
     
     // 1. Lateral market (20+ candles) → NO TRADE

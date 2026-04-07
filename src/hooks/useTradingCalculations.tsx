@@ -130,37 +130,36 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ v12: SL/TP ADAPTATIVO por volatilidade — R:R mínimo 1:2
+  // 🛡️ v14: SL/TP BASEADO EM ATR — como script Python profissional
+  // SL = 1.2x ATR, TP = 2.0x ATR → R:R natural ~1:1.67
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
-    _atrPercent: number,
+    atrPercent: number,
     _isScalpAsset: boolean,
     _mlConfig: any,
-    _highPrice?: number,
-    _lowPrice?: number,
+    highPrice?: number,
+    lowPrice?: number,
     symbolProfile?: SymbolRiskProfile
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
-    // v12: SL adaptativo baseado em volatilidade/perfil
-    let stopLossPct: number;
-    let rrRatio = 2.0; // R:R mínimo 1:2
-
-    if (symbolProfile?.isBTCOrSOL) {
-      // BTC/SOL: stops mais conservadores
-      stopLossPct = 0.004; // 0.4%
-    } else if (_atrPercent > 8) {
-      stopLossPct = 0.006; // 0.6% alta vol
-    } else if (_atrPercent > 5) {
-      stopLossPct = 0.005; // 0.5%
-    } else if (_atrPercent > 3) {
-      stopLossPct = 0.004; // 0.4% padrão
-    } else if (_atrPercent > 1) {
-      stopLossPct = 0.0035; // 0.35%
-    } else {
-      stopLossPct = 0.003; // 0.3% vol baixa
-    }
-
-    const takeProfitPct = stopLossPct * rrRatio;
+    // ATR em valor absoluto (priceRange = high - low ≈ ATR de 1 período)
+    const atrValue = (atrPercent / 100) * currentPrice;
+    
+    // Multiplicadores ATR (baseado no script Python)
+    const slMultiplier = 1.2;  // SL = 1.2x ATR
+    const tpMultiplier = 2.0;  // TP = 2.0x ATR → R:R ~1:1.67
+    
+    const slDistance = atrValue * slMultiplier;
+    const tpDistance = atrValue * tpMultiplier;
+    
+    // Limites mínimos/máximos para SL em % do preço
+    const slPctMin = 0.002;  // 0.2% mínimo
+    const slPctMax = 0.008;  // 0.8% máximo
+    let stopLossPct = slDistance / currentPrice;
+    stopLossPct = Math.max(slPctMin, Math.min(slPctMax, stopLossPct));
+    
+    // TP sempre proporcional ao SL real
+    const takeProfitPct = stopLossPct * (tpMultiplier / slMultiplier);
 
     let stopLoss: number, takeProfit: number;
     if (action === 'BUY') {
@@ -172,7 +171,7 @@ export const useTradingCalculations = () => {
     }
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    console.log(`🎯 v12 ${action} SL: ${(stopLossPct * 100).toFixed(2)}% | TP: ${(takeProfitPct * 100).toFixed(2)}% | R:R 1:${rrRatio}`);
+    console.log(`🎯 v14 ATR ${action} | ATR: ${atrPercent.toFixed(3)}% | SL: ${(stopLossPct * 100).toFixed(3)}% (${slMultiplier}x) | TP: ${(takeProfitPct * 100).toFixed(3)}% (${tpMultiplier}x) | R:R 1:${(tpMultiplier / slMultiplier).toFixed(2)}`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
