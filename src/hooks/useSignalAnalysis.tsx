@@ -352,18 +352,20 @@ export const useSignalAnalysis = () => {
     let skipReason = '';
     if (!action) {
       const missing: string[] = [];
-      // Check LONG conditions
       if (!longEMACross) missing.push('EMA cross ↑');
       if (!longVWAP) missing.push('Preço > VWAP');
       if (!(rsi >= 50 && rsi <= 65)) missing.push(`RSI ${rsi.toFixed(0)}∉[50-65]`);
       if (!longM5Confirm) missing.push('M5 ≠ UP');
+      if (!priceAboveEma50) missing.push('Preço < EMA50');
+      if (fearGreed > 75) missing.push('F&G > 75 (ganância)');
       
-      // Check SHORT conditions  
       const shortMissing: string[] = [];
       if (!shortEMACross) shortMissing.push('EMA cross ↓');
       if (!shortVWAP) shortMissing.push('Preço < VWAP');
       if (!(rsi >= 35 && rsi <= 50)) shortMissing.push(`RSI ${rsi.toFixed(0)}∉[35-50]`);
       if (!shortM5Confirm) shortMissing.push('M5 ≠ DOWN');
+      if (!priceBelowEma50) shortMissing.push('Preço > EMA50');
+      if (fearGreed < 25) shortMissing.push('F&G < 25 (medo)');
       
       // Show the direction with fewer missing conditions
       if (missing.length <= shortMissing.length) {
