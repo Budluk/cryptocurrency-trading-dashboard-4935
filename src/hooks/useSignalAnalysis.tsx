@@ -49,10 +49,12 @@ interface AnalysisParams {
         isLateral?: boolean; priceAboveVwap?: boolean; priceBelowVwap?: boolean;
         ema?: { ema9: number; ema21: number; ema50: number };
         vwap?: number;
+        macd?: { histogram: number };
       };
       m5: { 
         trend: string; support: number; resistance: number;
         emaCrossover?: string; isLateral?: boolean;
+        rsi?: number;
       };
       m15?: { trend: string };
       alignment: string;
@@ -119,8 +121,8 @@ export const useSignalAnalysis = () => {
   }, []);
 
   // ============================================================
-  // v11: STRICT SCALPING SIGNAL ANALYSIS
-  // ALL conditions must be TRUE simultaneously for entry
+  // v17: PULLBACK ENTRY + PRECISION SCALPING
+  // Entrar em PULLBACKS para suporte/EMA, não perseguir momentum
   // ============================================================
   const analyzeSignal = useCallback((params: AnalysisParams): SignalAnalysisResult => {
     const {
@@ -133,7 +135,7 @@ export const useSignalAnalysis = () => {
     const priceRange = highPrice - lowPrice;
     const atrPercent = (priceRange / currentPrice) * 100;
     
-    // === EXTRACT STRICT INDICATORS FROM AI ===
+    // === EXTRACT INDICATORS FROM AI ===
     const m1 = comprehensiveAI?.technical?.m1;
     const m5 = comprehensiveAI?.technical?.m5;
     const aiConfidence = comprehensiveAI?.scalpingConfig?.confidence;
@@ -141,17 +143,17 @@ export const useSignalAnalysis = () => {
     const m5Support = comprehensiveAI?.scalpingConfig?.support5m;
     const m5Resistance = comprehensiveAI?.scalpingConfig?.resistance5m;
     
-    // If no AI data, we can't validate strict conditions - skip
+    // If no AI data, skip
     if (!m1 || !m5) {
       return {
         action: null, signalScore: 0, buyScore: 0, sellScore: 0,
-        confirmations: [], shouldTrade: false, skipReason: '⏳ Sem dados AI para validação estrita',
+        confirmations: [], shouldTrade: false, skipReason: '⏳ Sem dados AI',
         signalQuality: 'low', momentumScore: 0,
         marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
       };
     }
     
-    // === STRICT INDICATOR VALUES ===
+    // === INDICATOR VALUES ===
     const rsi = m1.rsi ?? 50;
     const emaCrossover = m1.emaCrossover || 'below';
     const volumeAboveAvg = m1.volumeAboveAvg ?? false;
@@ -160,55 +162,35 @@ export const useSignalAnalysis = () => {
     const priceBelowVwap = m1.priceBelowVwap ?? false;
     const m5Trend = m5.trend || 'sideways';
     const m5Lateral = m5.isLateral ?? false;
-    
-    // === v14: ATR TRENDING FILTER ===
-    // Baseado no script Python: abs(EMA9 - EMA21) > 0.2 * ATR
-    const ema9 = m1.ema?.ema9;
-    const ema21 = m1.ema?.ema21;
-    if (ema9 && ema21 && atrPercent > 0) {
-      const emaDiffPct = Math.abs(ema9 - ema21) / currentPrice * 100;
-      if (emaDiffPct < atrPercent * 0.2) {
-        return {
-          action: null, signalScore: 0, buyScore: 0, sellScore: 0,
-          confirmations: ['🚫 Sem tendência (EMA diff < 0.2*ATR)'], shouldTrade: false,
-          skipReason: `📊 EMA diff ${emaDiffPct.toFixed(4)}% < ${(atrPercent * 0.2).toFixed(4)}% (0.2*ATR)`,
-          signalQuality: 'low', momentumScore: 0,
-          marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
-        };
-      }
-    }
+    const volumeRatio = m1.volumeRatio ?? 1.0;
+    const ema9 = m1.ema?.ema9 ?? 0;
+    const ema21 = m1.ema?.ema21 ?? 0;
+    const ema50 = m1.ema?.ema50 ?? 0;
+    const vwap = m1.vwap ?? currentPrice;
+    const m5Rsi = m5.rsi ?? 50;
+    const macdHistogram = m1.macd?.histogram ?? 0;
+    const fearGreed = comprehensiveAI?.sentiment?.fearGreedIndex ?? 50;
+    const fundingRate = comprehensiveAI?.onChain?.fundingRate ?? 0;
     
     // === QUALITY FILTERS (block trade if ANY is true) ===
     
-    // 1. Lateral market (20+ candles) → NO TRADE
-    if (isLateral || m5Lateral) {
+    // 1. Lateral market → NO TRADE
+    if (isLateral && m5Lateral) {
       return {
         action: null, signalScore: 0, buyScore: 0, sellScore: 0,
-        confirmations: ['🚫 Mercado lateral'], shouldTrade: false,
-        skipReason: '📊 Mercado lateral > 20 velas',
+        confirmations: ['🚫 Mercado lateral M1+M5'], shouldTrade: false,
+        skipReason: '📊 Mercado lateral em ambos timeframes',
         signalQuality: 'low', momentumScore: 0,
         marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
       };
     }
     
-    // 2. Volume below average → NO TRADE
-    if (!volumeAboveAvg) {
-      return {
-        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
-        confirmations: ['🚫 Volume baixo'], shouldTrade: false,
-        skipReason: '📉 Volume abaixo da média 20 velas',
-        signalQuality: 'low', momentumScore: 0,
-        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
-      };
-    }
-    
-    // 2b. Volume ratio must be >= 1.3x average (not just "above")
-    const volumeRatio = m1.volumeRatio ?? 1.0;
-    if (volumeRatio < 1.3) {
+    // 2. Volume below average → NO TRADE (relaxed: only need volumeRatio >= 1.1)
+    if (volumeRatio < 1.1) {
       return {
         action: null, signalScore: 0, buyScore: 0, sellScore: 0,
         confirmations: ['🚫 Volume ratio fraco'], shouldTrade: false,
-        skipReason: `📉 Volume ratio ${volumeRatio.toFixed(2)}x < 1.3x mínimo`,
+        skipReason: `📉 Volume ratio ${volumeRatio.toFixed(2)}x < 1.1x mínimo`,
         signalQuality: 'low', momentumScore: 0,
         marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
       };
@@ -236,41 +218,81 @@ export const useSignalAnalysis = () => {
       };
     }
     
-    // 5. Fear & Greed Directional Filter
-    const fearGreed = comprehensiveAI?.sentiment?.fearGreedIndex ?? 50;
-    if (fearGreed < 25) {
-      // Extreme Fear → only LONG allowed (contrarian buy)
-      // Block any SHORT setup
-    }
-    if (fearGreed > 75) {
-      // Extreme Greed → only SHORT allowed (contrarian sell)
-      // Block any LONG setup
+    // === v17: PULLBACK DETECTION ===
+    // Instead of entering on momentum, detect price pulling back to support
+    const distFromEma9Pct = ema9 > 0 ? ((currentPrice - ema9) / ema9) * 100 : 0;
+    const distFromVwapPct = vwap > 0 ? ((currentPrice - vwap) / vwap) * 100 : 0;
+    const distFromEma21Pct = ema21 > 0 ? ((currentPrice - ema21) / ema21) * 100 : 0;
+    
+    // LONG pullback: Price near EMA9 or VWAP from above (retracing in uptrend)
+    const longPullbackToEma9 = distFromEma9Pct >= -0.15 && distFromEma9Pct <= 0.10; // Near EMA9
+    const longPullbackToVwap = distFromVwapPct >= -0.10 && distFromVwapPct <= 0.15; // Near VWAP
+    const longPullbackReady = longPullbackToEma9 || longPullbackToVwap;
+    
+    // SHORT pullback: Price near EMA9 or VWAP from below (retracing in downtrend)
+    const shortPullbackToEma9 = distFromEma9Pct >= -0.10 && distFromEma9Pct <= 0.15;
+    const shortPullbackToVwap = distFromVwapPct >= -0.15 && distFromVwapPct <= 0.10;
+    const shortPullbackReady = shortPullbackToEma9 || shortPullbackToVwap;
+    
+    // === v17: TREND CONFIRMATION (relaxed ATR filter) ===
+    // Require EMA9 vs EMA21 gap > 0.08*ATR (was 0.2 — too strict)
+    let hasTrend = true;
+    if (ema9 > 0 && ema21 > 0 && atrPercent > 0) {
+      const emaDiffPct = Math.abs(ema9 - ema21) / currentPrice * 100;
+      if (emaDiffPct < atrPercent * 0.08) {
+        hasTrend = false;
+      }
     }
     
-    // 6. EMA50 trend alignment filter
-    const ema50 = m1.ema?.ema50;
-    const priceAboveEma50 = ema50 ? currentPrice > ema50 : true;
-    const priceBelowEma50 = ema50 ? currentPrice < ema50 : true;
+    if (!hasTrend) {
+      return {
+        action: null, signalScore: 0, buyScore: 0, sellScore: 0,
+        confirmations: ['🚫 Sem tendência'], shouldTrade: false,
+        skipReason: `📊 EMA gap < 0.08*ATR (sem direção)`,
+        signalQuality: 'low', momentumScore: 0,
+        marketRegime: 'ranging', pullbackReady: false, btcAligned: true,
+      };
+    }
     
-    // === STRICT LONG CONDITIONS (ALL must be true) ===
-    const longEMACross = emaCrossover === 'bullish' || emaCrossover === 'above';
+    // === EMA50 trend alignment ===
+    const priceAboveEma50 = ema50 > 0 ? currentPrice > ema50 : true;
+    const priceBelowEma50 = ema50 > 0 ? currentPrice < ema50 : true;
+    
+    // === v17: M5 RSI DIVERGENCE CHECK ===
+    // M5 RSI overbought (>70) blocks new longs; oversold (<30) blocks new shorts
+    const m5OverboughtBlock = m5Rsi > 70;
+    const m5OversoldBlock = m5Rsi < 30;
+    
+    // === STRICT LONG CONDITIONS ===
+    const longEMATrend = ema9 > ema21; // EMA9 above EMA21 (uptrend structure)
     const longVWAP = priceAboveVwap;
-    const longRSI = rsi >= 50 && rsi <= 65;
+    const longRSI = rsi >= 40 && rsi <= 65; // v17: wider range 40-65 (allow dips)
     const longM5Confirm = m5Trend === 'up';
-    const longEMA50 = priceAboveEma50; // Price must be above EMA50
-    const longFearGreed = fearGreed <= 75; // Block LONG in extreme greed
+    const longEMA50 = priceAboveEma50;
+    const longFearGreed = fearGreed <= 75;
+    const longNotOverbought = !m5OverboughtBlock;
+    const longPullback = longPullbackReady; // v17: MUST be near support
     
-    const allLongMet = longEMACross && longVWAP && longRSI && longM5Confirm && longEMA50 && longFearGreed;
+    // v17: MACD histogram positive confirms momentum
+    const longMACDPositive = macdHistogram > 0;
     
-    // === STRICT SHORT CONDITIONS (ALL must be true) ===
-    const shortEMACross = emaCrossover === 'bearish' || emaCrossover === 'below';
+    const allLongMet = longEMATrend && longVWAP && longRSI && longM5Confirm 
+      && longEMA50 && longFearGreed && longNotOverbought && longPullback;
+    
+    // === STRICT SHORT CONDITIONS ===
+    const shortEMATrend = ema9 < ema21; // EMA9 below EMA21 (downtrend structure)
     const shortVWAP = priceBelowVwap;
-    const shortRSI = rsi >= 35 && rsi <= 50;
+    const shortRSI = rsi >= 35 && rsi <= 60; // v17: wider range 35-60 (allow bounces)
     const shortM5Confirm = m5Trend === 'down';
-    const shortEMA50 = priceBelowEma50; // Price must be below EMA50
-    const shortFearGreed = fearGreed >= 25; // Block SHORT in extreme fear
+    const shortEMA50 = priceBelowEma50;
+    const shortFearGreed = fearGreed >= 25;
+    const shortNotOversold = !m5OversoldBlock;
+    const shortPullback = shortPullbackReady;
     
-    const allShortMet = shortEMACross && shortVWAP && shortRSI && shortM5Confirm && shortEMA50 && shortFearGreed;
+    const shortMACDNegative = macdHistogram < 0;
+    
+    const allShortMet = shortEMATrend && shortVWAP && shortRSI && shortM5Confirm 
+      && shortEMA50 && shortFearGreed && shortNotOversold && shortPullback;
     
     // === DETERMINE ACTION ===
     let action: 'BUY' | 'SELL' | null = null;
@@ -280,46 +302,107 @@ export const useSignalAnalysis = () => {
     
     if (allLongMet) {
       action = 'BUY';
-      buyScore = 60;
-      if (emaCrossover === 'bullish') buyScore += 15;
-      if (rsi >= 52 && rsi <= 60) buyScore += 10;
-      if (volumeRatio > 1.5) buyScore += 10;
+      buyScore = 55; // Base score for passing all strict conditions
+      
+      // Pullback quality bonuses
+      if (longPullbackToEma9 && longPullbackToVwap) buyScore += 15; // Double support confluence
+      else if (longPullbackToVwap) buyScore += 10;
+      else buyScore += 5;
+      
+      // MACD confirmation
+      if (longMACDPositive) buyScore += 10;
+      
+      // Volume strength
+      if (volumeRatio > 1.5) buyScore += 8;
       if (volumeRatio > 2.0) buyScore += 5;
-      if (compositeScore && compositeScore > 20) buyScore += 10;
-      if (compositeScore && compositeScore > 35) buyScore += 5;
+      
+      // RSI sweet spot (50-58 is ideal pullback zone for longs)
+      if (rsi >= 48 && rsi <= 58) buyScore += 8;
+      
+      // Composite AI score
+      if (compositeScore && compositeScore > 20) buyScore += 7;
+      if (compositeScore && compositeScore > 40) buyScore += 5;
+      
+      // AI confidence
       if (aiConfidence && aiConfidence > 70) buyScore += 5;
-      if (fearGreed < 25) buyScore += 10; // Contrarian buy in extreme fear
-      if (ema50 && currentPrice > ema50 * 1.002) buyScore += 5; // Strong above EMA50
+      if (aiConfidence && aiConfidence > 85) buyScore += 3;
+      
+      // Contrarian buy in extreme fear
+      if (fearGreed < 25) buyScore += 10;
+      
+      // Strong EMA50 support
+      if (ema50 > 0 && currentPrice > ema50 * 1.003) buyScore += 4;
+      
+      // Funding rate alignment (negative = shorts paying longs = bullish)
+      if (fundingRate < -0.01) buyScore += 5;
+      
+      // M15 alignment bonus
+      if (comprehensiveAI?.technical?.m15?.trend === 'up') buyScore += 5;
+      
       signalScore = buyScore;
       
-      confirmations.push('✅ EMA9 > EMA21');
+      confirmations.push('✅ EMA9 > EMA21 (tendência)');
+      confirmations.push(`✅ Pullback: EMA9 ${distFromEma9Pct.toFixed(3)}% | VWAP ${distFromVwapPct.toFixed(3)}%`);
       confirmations.push('✅ Preço > VWAP');
-      confirmations.push(`✅ RSI ${rsi.toFixed(0)} (50-65)`);
+      confirmations.push(`✅ RSI ${rsi.toFixed(0)} (zona ideal)`);
       confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x média`);
       confirmations.push('✅ M5 tendência UP');
       confirmations.push('✅ Preço > EMA50');
-      if (fearGreed < 25) confirmations.push('🎯 Compra contrária (F&G extremo medo)');
+      if (longMACDPositive) confirmations.push('✅ MACD histogram +');
+      if (fearGreed < 25) confirmations.push('🎯 Compra contrária (medo extremo)');
+      if (fundingRate < -0.01) confirmations.push('📊 Funding negativo (bullish)');
+      
     } else if (allShortMet) {
       action = 'SELL';
-      sellScore = 60;
-      if (emaCrossover === 'bearish') sellScore += 15;
-      if (rsi >= 37 && rsi <= 48) sellScore += 10;
-      if (volumeRatio > 1.5) sellScore += 10;
+      sellScore = 55;
+      
+      // Pullback quality bonuses
+      if (shortPullbackToEma9 && shortPullbackToVwap) sellScore += 15;
+      else if (shortPullbackToVwap) sellScore += 10;
+      else sellScore += 5;
+      
+      // MACD confirmation
+      if (shortMACDNegative) sellScore += 10;
+      
+      // Volume strength
+      if (volumeRatio > 1.5) sellScore += 8;
       if (volumeRatio > 2.0) sellScore += 5;
-      if (compositeScore && compositeScore < -20) sellScore += 10;
-      if (compositeScore && compositeScore < -35) sellScore += 5;
+      
+      // RSI sweet spot (42-52 is ideal pullback zone for shorts)
+      if (rsi >= 42 && rsi <= 52) sellScore += 8;
+      
+      // Composite AI score
+      if (compositeScore && compositeScore < -20) sellScore += 7;
+      if (compositeScore && compositeScore < -40) sellScore += 5;
+      
+      // AI confidence
       if (aiConfidence && aiConfidence > 70) sellScore += 5;
-      if (fearGreed > 75) sellScore += 10; // Contrarian sell in extreme greed
-      if (ema50 && currentPrice < ema50 * 0.998) sellScore += 5; // Strong below EMA50
+      if (aiConfidence && aiConfidence > 85) sellScore += 3;
+      
+      // Contrarian sell in extreme greed
+      if (fearGreed > 75) sellScore += 10;
+      
+      // Strong below EMA50
+      if (ema50 > 0 && currentPrice < ema50 * 0.997) sellScore += 4;
+      
+      // Funding rate alignment (positive = longs paying shorts = bearish)
+      if (fundingRate > 0.01) sellScore += 5;
+      
+      // M15 alignment bonus
+      if (comprehensiveAI?.technical?.m15?.trend === 'down') sellScore += 5;
+      
       signalScore = sellScore;
       
-      confirmations.push('✅ EMA9 < EMA21');
+      confirmations.push('✅ EMA9 < EMA21 (tendência)');
+      confirmations.push(`✅ Pullback: EMA9 ${distFromEma9Pct.toFixed(3)}% | VWAP ${distFromVwapPct.toFixed(3)}%`);
       confirmations.push('✅ Preço < VWAP');
-      confirmations.push(`✅ RSI ${rsi.toFixed(0)} (35-50)`);
+      confirmations.push(`✅ RSI ${rsi.toFixed(0)} (zona ideal)`);
       confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x média`);
       confirmations.push('✅ M5 tendência DOWN');
       confirmations.push('✅ Preço < EMA50');
-      if (fearGreed > 75) confirmations.push('🎯 Venda contrária (F&G extrema ganância)');
+      if (shortMACDNegative) confirmations.push('✅ MACD histogram -');
+      if (fearGreed > 75) confirmations.push('🎯 Venda contrária (ganância extrema)');
+      if (fundingRate > 0.01) confirmations.push('📊 Funding positivo (bearish)');
     }
     
     // === BTC CORRELATION CHECK ===
@@ -333,49 +416,51 @@ export const useSignalAnalysis = () => {
       return {
         action: null, signalScore: 0, buyScore, sellScore,
         confirmations, shouldTrade: false,
-        skipReason: '🪙 BTC em direção oposta',
+        skipReason: '🪙 BTC em direção oposta (>3%)',
         signalQuality: 'low', momentumScore: 0,
         marketRegime: 'trending', pullbackReady: true, btcAligned: false,
       };
     }
     
     // === DETERMINE QUALITY ===
-    // v13: Thresholds mais rigorosos — só high/premium passam
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     if (action) {
       if (signalScore >= 90) signalQuality = 'premium';
-      else if (signalScore >= 70) signalQuality = 'high';
-      else signalQuality = 'medium'; // medium NÃO passa (shouldTrade = false)
+      else if (signalScore >= 68) signalQuality = 'high'; // v17: lowered from 70 to 68
+      else signalQuality = 'medium';
     }
     
     // === SKIP REASON FOR NON-ENTRY ===
     let skipReason = '';
     if (!action) {
-      const missing: string[] = [];
-      if (!longEMACross) missing.push('EMA cross ↑');
-      if (!longVWAP) missing.push('Preço > VWAP');
-      if (!(rsi >= 50 && rsi <= 65)) missing.push(`RSI ${rsi.toFixed(0)}∉[50-65]`);
-      if (!longM5Confirm) missing.push('M5 ≠ UP');
-      if (!priceAboveEma50) missing.push('Preço < EMA50');
-      if (fearGreed > 75) missing.push('F&G > 75 (ganância)');
+      const longMissing: string[] = [];
+      if (!longEMATrend) longMissing.push('EMA9 < EMA21');
+      if (!longVWAP) longMissing.push('Preço < VWAP');
+      if (!longRSI) longMissing.push(`RSI ${rsi.toFixed(0)}∉[40-65]`);
+      if (!longM5Confirm) longMissing.push('M5 ≠ UP');
+      if (!longEMA50) longMissing.push('Preço < EMA50');
+      if (!longFearGreed) longMissing.push('F&G > 75');
+      if (!longNotOverbought) longMissing.push('M5 RSI > 70');
+      if (!longPullback) longMissing.push(`Pullback: EMA9 ${distFromEma9Pct.toFixed(2)}% VWAP ${distFromVwapPct.toFixed(2)}%`);
       
       const shortMissing: string[] = [];
-      if (!shortEMACross) shortMissing.push('EMA cross ↓');
-      if (!shortVWAP) shortMissing.push('Preço < VWAP');
-      if (!(rsi >= 35 && rsi <= 50)) shortMissing.push(`RSI ${rsi.toFixed(0)}∉[35-50]`);
+      if (!shortEMATrend) shortMissing.push('EMA9 > EMA21');
+      if (!shortVWAP) shortMissing.push('Preço > VWAP');
+      if (!shortRSI) shortMissing.push(`RSI ${rsi.toFixed(0)}∉[35-60]`);
       if (!shortM5Confirm) shortMissing.push('M5 ≠ DOWN');
-      if (!priceBelowEma50) shortMissing.push('Preço > EMA50');
-      if (fearGreed < 25) shortMissing.push('F&G < 25 (medo)');
+      if (!shortEMA50) shortMissing.push('Preço > EMA50');
+      if (!shortFearGreed) shortMissing.push('F&G < 25');
+      if (!shortNotOversold) shortMissing.push('M5 RSI < 30');
+      if (!shortPullback) shortMissing.push(`Pullback: EMA9 ${distFromEma9Pct.toFixed(2)}% VWAP ${distFromVwapPct.toFixed(2)}%`);
       
-      // Show the direction with fewer missing conditions
-      if (missing.length <= shortMissing.length) {
-        skipReason = `LONG falta: ${missing.join(', ')}`;
+      if (longMissing.length <= shortMissing.length) {
+        skipReason = `LONG falta: ${longMissing.join(', ')}`;
       } else {
         skipReason = `SHORT falta: ${shortMissing.join(', ')}`;
       }
     }
     
-    // v13: APENAS high e premium passam — medium = loss
+    // v17: high e premium passam — medium = filtrado
     const shouldTrade = action !== null && (signalQuality === 'high' || signalQuality === 'premium');
     const momentumScore = Math.abs(priceChange) * (volumeAboveAvg ? 1.5 : 1);
     const marketRegime: 'trending' | 'ranging' | 'volatile' = 
@@ -397,7 +482,7 @@ export const useSignalAnalysis = () => {
       compositeScore,
       aiConfidence,
       marketRegime,
-      pullbackReady: true,
+      pullbackReady: longPullbackReady || shortPullbackReady,
       btcAligned,
     };
   }, []);
