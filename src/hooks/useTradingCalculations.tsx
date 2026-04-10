@@ -12,25 +12,25 @@ export const useTradingCalculations = () => {
   
   // v12: Leverage 5-10x baseada em volatilidade
   const getLeverageForScalping = useCallback((volatility: number): number => {
-    if (volatility > 8) return 5;
-    if (volatility > 5) return 6;
-    if (volatility > 3) return 7;
-    if (volatility > 2) return 8;
-    if (volatility > 1) return 9;
-    return 10;
+    if (volatility > 8) return 10;
+    if (volatility > 5) return 12;
+    if (volatility > 3) return 15;
+    if (volatility > 2) return 18;
+    if (volatility > 1) return 20;
+    return 25;
   }, []);
 
   const getLeverageForBalance = useCallback((balance: number, winRate: number): number => {
-    let baseLeverage = 7;
-    if (balance < 10) baseLeverage = 10;
-    else if (balance < 20) baseLeverage = 8;
-    else if (balance < 50) baseLeverage = 7;
-    else baseLeverage = 5;
+    let baseLeverage = 15;
+    if (balance < 10) baseLeverage = 25;
+    else if (balance < 20) baseLeverage = 20;
+    else if (balance < 50) baseLeverage = 15;
+    else baseLeverage = 12;
 
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 1, 10);
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 1, 5);
+    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 25);
+    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 3, 10);
 
-    return Math.max(5, Math.min(10, baseLeverage));
+    return Math.max(10, Math.min(25, baseLeverage));
   }, []);
 
   // 💼 v12: Position sizing — 1% risco por trade
