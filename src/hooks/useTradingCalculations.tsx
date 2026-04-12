@@ -33,23 +33,33 @@ export const useTradingCalculations = () => {
     return Math.max(10, Math.min(25, baseLeverage));
   }, []);
 
-  // 💼 v12: Position sizing — 1% risco por trade
+  // 💼 v20: Position sizing — score-weighted risk (1-2% per trade)
   const calculatePositionSize = useCallback((
     balance: number, 
     leverage: number, 
     volatility: number, 
     winRate: number, 
     currentOpenPositions: number,
-    maxOpenPositions: number
+    maxOpenPositions: number,
+    signalScore?: number,
+    signalQuality?: string
   ) => {
-    const RISK_PER_TRADE = 0.01;
+    // v20: Risk scales with signal quality
+    let RISK_PER_TRADE = 0.01; // base 1%
+    if (signalQuality === 'premium') RISK_PER_TRADE = 0.02;      // 2% for premium
+    else if (signalQuality === 'high') RISK_PER_TRADE = 0.015;    // 1.5% for high
+    // medium stays at 1%
     
-    // v12: SL adaptativo por volatilidade
+    // Bonus for high win rate
+    if (winRate >= 60) RISK_PER_TRADE *= 1.15;
+    
     const stopLossPct = getAdaptiveStopLoss(volatility);
     
     let usdSize = (balance * RISK_PER_TRADE) / stopLossPct;
     
-    const maxUsdSize = balance * 0.20;
+    // v20: Max size scales with quality too
+    const maxPct = signalQuality === 'premium' ? 0.30 : signalQuality === 'high' ? 0.25 : 0.20;
+    const maxUsdSize = balance * maxPct;
     usdSize = Math.min(usdSize, maxUsdSize);
     
     const minPositionSize = 2;
@@ -61,6 +71,8 @@ export const useTradingCalculations = () => {
     usdSize *= positionSizeMultiplier;
     
     const marginPerPosition = balance / Math.min(maxOpenPositions, 10);
+    
+    console.log(`💰 v20 Size | Quality: ${signalQuality} | Risk: ${(RISK_PER_TRADE*100).toFixed(1)}% | USD: $${usdSize.toFixed(2)} | MaxPct: ${(maxPct*100)}%`);
     
     return { 
       usdSize, 
@@ -130,7 +142,7 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ v15: SL = min(ATR*1.2, swing structure) — stop mais apertado possível
+  // 🛡️ v20: SL tight + TP generous — maximize R:R for profit
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -139,34 +151,37 @@ export const useTradingCalculations = () => {
     _mlConfig: any,
     highPrice?: number,
     lowPrice?: number,
-    symbolProfile?: SymbolRiskProfile
+    symbolProfile?: SymbolRiskProfile,
+    signalQuality?: string
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
     const atrValue = (atrPercent / 100) * currentPrice;
     
-    // 1) SL por ATR
-    const slATR = atrValue * 1.2;
+    // 1) SL por ATR (tighter: 1.0x instead of 1.2x)
+    const slATR = atrValue * 1.0;
     
     // 2) SL por estrutura (swing high/low)
-    let slStructure = slATR; // fallback
+    let slStructure = slATR;
     if (highPrice && lowPrice) {
       const lastSwing = action === 'BUY' ? lowPrice : highPrice;
-      const buffer = (highPrice - lowPrice) * 0.1;
+      const buffer = (highPrice - lowPrice) * 0.08;
       slStructure = Math.abs(currentPrice - lastSwing) + buffer;
     }
     
-    // 3) stop_final = min(sl_atr, sl_structure) — o mais apertado
+    // 3) stop_final = min(sl_atr, sl_structure)
     const slDistance = Math.min(slATR, slStructure);
     
-    // Limites: 0.15% min, 0.6% max
+    // v20: Tighter bounds: 0.15% min, 0.50% max (was 0.60%)
     const slPctMin = 0.0015;
-    const slPctMax = 0.006;
+    const slPctMax = 0.005;
     let stopLossPct = slDistance / currentPrice;
     stopLossPct = Math.max(slPctMin, Math.min(slPctMax, stopLossPct));
     
-    // TP = 2x ATR (mantém R:R favorável)
-    const tpDistance = atrValue * 2.0;
+    // v20: TP = 2.5x ATR (was 2.0x) — more room for profit
+    const tpMultiplier = signalQuality === 'premium' ? 3.0 : signalQuality === 'high' ? 2.5 : 2.0;
+    const tpDistance = atrValue * tpMultiplier;
     let takeProfitPct = tpDistance / currentPrice;
-    // TP mínimo = 2x SL
+    
+    // TP mínimo = 2x SL (garantia de R:R 2:1)
     takeProfitPct = Math.max(takeProfitPct, stopLossPct * 2.0);
     
     let stopLoss: number, takeProfit: number;
@@ -180,7 +195,8 @@ export const useTradingCalculations = () => {
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
     const usedSwing = slStructure < slATR;
-    console.log(`🎯 v15 ${action} | SL_ATR: ${(slATR/currentPrice*100).toFixed(3)}% | SL_SWING: ${(slStructure/currentPrice*100).toFixed(3)}% | FINAL: ${(stopLossPct*100).toFixed(3)}%${usedSwing ? ' (swing)' : ' (atr)'} | TP: ${(takeProfitPct*100).toFixed(3)}%`);
+    const rr = (takeProfitPct / stopLossPct).toFixed(1);
+    console.log(`🎯 v20 ${action} | SL: ${(stopLossPct*100).toFixed(3)}%${usedSwing ? '(swing)' : '(atr)'} | TP: ${(takeProfitPct*100).toFixed(3)}% (${tpMultiplier}x ATR) | R:R ${rr}:1 | Quality: ${signalQuality}`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
