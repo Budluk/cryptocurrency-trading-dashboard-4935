@@ -121,8 +121,8 @@ export const useSignalAnalysis = () => {
   }, []);
 
   // ============================================================
-  // v18: AGGRESSIVE VOLATILITY ENTRY — ALL ASSETS
-  // Entrar em TODOS os ativos com volatilidade, filtros mínimos
+  // v20: PROFIT MAXIMIZER — Score-weighted entries + strict R:R
+  // Prioriza qualidade sobre quantidade para maximizar lucro
   // ============================================================
   const analyzeSignal = useCallback((params: AnalysisParams): SignalAnalysisResult => {
     const {
@@ -143,10 +143,9 @@ export const useSignalAnalysis = () => {
     const m5Support = comprehensiveAI?.scalpingConfig?.support5m;
     const m5Resistance = comprehensiveAI?.scalpingConfig?.resistance5m;
     
-    // If no AI data, use price action only
     const hasAI = !!m1 && !!m5;
     
-    // === INDICATOR VALUES (with safe defaults) ===
+    // === INDICATOR VALUES ===
     const rsi = m1?.rsi ?? 50;
     const volumeAboveAvg = m1?.volumeAboveAvg ?? true;
     const isLateral = m1?.isLateral ?? false;
@@ -164,9 +163,9 @@ export const useSignalAnalysis = () => {
     const fearGreed = comprehensiveAI?.sentiment?.fearGreedIndex ?? 50;
     const fundingRate = comprehensiveAI?.onChain?.fundingRate ?? 0;
     
-    // === MINIMAL FILTERS (only block truly bad conditions) ===
+    // === HARD BLOCKS (only truly bad conditions) ===
     
-    // 1. Both timeframes lateral → skip
+    // 1. Both timeframes lateral + low ATR
     if (isLateral && m5Lateral && atrPercent < 0.3) {
       return {
         action: null, signalScore: 0, buyScore: 0, sellScore: 0,
@@ -177,7 +176,7 @@ export const useSignalAnalysis = () => {
       };
     }
     
-    // 2. Minimum volume $30k (muito baixo = sem liquidez)
+    // 2. Minimum volume
     if (volume24h < 30000) {
       return {
         action: null, signalScore: 0, buyScore: 0, sellScore: 0,
@@ -199,24 +198,25 @@ export const useSignalAnalysis = () => {
       };
     }
     
-    // === DIRECTION DETECTION (simplified — follow the trend) ===
+    // === KEY LEVELS & PULLBACK ===
+    const distFromEma9Pct = ema9 > 0 ? ((currentPrice - ema9) / ema9) * 100 : 0;
+    const distFromVwapPct = vwap > 0 ? ((currentPrice - vwap) / vwap) * 100 : 0;
+    const distFromEma50Pct = ema50 > 0 ? ((currentPrice - ema50) / ema50) * 100 : 0;
+    
+    // === DIRECTION DETECTION ===
     const emaBullish = ema9 > 0 && ema21 > 0 ? ema9 > ema21 : priceChange > 0;
     const emaBearish = ema9 > 0 && ema21 > 0 ? ema9 < ema21 : priceChange < 0;
     const priceAboveEma50 = ema50 > 0 ? currentPrice > ema50 : true;
     const priceBelowEma50 = ema50 > 0 ? currentPrice < ema50 : true;
     
-    // === DISTANCE FROM KEY LEVELS ===
-    const distFromEma9Pct = ema9 > 0 ? ((currentPrice - ema9) / ema9) * 100 : 0;
-    const distFromVwapPct = vwap > 0 ? ((currentPrice - vwap) / vwap) * 100 : 0;
-    
-    // === LONG CONDITIONS (relaxed) ===
+    // === LONG CONDITIONS ===
     const longDirection = emaBullish || priceChange > 0.05;
     const longVWAP = priceAboveVwap || distFromVwapPct > -0.1;
-    const longRSI = rsi >= 30 && rsi <= 72; // wide range
-    const longM5OK = m5Trend !== 'down' || m5Rsi < 35; // allow if M5 oversold
+    const longRSI = rsi >= 30 && rsi <= 72;
+    const longM5OK = m5Trend !== 'down' || m5Rsi < 35;
     const longNotExtreme = rsi < 80 && m5Rsi < 78;
     
-    // === SHORT CONDITIONS (relaxed) ===
+    // === SHORT CONDITIONS ===
     const shortDirection = emaBearish || priceChange < -0.05;
     const shortVWAP = priceBelowVwap || distFromVwapPct < 0.1;
     const shortRSI = rsi >= 28 && rsi <= 70;
@@ -226,7 +226,7 @@ export const useSignalAnalysis = () => {
     const allLongMet = longDirection && longVWAP && longRSI && longM5OK && longNotExtreme;
     const allShortMet = shortDirection && shortVWAP && shortRSI && shortM5OK && shortNotExtreme;
     
-    // === DETERMINE ACTION ===
+    // === DETERMINE ACTION & SCORE ===
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
     let buyScore = 0;
@@ -234,92 +234,111 @@ export const useSignalAnalysis = () => {
     
     if (allLongMet && !allShortMet) {
       action = 'BUY';
-      buyScore = 50;
+      buyScore = 40; // base lower, earn via confirmations
       
-      // Bonuses
-      if (emaBullish) buyScore += 8;
-      if (priceAboveVwap) buyScore += 6;
-      if (priceAboveEma50) buyScore += 6;
-      if (m5Trend === 'up') buyScore += 8;
-      if (rsi >= 40 && rsi <= 60) buyScore += 6; // ideal zone
-      if (volumeRatio > 1.2) buyScore += 5;
-      if (volumeRatio > 1.8) buyScore += 5;
-      if (macdHistogram > 0) buyScore += 7;
-      if (compositeScore && compositeScore > 15) buyScore += 5;
-      if (compositeScore && compositeScore > 35) buyScore += 5;
-      if (aiConfidence && aiConfidence > 60) buyScore += 4;
-      if (aiConfidence && aiConfidence > 80) buyScore += 4;
-      if (fearGreed < 30) buyScore += 8; // contrarian
-      if (fundingRate < -0.01) buyScore += 4;
-      if (comprehensiveAI?.technical?.m15?.trend === 'up') buyScore += 5;
-      if (distFromEma9Pct >= -0.2 && distFromEma9Pct <= 0.15) buyScore += 6; // pullback bonus
-      if (atrPercent > 0.5) buyScore += 3; // volatility bonus
+      // === TREND ALIGNMENT (max +20) ===
+      if (emaBullish) { buyScore += 8; confirmations.push('✅ EMA Bull'); }
+      if (priceAboveEma50) { buyScore += 6; confirmations.push('✅ > EMA50'); }
+      if (m5Trend === 'up') { buyScore += 6; confirmations.push('✅ M5 UP'); }
       
+      // === PULLBACK QUALITY (max +18) — KEY PROFIT DRIVER ===
+      const longPullback = distFromEma9Pct >= -0.20 && distFromEma9Pct <= 0.08;
+      const vwapPullback = distFromVwapPct >= -0.15 && distFromVwapPct <= 0.10;
+      if (longPullback) { buyScore += 12; confirmations.push(`✅ Pullback EMA9 (${distFromEma9Pct.toFixed(2)}%)`); }
+      if (vwapPullback) { buyScore += 6; confirmations.push('✅ Pullback VWAP'); }
+      
+      // === MOMENTUM (max +17) ===
+      if (priceAboveVwap) { buyScore += 5; confirmations.push('✅ > VWAP'); }
+      if (macdHistogram > 0) { buyScore += 7; confirmations.push('✅ MACD +'); }
+      if (rsi >= 40 && rsi <= 55) buyScore += 5; // sweet spot
+      
+      // === VOLUME (max +10) ===
+      if (volumeRatio > 1.2) { buyScore += 5; confirmations.push(`✅ Vol ${volumeRatio.toFixed(1)}x`); }
+      if (volumeRatio > 2.0) buyScore += 5;
+      
+      // === AI/COMPOSITE (max +18) ===
+      if (compositeScore && compositeScore > 20) buyScore += 5;
+      if (compositeScore && compositeScore > 40) buyScore += 5;
+      if (aiConfidence && aiConfidence > 65) buyScore += 4;
+      if (aiConfidence && aiConfidence > 85) buyScore += 4;
+      
+      // === MACRO (max +17) ===
+      if (fearGreed < 25) { buyScore += 8; confirmations.push('✅ Fear extremo (contrarian)'); }
+      else if (fearGreed < 40) buyScore += 4;
+      if (fundingRate < -0.01) buyScore += 5; // shorts pagando = squeeze potencial
+      if (comprehensiveAI?.technical?.m15?.trend === 'up') buyScore += 4;
+      
+      // === VOLATILITY BONUS ===
+      if (atrPercent > 0.5 && atrPercent < 3) buyScore += 3;
+      
+      confirmations.push(`📊 RSI ${rsi.toFixed(0)} | M5 RSI ${m5Rsi.toFixed(0)}`);
       signalScore = buyScore;
-      
-      confirmations.push(`✅ Direção LONG (EMA${emaBullish ? '✓' : '○'} Price${priceChange > 0 ? '✓' : '○'})`);
-      if (priceAboveVwap) confirmations.push('✅ Preço > VWAP');
-      confirmations.push(`✅ RSI ${rsi.toFixed(0)}`);
-      if (m5Trend === 'up') confirmations.push('✅ M5 UP');
-      if (volumeRatio > 1.2) confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x`);
-      if (macdHistogram > 0) confirmations.push('✅ MACD +');
-      if (priceAboveEma50) confirmations.push('✅ > EMA50');
       
     } else if (allShortMet && !allLongMet) {
       action = 'SELL';
-      sellScore = 50;
+      sellScore = 40;
       
-      if (emaBearish) sellScore += 8;
-      if (priceBelowVwap) sellScore += 6;
-      if (priceBelowEma50) sellScore += 6;
-      if (m5Trend === 'down') sellScore += 8;
-      if (rsi >= 40 && rsi <= 60) sellScore += 6;
-      if (volumeRatio > 1.2) sellScore += 5;
-      if (volumeRatio > 1.8) sellScore += 5;
-      if (macdHistogram < 0) sellScore += 7;
-      if (compositeScore && compositeScore < -15) sellScore += 5;
-      if (compositeScore && compositeScore < -35) sellScore += 5;
-      if (aiConfidence && aiConfidence > 60) sellScore += 4;
-      if (aiConfidence && aiConfidence > 80) sellScore += 4;
-      if (fearGreed > 70) sellScore += 8;
-      if (fundingRate > 0.01) sellScore += 4;
-      if (comprehensiveAI?.technical?.m15?.trend === 'down') sellScore += 5;
-      if (distFromEma9Pct >= -0.15 && distFromEma9Pct <= 0.2) sellScore += 6;
-      if (atrPercent > 0.5) sellScore += 3;
+      // === TREND ALIGNMENT ===
+      if (emaBearish) { sellScore += 8; confirmations.push('✅ EMA Bear'); }
+      if (priceBelowEma50) { sellScore += 6; confirmations.push('✅ < EMA50'); }
+      if (m5Trend === 'down') { sellScore += 6; confirmations.push('✅ M5 DOWN'); }
       
+      // === PULLBACK QUALITY ===
+      const shortPullback = distFromEma9Pct >= -0.08 && distFromEma9Pct <= 0.20;
+      const vwapPullbackShort = distFromVwapPct >= -0.10 && distFromVwapPct <= 0.15;
+      if (shortPullback) { sellScore += 12; confirmations.push(`✅ Pullback EMA9 (${distFromEma9Pct.toFixed(2)}%)`); }
+      if (vwapPullbackShort) { sellScore += 6; confirmations.push('✅ Pullback VWAP'); }
+      
+      // === MOMENTUM ===
+      if (priceBelowVwap) { sellScore += 5; confirmations.push('✅ < VWAP'); }
+      if (macdHistogram < 0) { sellScore += 7; confirmations.push('✅ MACD -'); }
+      if (rsi >= 45 && rsi <= 60) sellScore += 5;
+      
+      // === VOLUME ===
+      if (volumeRatio > 1.2) { sellScore += 5; confirmations.push(`✅ Vol ${volumeRatio.toFixed(1)}x`); }
+      if (volumeRatio > 2.0) sellScore += 5;
+      
+      // === AI/COMPOSITE ===
+      if (compositeScore && compositeScore < -20) sellScore += 5;
+      if (compositeScore && compositeScore < -40) sellScore += 5;
+      if (aiConfidence && aiConfidence > 65) sellScore += 4;
+      if (aiConfidence && aiConfidence > 85) sellScore += 4;
+      
+      // === MACRO ===
+      if (fearGreed > 75) { sellScore += 8; confirmations.push('✅ Greed extremo (contrarian)'); }
+      else if (fearGreed > 60) sellScore += 4;
+      if (fundingRate > 0.01) sellScore += 5;
+      if (comprehensiveAI?.technical?.m15?.trend === 'down') sellScore += 4;
+      
+      // === VOLATILITY BONUS ===
+      if (atrPercent > 0.5 && atrPercent < 3) sellScore += 3;
+      
+      confirmations.push(`📊 RSI ${rsi.toFixed(0)} | M5 RSI ${m5Rsi.toFixed(0)}`);
       signalScore = sellScore;
-      
-      confirmations.push(`✅ Direção SHORT (EMA${emaBearish ? '✓' : '○'} Price${priceChange < 0 ? '✓' : '○'})`);
-      if (priceBelowVwap) confirmations.push('✅ Preço < VWAP');
-      confirmations.push(`✅ RSI ${rsi.toFixed(0)}`);
-      if (m5Trend === 'down') confirmations.push('✅ M5 DOWN');
-      if (volumeRatio > 1.2) confirmations.push(`✅ Volume ${volumeRatio.toFixed(1)}x`);
-      if (macdHistogram < 0) confirmations.push('✅ MACD -');
-      if (priceBelowEma50) confirmations.push('✅ < EMA50');
     }
     
-    // === BTC CORRELATION (only block extreme divergence >5%) ===
+    // === BTC CORRELATION (block extreme divergence >4%) ===
     let btcAligned = true;
     if (btcPriceChange !== undefined && symbol && !symbol.includes('BTC')) {
-      if (btcPriceChange > 5 && action === 'SELL') btcAligned = false;
-      if (btcPriceChange < -5 && action === 'BUY') btcAligned = false;
+      if (btcPriceChange > 4 && action === 'SELL') btcAligned = false;
+      if (btcPriceChange < -4 && action === 'BUY') btcAligned = false;
     }
     
     if (!btcAligned) {
       return {
         action: null, signalScore: 0, buyScore, sellScore,
         confirmations, shouldTrade: false,
-        skipReason: '🪙 BTC divergência extrema (>5%)',
+        skipReason: '🪙 BTC divergência extrema (>4%)',
         signalQuality: 'low', momentumScore: 0,
         marketRegime: 'trending', pullbackReady: true, btcAligned: false,
       };
     }
     
-    // === QUALITY (lowered thresholds) ===
+    // === QUALITY TIERS (v20: premium threshold raised for better entries) ===
     let signalQuality: 'low' | 'medium' | 'high' | 'premium' = 'low';
     if (action) {
-      if (signalScore >= 85) signalQuality = 'premium';
-      else if (signalScore >= 62) signalQuality = 'high';
+      if (signalScore >= 90) signalQuality = 'premium';
+      else if (signalScore >= 68) signalQuality = 'high';
       else if (signalScore >= 50) signalQuality = 'medium';
     }
     
@@ -334,7 +353,7 @@ export const useSignalAnalysis = () => {
       skipReason = reasons.length > 0 ? reasons.join(', ') : `L:${longDirection?'✓':'✗'}${longVWAP?'✓':'✗'}${longRSI?'✓':'✗'} S:${shortDirection?'✓':'✗'}${shortVWAP?'✓':'✗'}${shortRSI?'✓':'✗'}`;
     }
     
-    // v18: medium, high e premium TODOS passam
+    // v20: medium+ passa, mas position size escala com qualidade
     const shouldTrade = action !== null && signalQuality !== 'low';
     const momentumScore = Math.abs(priceChange) * (volumeAboveAvg ? 1.5 : 1);
     const marketRegime: 'trending' | 'ranging' | 'volatile' = 
