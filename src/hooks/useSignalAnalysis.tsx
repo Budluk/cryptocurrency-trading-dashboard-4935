@@ -307,6 +307,12 @@ export const useSignalAnalysis = () => {
       // === VOLATILITY BONUS ===
       if (atrPercent > 0.5 && atrPercent < 3) buyScore += 3;
       
+      // === S/R PROXIMITY + PULLBACK CANDLE (max +25) — v22 ===
+      if (nearSupport) { buyScore += 15; confirmations.push(`🟢 Perto Suporte S5m (${distToSupportPct.toFixed(2)}%)`); }
+      if (pullbackCandleBuy) { buyScore += 10; confirmations.push(bullishRejection ? '🕯️ Rejeição bullish (wick)' : '🕯️ Engulfing bullish'); }
+      // Combo S/R + candle pullback = entrada premium
+      if (nearSupport && pullbackCandleBuy) { buyScore += 8; confirmations.push('⭐ COMBO: Suporte + Pullback candle'); }
+      
       confirmations.push(`📊 RSI ${rsi.toFixed(0)} | M5 RSI ${m5Rsi.toFixed(0)}`);
       signalScore = buyScore;
       
@@ -348,6 +354,11 @@ export const useSignalAnalysis = () => {
       
       // === VOLATILITY BONUS ===
       if (atrPercent > 0.5 && atrPercent < 3) sellScore += 3;
+      
+      // === S/R PROXIMITY + PULLBACK CANDLE (max +25) — v22 ===
+      if (nearResistance) { sellScore += 15; confirmations.push(`🔴 Perto Resistência R5m (${distToResistancePct.toFixed(2)}%)`); }
+      if (pullbackCandleSell) { sellScore += 10; confirmations.push(bearishRejection ? '🕯️ Rejeição bearish (wick)' : '🕯️ Engulfing bearish'); }
+      if (nearResistance && pullbackCandleSell) { sellScore += 8; confirmations.push('⭐ COMBO: Resistência + Pullback candle'); }
       
       confirmations.push(`📊 RSI ${rsi.toFixed(0)} | M5 RSI ${m5Rsi.toFixed(0)}`);
       signalScore = sellScore;
@@ -395,6 +406,10 @@ export const useSignalAnalysis = () => {
     const marketRegime: 'trending' | 'ranging' | 'volatile' = 
       volatility > 12 ? 'volatile' : Math.abs(priceChange) > 1.0 ? 'trending' : 'ranging';
 
+    // Track S/R entry and pullback candle for downstream use
+    const srEntry = (action === 'BUY' && nearSupport) || (action === 'SELL' && nearResistance);
+    const pullbackCandle = (action === 'BUY' && pullbackCandleBuy) || (action === 'SELL' && pullbackCandleSell);
+
     return {
       action,
       signalScore,
@@ -413,6 +428,8 @@ export const useSignalAnalysis = () => {
       marketRegime,
       pullbackReady: true,
       btcAligned,
+      srEntry,
+      pullbackCandle,
     };
   }, []);
 
