@@ -226,6 +226,10 @@ export const useSignalAnalysis = () => {
     const allLongMet = longDirection && longVWAP && longRSI && longM5OK && longNotExtreme;
     const allShortMet = shortDirection && shortVWAP && shortRSI && shortM5OK && shortNotExtreme;
     
+    // === PRIORITY BONUS FOR BTC/ETH ===
+    const isBTCOrETH = symbol ? (symbol.includes('BTC') || symbol.includes('ETH')) : false;
+    const priorityBonus = isBTCOrETH ? 15 : 0;
+    
     // === DETERMINE ACTION & SCORE ===
     let action: 'BUY' | 'SELL' | null = null;
     let signalScore = 0;
@@ -234,7 +238,7 @@ export const useSignalAnalysis = () => {
     
     if (allLongMet && !allShortMet) {
       action = 'BUY';
-      buyScore = 40; // base lower, earn via confirmations
+      buyScore = 40 + priorityBonus; // base + BTC/ETH bonus
       
       // === TREND ALIGNMENT (max +20) ===
       if (emaBullish) { buyScore += 8; confirmations.push('✅ EMA Bull'); }
@@ -276,7 +280,7 @@ export const useSignalAnalysis = () => {
       
     } else if (allShortMet && !allLongMet) {
       action = 'SELL';
-      sellScore = 40;
+      sellScore = 40 + priorityBonus;
       
       // === TREND ALIGNMENT ===
       if (emaBearish) { sellScore += 8; confirmations.push('✅ EMA Bear'); }
