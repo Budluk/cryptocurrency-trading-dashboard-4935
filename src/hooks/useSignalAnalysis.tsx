@@ -19,6 +19,8 @@ export interface SignalAnalysisResult {
   marketRegime?: 'trending' | 'ranging' | 'volatile';
   pullbackReady?: boolean;
   btcAligned?: boolean;
+  srEntry?: boolean;
+  pullbackCandle?: boolean;
 }
 
 interface AnalysisParams {
@@ -203,6 +205,36 @@ export const useSignalAnalysis = () => {
     const distFromVwapPct = vwap > 0 ? ((currentPrice - vwap) / vwap) * 100 : 0;
     const distFromEma50Pct = ema50 > 0 ? ((currentPrice - ema50) / ema50) * 100 : 0;
     
+    // === S/R PROXIMITY DETECTION ===
+    const distToSupportPct = m5Support && m5Support > 0 
+      ? ((currentPrice - m5Support) / m5Support) * 100 : 999;
+    const distToResistancePct = m5Resistance && m5Resistance > 0 
+      ? ((m5Resistance - currentPrice) / m5Resistance) * 100 : 999;
+    
+    // Preço perto do suporte (< 0.3%) = bom para LONG
+    const nearSupport = distToSupportPct >= 0 && distToSupportPct <= 0.30;
+    // Preço perto da resistência (< 0.3%) = bom para SHORT
+    const nearResistance = distToResistancePct >= 0 && distToResistancePct <= 0.30;
+    
+    // === PULLBACK CANDLE DETECTION ===
+    // Detecta padrões de rejeição (wicks longas) indicando pullback completado
+    const totalRange = highPrice - lowPrice;
+    const bodySize = Math.abs(currentPrice - (params.previousPrice || currentPrice));
+    const upperWick = highPrice - Math.max(currentPrice, params.previousPrice || currentPrice);
+    const lowerWick = Math.min(currentPrice, params.previousPrice || currentPrice) - lowPrice;
+    
+    // Wick longa inferior = rejeição do suporte (bullish)
+    const bullishRejection = totalRange > 0 && (lowerWick / totalRange) > 0.55 && bodySize < totalRange * 0.3;
+    // Wick longa superior = rejeição da resistência (bearish)
+    const bearishRejection = totalRange > 0 && (upperWick / totalRange) > 0.55 && bodySize < totalRange * 0.3;
+    
+    // Engulfing pattern (preço atual engolfa range anterior)
+    const bullishEngulfing = currentPrice > highPrice * 0.998 && priceChange > 0.05;
+    const bearishEngulfing = currentPrice < lowPrice * 1.002 && priceChange < -0.05;
+    
+    const pullbackCandleBuy = bullishRejection || bullishEngulfing;
+    const pullbackCandleSell = bearishRejection || bearishEngulfing;
+    
     // === DIRECTION DETECTION ===
     const emaBullish = ema9 > 0 && ema21 > 0 ? ema9 > ema21 : priceChange > 0;
     const emaBearish = ema9 > 0 && ema21 > 0 ? ema9 < ema21 : priceChange < 0;
@@ -275,6 +307,12 @@ export const useSignalAnalysis = () => {
       // === VOLATILITY BONUS ===
       if (atrPercent > 0.5 && atrPercent < 3) buyScore += 3;
       
+      // === S/R PROXIMITY + PULLBACK CANDLE (max +25) — v22 ===
+      if (nearSupport) { buyScore += 15; confirmations.push(`🟢 Perto Suporte S5m (${distToSupportPct.toFixed(2)}%)`); }
+      if (pullbackCandleBuy) { buyScore += 10; confirmations.push(bullishRejection ? '🕯️ Rejeição bullish (wick)' : '🕯️ Engulfing bullish'); }
+      // Combo S/R + candle pullback = entrada premium
+      if (nearSupport && pullbackCandleBuy) { buyScore += 8; confirmations.push('⭐ COMBO: Suporte + Pullback candle'); }
+      
       confirmations.push(`📊 RSI ${rsi.toFixed(0)} | M5 RSI ${m5Rsi.toFixed(0)}`);
       signalScore = buyScore;
       
@@ -316,6 +354,11 @@ export const useSignalAnalysis = () => {
       
       // === VOLATILITY BONUS ===
       if (atrPercent > 0.5 && atrPercent < 3) sellScore += 3;
+      
+      // === S/R PROXIMITY + PULLBACK CANDLE (max +25) — v22 ===
+      if (nearResistance) { sellScore += 15; confirmations.push(`🔴 Perto Resistência R5m (${distToResistancePct.toFixed(2)}%)`); }
+      if (pullbackCandleSell) { sellScore += 10; confirmations.push(bearishRejection ? '🕯️ Rejeição bearish (wick)' : '🕯️ Engulfing bearish'); }
+      if (nearResistance && pullbackCandleSell) { sellScore += 8; confirmations.push('⭐ COMBO: Resistência + Pullback candle'); }
       
       confirmations.push(`📊 RSI ${rsi.toFixed(0)} | M5 RSI ${m5Rsi.toFixed(0)}`);
       signalScore = sellScore;
@@ -363,6 +406,10 @@ export const useSignalAnalysis = () => {
     const marketRegime: 'trending' | 'ranging' | 'volatile' = 
       volatility > 12 ? 'volatile' : Math.abs(priceChange) > 1.0 ? 'trending' : 'ranging';
 
+    // Track S/R entry and pullback candle for downstream use
+    const srEntry = (action === 'BUY' && nearSupport) || (action === 'SELL' && nearResistance);
+    const pullbackCandle = (action === 'BUY' && pullbackCandleBuy) || (action === 'SELL' && pullbackCandleSell);
+
     return {
       action,
       signalScore,
@@ -381,6 +428,8 @@ export const useSignalAnalysis = () => {
       marketRegime,
       pullbackReady: true,
       btcAligned,
+      srEntry,
+      pullbackCandle,
     };
   }, []);
 

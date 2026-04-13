@@ -142,7 +142,7 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ v20: SL tight + TP generous — maximize R:R for profit
+  // 🛡️ v22: SL no S/R + TP no S/R oposto — usa estrutura real do mercado
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -152,11 +152,13 @@ export const useTradingCalculations = () => {
     highPrice?: number,
     lowPrice?: number,
     symbolProfile?: SymbolRiskProfile,
-    signalQuality?: string
+    signalQuality?: string,
+    m5Support?: number,
+    m5Resistance?: number
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
     const atrValue = (atrPercent / 100) * currentPrice;
     
-    // 1) SL por ATR (tighter: 1.0x instead of 1.2x)
+    // 1) SL por ATR
     const slATR = atrValue * 1.0;
     
     // 2) SL por estrutura (swing high/low)
@@ -167,22 +169,66 @@ export const useTradingCalculations = () => {
       slStructure = Math.abs(currentPrice - lastSwing) + buffer;
     }
     
-    // 3) stop_final = min(sl_atr, sl_structure)
-    const slDistance = Math.min(slATR, slStructure);
+    // 3) v22: SL por S/R — coloca stop atrás do nível S/R com buffer
+    let slSR = slATR;
+    if (action === 'BUY' && m5Support && m5Support > 0) {
+      const srBuffer = m5Support * 0.0015; // 0.15% buffer além do suporte
+      slSR = currentPrice - (m5Support - srBuffer);
+      if (slSR > 0 && slSR < slATR * 2) {
+        console.log(`🟢 SL via Suporte: ${m5Support.toFixed(4)} - buffer = SL dist ${slSR.toFixed(4)}`);
+      } else {
+        slSR = slATR; // fallback se S/R muito longe
+      }
+    } else if (action === 'SELL' && m5Resistance && m5Resistance > 0) {
+      const srBuffer = m5Resistance * 0.0015;
+      slSR = (m5Resistance + srBuffer) - currentPrice;
+      if (slSR > 0 && slSR < slATR * 2) {
+        console.log(`🔴 SL via Resistência: ${m5Resistance.toFixed(4)} + buffer = SL dist ${slSR.toFixed(4)}`);
+      } else {
+        slSR = slATR;
+      }
+    }
     
-    // v20: Tighter bounds: 0.15% min, 0.50% max (was 0.60%)
+    // stop_final = menor entre ATR, swing e S/R
+    const slDistance = Math.min(slATR, slStructure, slSR);
+    
+    // Bounds: 0.15% min, 0.50% max
     const slPctMin = 0.0015;
     const slPctMax = 0.005;
     let stopLossPct = slDistance / currentPrice;
     stopLossPct = Math.max(slPctMin, Math.min(slPctMax, stopLossPct));
     
-    // v20: TP = 2.5x ATR (was 2.0x) — more room for profit
+    // v22: TP via S/R oposto quando disponível
+    let takeProfitPct: number;
     const tpMultiplier = signalQuality === 'premium' ? 3.0 : signalQuality === 'high' ? 2.5 : 2.0;
-    const tpDistance = atrValue * tpMultiplier;
-    let takeProfitPct = tpDistance / currentPrice;
     
-    // TP mínimo = 2x SL (garantia de R:R 2:1)
-    takeProfitPct = Math.max(takeProfitPct, stopLossPct * 2.0);
+    // Tentar usar S/R oposto como TP
+    let usedSRForTP = false;
+    if (action === 'BUY' && m5Resistance && m5Resistance > currentPrice) {
+      const tpViaSR = (m5Resistance - currentPrice) / currentPrice;
+      // Só usar se R:R >= 2.0
+      if (tpViaSR / stopLossPct >= 2.0) {
+        takeProfitPct = tpViaSR;
+        usedSRForTP = true;
+        console.log(`🎯 TP via Resistência: ${m5Resistance.toFixed(4)} (R:R ${(tpViaSR/stopLossPct).toFixed(1)})`);
+      }
+    } else if (action === 'SELL' && m5Support && m5Support < currentPrice) {
+      const tpViaSR = (currentPrice - m5Support) / currentPrice;
+      if (tpViaSR / stopLossPct >= 2.0) {
+        takeProfitPct = tpViaSR;
+        usedSRForTP = true;
+        console.log(`🎯 TP via Suporte: ${m5Support.toFixed(4)} (R:R ${(tpViaSR/stopLossPct).toFixed(1)})`);
+      }
+    }
+    
+    // Fallback: ATR-based TP
+    if (!usedSRForTP) {
+      const tpDistance = atrValue * tpMultiplier;
+      takeProfitPct = tpDistance / currentPrice;
+    }
+    
+    // TP mínimo = 2x SL
+    takeProfitPct = Math.max(takeProfitPct!, stopLossPct * 2.0);
     
     let stopLoss: number, takeProfit: number;
     if (action === 'BUY') {
@@ -194,9 +240,9 @@ export const useTradingCalculations = () => {
     }
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
-    const usedSwing = slStructure < slATR;
     const rr = (takeProfitPct / stopLossPct).toFixed(1);
-    console.log(`🎯 v20 ${action} | SL: ${(stopLossPct*100).toFixed(3)}%${usedSwing ? '(swing)' : '(atr)'} | TP: ${(takeProfitPct*100).toFixed(3)}% (${tpMultiplier}x ATR) | R:R ${rr}:1 | Quality: ${signalQuality}`);
+    const slSource = slSR < slATR && slSR < slStructure ? 'S/R' : slStructure < slATR ? 'swing' : 'ATR';
+    console.log(`🎯 v22 ${action} | SL: ${(stopLossPct*100).toFixed(3)}%(${slSource}) | TP: ${(takeProfitPct*100).toFixed(3)}%${usedSRForTP ? '(S/R)' : '(ATR)'} | R:R ${rr}:1 | Quality: ${signalQuality}`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
