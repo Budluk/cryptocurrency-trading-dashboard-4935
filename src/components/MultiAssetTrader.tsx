@@ -154,6 +154,8 @@ export const MultiAssetTrader = () => {
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
+  const instrumentsCache = useRef<{ data: any[]; timestamp: number }>({ data: [], timestamp: 0 });
+  const INSTRUMENTS_CACHE_TTL = 300000; // 5 min — instruments rarely change
   const { calculateExposure, classifyVolatilityRisk, getAdaptiveTrailingConfig: getAdvancedTrailing, checkAssetCorrelation, getProtectProfitLevel } = useAdvancedRiskManager();
   
   const lastMLCheck = useRef<number>(0);
