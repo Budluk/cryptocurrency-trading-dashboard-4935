@@ -637,20 +637,27 @@ export const MultiAssetTrader = () => {
         if (!isWithinTradingHours) return;
       }
 
-      // Buscar instrumentos
-      const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_instruments', isTestnet, params: { category: 'linear', limit: 1000, status: 'Trading' } }
-      });
+      // Buscar instrumentos (com cache de 5min)
+      let tradableAssets: any[];
+      const now = Date.now();
+      if (instrumentsCache.current.data.length > 0 && now - instrumentsCache.current.timestamp < INSTRUMENTS_CACHE_TTL) {
+        tradableAssets = instrumentsCache.current.data;
+        console.log(`📊 ${tradableAssets.length} ativos tradáveis (cache)`);
+      } else {
+        const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
+          body: { action: 'get_instruments', isTestnet, params: { category: 'linear', limit: 1000, status: 'Trading' } }
+        });
 
-      if (instrumentsError || !instrumentsData?.success) {
-        console.log('❌ Erro ao buscar instruments:', instrumentsError);
-        return;
+        if (instrumentsError || !instrumentsData?.success) {
+          console.log('❌ Erro ao buscar instruments:', instrumentsError);
+          return;
+        }
+
+        const instruments = Array.isArray(instrumentsData.data) ? instrumentsData.data : (instrumentsData.data?.list || []);
+        tradableAssets = instruments.filter((inst: any) => inst.status === 'Trading' && inst.quoteCoin === 'USDT');
+        instrumentsCache.current = { data: tradableAssets, timestamp: now };
+        console.log(`📊 ${tradableAssets.length} ativos tradáveis (fresh)`);
       }
-
-      // instruments data is array directly in data field
-      const instruments = Array.isArray(instrumentsData.data) ? instrumentsData.data : (instrumentsData.data?.list || []);
-      const tradableAssets = instruments.filter((inst: any) => inst.status === 'Trading' && inst.quoteCoin === 'USDT');
-      console.log(`📊 ${tradableAssets.length} ativos tradáveis`);
 
       const { data: tickerData, error: tickerError } = await supabase.functions.invoke('bybit-trading', {
         body: { action: 'get_ticker', isTestnet, params: { category: 'linear' } }
