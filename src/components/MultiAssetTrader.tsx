@@ -908,10 +908,10 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // v11: PRE-FETCH AI data for strict condition validation
+          // v23: Use cached AI or skip if unavailable (prefetch happens before loop)
           let comprehensiveAI = null;
           const cached = aiAnalysisCache.current.get(symbol);
-          if (cached && Date.now() - cached.timestamp < 30000) {
+          if (cached && Date.now() - cached.timestamp < 60000) {
             comprehensiveAI = cached.data;
           } else {
             try {
@@ -920,8 +920,8 @@ export const MultiAssetTrader = () => {
                 aiAnalysisCache.current.set(symbol, { data: comprehensiveAI, timestamp: Date.now() });
               }
             } catch (e) {
-              console.log(`⚠️ AI fetch falhou para ${symbol}, pulando`);
-              continue; // v11: Sem AI = sem validação estrita = não operar
+              // v23: Skip silently without logging for each asset
+              continue;
             }
           }
           
@@ -1427,7 +1427,10 @@ export const MultiAssetTrader = () => {
             setConsecutiveLosses(prev => prev + 1);
           }
 
-          await new Promise(resolve => setTimeout(resolve, 2500));
+          // v23: Only delay between assets if a trade was placed (rate limit protection)
+          if (openedThisCycle > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
@@ -1463,10 +1466,10 @@ export const MultiAssetTrader = () => {
       if (isRunning) analyzeAndTrade();
     }, 60000);
 
-    // Smart exits: 25s — manter responsivo para trailing/parciais
+    // Smart exits: 45s — balanced between responsiveness and API pressure
     const exitInterval = setInterval(() => {
       void updateSmartExits();
-    }, 25000);
+    }, 45000);
 
     // Sincronizar PnL a cada 60s para alimentar sistema anti-loss
     const pnlSyncInterval = setInterval(() => {
