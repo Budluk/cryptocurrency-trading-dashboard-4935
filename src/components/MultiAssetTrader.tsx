@@ -868,6 +868,28 @@ export const MultiAssetTrader = () => {
       // 🔧 ML Auto-Corrector: Obter símbolos bloqueados pela correção automática
       const mlBlockedSymbols = new Set(mlAutoConfig?.blockedSymbols || []);
       
+      // 🚀 v23: BATCH AI PREFETCH — fetch AI data for top 5 uncached assets in parallel
+      const uncachedSymbols = topVolatileAssets
+        .slice(0, 8)
+        .map(a => a.instrument.symbol)
+        .filter(s => !symbolsWithOpenPosition.has(s) && !mlBlockedSymbols.has(s))
+        .filter(s => {
+          const cached = aiAnalysisCache.current.get(s);
+          return !cached || Date.now() - cached.timestamp > 60000;
+        })
+        .slice(0, 5);
+      
+      if (uncachedSymbols.length > 0) {
+        await Promise.allSettled(
+          uncachedSymbols.map(async (s) => {
+            try {
+              const ai = await fetchComprehensiveAI(s);
+              if (ai) aiAnalysisCache.current.set(s, { data: ai, timestamp: Date.now() });
+            } catch {}
+          })
+        );
+      }
+
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
         
