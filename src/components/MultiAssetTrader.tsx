@@ -154,6 +154,8 @@ export const MultiAssetTrader = () => {
   
   // AI cache for comprehensive analysis
   const aiAnalysisCache = useRef<Map<string, { data: any; timestamp: number }>>(new Map());
+  const instrumentsCache = useRef<{ data: any[]; timestamp: number }>({ data: [], timestamp: 0 });
+  const INSTRUMENTS_CACHE_TTL = 300000; // 5 min — instruments rarely change
   const { calculateExposure, classifyVolatilityRisk, getAdaptiveTrailingConfig: getAdvancedTrailing, checkAssetCorrelation, getProtectProfitLevel } = useAdvancedRiskManager();
   
   const lastMLCheck = useRef<number>(0);
@@ -635,20 +637,27 @@ export const MultiAssetTrader = () => {
         if (!isWithinTradingHours) return;
       }
 
-      // Buscar instrumentos
-      const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
-        body: { action: 'get_instruments', isTestnet, params: { category: 'linear', limit: 1000, status: 'Trading' } }
-      });
+      // Buscar instrumentos (com cache de 5min)
+      let tradableAssets: any[];
+      const now = Date.now();
+      if (instrumentsCache.current.data.length > 0 && now - instrumentsCache.current.timestamp < INSTRUMENTS_CACHE_TTL) {
+        tradableAssets = instrumentsCache.current.data;
+        console.log(`📊 ${tradableAssets.length} ativos tradáveis (cache)`);
+      } else {
+        const { data: instrumentsData, error: instrumentsError } = await supabase.functions.invoke('bybit-trading', {
+          body: { action: 'get_instruments', isTestnet, params: { category: 'linear', limit: 1000, status: 'Trading' } }
+        });
 
-      if (instrumentsError || !instrumentsData?.success) {
-        console.log('❌ Erro ao buscar instruments:', instrumentsError);
-        return;
+        if (instrumentsError || !instrumentsData?.success) {
+          console.log('❌ Erro ao buscar instruments:', instrumentsError);
+          return;
+        }
+
+        const instruments = Array.isArray(instrumentsData.data) ? instrumentsData.data : (instrumentsData.data?.list || []);
+        tradableAssets = instruments.filter((inst: any) => inst.status === 'Trading' && inst.quoteCoin === 'USDT');
+        instrumentsCache.current = { data: tradableAssets, timestamp: now };
+        console.log(`📊 ${tradableAssets.length} ativos tradáveis (fresh)`);
       }
-
-      // instruments data is array directly in data field
-      const instruments = Array.isArray(instrumentsData.data) ? instrumentsData.data : (instrumentsData.data?.list || []);
-      const tradableAssets = instruments.filter((inst: any) => inst.status === 'Trading' && inst.quoteCoin === 'USDT');
-      console.log(`📊 ${tradableAssets.length} ativos tradáveis`);
 
       const { data: tickerData, error: tickerError } = await supabase.functions.invoke('bybit-trading', {
         body: { action: 'get_ticker', isTestnet, params: { category: 'linear' } }
@@ -859,6 +868,28 @@ export const MultiAssetTrader = () => {
       // 🔧 ML Auto-Corrector: Obter símbolos bloqueados pela correção automática
       const mlBlockedSymbols = new Set(mlAutoConfig?.blockedSymbols || []);
       
+      // 🚀 v23: BATCH AI PREFETCH — fetch AI data for top 5 uncached assets in parallel
+      const uncachedSymbols = topVolatileAssets
+        .slice(0, 8)
+        .map(a => a.instrument.symbol)
+        .filter(s => !symbolsWithOpenPosition.has(s) && !mlBlockedSymbols.has(s))
+        .filter(s => {
+          const cached = aiAnalysisCache.current.get(s);
+          return !cached || Date.now() - cached.timestamp > 60000;
+        })
+        .slice(0, 5);
+      
+      if (uncachedSymbols.length > 0) {
+        await Promise.allSettled(
+          uncachedSymbols.map(async (s) => {
+            try {
+              const ai = await fetchComprehensiveAI(s);
+              if (ai) aiAnalysisCache.current.set(s, { data: ai, timestamp: Date.now() });
+            } catch {}
+          })
+        );
+      }
+
       for (const assetData of topVolatileAssets) {
         if (!isRunning || shouldStopTrading) break;
         
@@ -899,10 +930,10 @@ export const MultiAssetTrader = () => {
           const highPrice = parseFloat(ticker.highPrice24h);
           const lowPrice = parseFloat(ticker.lowPrice24h);
           
-          // v11: PRE-FETCH AI data for strict condition validation
+          // v23: Use cached AI or skip if unavailable (prefetch happens before loop)
           let comprehensiveAI = null;
           const cached = aiAnalysisCache.current.get(symbol);
-          if (cached && Date.now() - cached.timestamp < 30000) {
+          if (cached && Date.now() - cached.timestamp < 60000) {
             comprehensiveAI = cached.data;
           } else {
             try {
@@ -911,8 +942,8 @@ export const MultiAssetTrader = () => {
                 aiAnalysisCache.current.set(symbol, { data: comprehensiveAI, timestamp: Date.now() });
               }
             } catch (e) {
-              console.log(`⚠️ AI fetch falhou para ${symbol}, pulando`);
-              continue; // v11: Sem AI = sem validação estrita = não operar
+              // v23: Skip silently without logging for each asset
+              continue;
             }
           }
           
@@ -1418,7 +1449,10 @@ export const MultiAssetTrader = () => {
             setConsecutiveLosses(prev => prev + 1);
           }
 
-          await new Promise(resolve => setTimeout(resolve, 2500));
+          // v23: Only delay between assets if a trade was placed (rate limit protection)
+          if (openedThisCycle > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
         } catch (error) {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
@@ -1454,10 +1488,10 @@ export const MultiAssetTrader = () => {
       if (isRunning) analyzeAndTrade();
     }, 60000);
 
-    // Smart exits: 25s — manter responsivo para trailing/parciais
+    // Smart exits: 45s — balanced between responsiveness and API pressure
     const exitInterval = setInterval(() => {
       void updateSmartExits();
-    }, 25000);
+    }, 45000);
 
     // Sincronizar PnL a cada 60s para alimentar sistema anti-loss
     const pnlSyncInterval = setInterval(() => {
