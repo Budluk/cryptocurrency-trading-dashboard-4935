@@ -986,27 +986,32 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          const allowMediumMajor = isPriorityMajor && analysisResult.srEntry && analysisResult.pullbackCandle;
-          const qualityApproved =
-            analysisResult.signalQuality === 'high' ||
-            analysisResult.signalQuality === 'premium' ||
-            allowMediumMajor;
+          // v25: GATE RIGOROSO — só entrar com confirmação S/R + pullback candle
+          const hasSR = Boolean(analysisResult.srEntry);
+          const hasPullback = Boolean(analysisResult.pullbackCandle);
+          const hasCombo = hasSR && hasPullback;
+          
+          // Premium: precisa de pelo menos S/R OU pullback
+          // High: precisa de S/R + pullback (combo)
+          // Medium: só majors com combo
+          let qualityApproved = false;
+          if (analysisResult.signalQuality === 'premium') {
+            qualityApproved = hasSR || hasPullback; // premium pode entrar com 1 confirmação
+          } else if (analysisResult.signalQuality === 'high') {
+            qualityApproved = hasCombo; // high precisa das 2 confirmações
+          } else if (analysisResult.signalQuality === 'medium' && isPriorityMajor) {
+            qualityApproved = hasCombo; // medium só majors com combo completo
+          }
 
           if (!qualityApproved) {
             skipCounts.set('Qualidade insuficiente', (skipCounts.get('Qualidade insuficiente') || 0) + 1);
             continue;
           }
 
-          const hasStructureConfirmation = Boolean(analysisResult.srEntry || analysisResult.pullbackCandle);
-          const needsStructureConfirmation = !isPriorityMajor || analysisResult.signalQuality !== 'premium';
-          if (needsStructureConfirmation && !hasStructureConfirmation) {
-            skipCounts.set('Sem confirmação estrutural', (skipCounts.get('Sem confirmação estrutural') || 0) + 1);
-            continue;
-          }
-
-          let minTradeScore = isPriorityMajor ? 60 : isOptimalForHour ? 68 : 74;
-          if (analysisResult.signalQuality === 'medium') minTradeScore += 8;
-          if (volatility > 8) minTradeScore += 4;
+          // v25: Score mínimo elevado
+          let minTradeScore = isPriorityMajor ? 68 : isOptimalForHour ? 75 : 80;
+          if (analysisResult.signalQuality === 'medium') minTradeScore += 10;
+          if (volatility > 8) minTradeScore += 5;
 
           if (historicalDecision.adjustedScore < minTradeScore) {
             skipCounts.set('Score efetivo baixo', (skipCounts.get('Score efetivo baixo') || 0) + 1);
@@ -1076,13 +1081,14 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          let leverageCap = analysisResult.signalQuality === 'premium' ? 8 : analysisResult.signalQuality === 'high' ? 7 : 5;
-          if (volatility > 6) leverageCap = Math.min(leverageCap, 6);
+          // v25: Leverage máxima 5x — stops precisam de espaço para funcionar
+          let leverageCap = analysisResult.signalQuality === 'premium' ? 5 : analysisResult.signalQuality === 'high' ? 4 : 3;
+          if (volatility > 6) leverageCap = Math.min(leverageCap, 3);
           if (!isPriorityMajor) {
-            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 7 : 5);
+            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 4 : 3);
           }
 
-          const leverage = Math.max(5, Math.min(leverageCap, Math.floor(dynamicLeverage)));
+          const leverage = Math.max(2, Math.min(leverageCap, Math.floor(dynamicLeverage)));
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
