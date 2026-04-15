@@ -1295,7 +1295,7 @@ export const MultiAssetTrader = () => {
             }
           }
 
-          // 🔒 v11: R:R FIXO 1:2 (SL 0.4%, TP 0.8%) — já garantido pelo calculateStopTakeProfit
+          // 🔒 v25: R:R mínimo 2.5:1 — rejeitar trades que não atendem
           {
             const finalSL = parseFloat(stopLoss);
             const finalTP = parseFloat(takeProfit);
@@ -1303,6 +1303,10 @@ export const MultiAssetTrader = () => {
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
             console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 | SL: ${(sltp.stopLossPct * 100).toFixed(2)}% | TP: ${(sltp.takeProfitPct * 100).toFixed(2)}%`);
+            if (actualRR < 2.3) {
+              console.log(`⛔ ${symbol}: R:R ${actualRR.toFixed(2)} < 2.3 — trade rejeitado`);
+              continue;
+            }
           }
 
           // 🧠 VALIDAÇÃO COM INTELIGÊNCIA DE MERCADO (Notícias, Whales, Fear & Greed)
