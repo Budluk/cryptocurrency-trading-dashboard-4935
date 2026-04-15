@@ -10,27 +10,28 @@ export interface SymbolRiskProfile {
 // 🎯 v12: Scalper pro — SL/TP adaptativo por volatilidade, R:R mínimo 1:2
 export const useTradingCalculations = () => {
   
-  // v12: Leverage 5-10x baseada em volatilidade
+  // v25: Leverage conservadora — stops precisam de espaço
   const getLeverageForScalping = useCallback((volatility: number): number => {
-    if (volatility > 8) return 10;
-    if (volatility > 5) return 12;
-    if (volatility > 3) return 15;
-    if (volatility > 2) return 18;
-    if (volatility > 1) return 20;
-    return 25;
+    if (volatility > 8) return 3;
+    if (volatility > 5) return 4;
+    if (volatility > 3) return 5;
+    if (volatility > 2) return 5;
+    if (volatility > 1) return 6;
+    return 6;
   }, []);
 
+  // v25: Leverage conservadora por saldo — max 5x
   const getLeverageForBalance = useCallback((balance: number, winRate: number): number => {
-    let baseLeverage = 15;
-    if (balance < 10) baseLeverage = 25;
-    else if (balance < 20) baseLeverage = 20;
-    else if (balance < 50) baseLeverage = 15;
-    else baseLeverage = 12;
+    let baseLeverage = 4;
+    if (balance < 10) baseLeverage = 5;
+    else if (balance < 20) baseLeverage = 5;
+    else if (balance < 50) baseLeverage = 4;
+    else baseLeverage = 3;
 
-    if (winRate >= 60) baseLeverage = Math.min(baseLeverage + 3, 25);
-    else if (winRate < 40) baseLeverage = Math.max(baseLeverage - 3, 10);
+    if (winRate >= 65) baseLeverage = Math.min(baseLeverage + 1, 6);
+    else if (winRate < 35) baseLeverage = Math.max(baseLeverage - 1, 2);
 
-    return Math.max(10, Math.min(25, baseLeverage));
+    return Math.max(2, Math.min(6, baseLeverage));
   }, []);
 
   // 💼 v20: Position sizing — score-weighted risk (1-2% per trade)
@@ -83,13 +84,13 @@ export const useTradingCalculations = () => {
     };
   }, []);
 
-  // v12: SL adaptativo por volatilidade (não mais fixo)
+  // v25: SL adaptativo ALARGADO — stops apertados causavam 63% stop-out
   const getAdaptiveStopLoss = (volatility: number): number => {
-    if (volatility > 8) return 0.006;  // 0.6% — mercado muito volátil
-    if (volatility > 5) return 0.005;  // 0.5%
-    if (volatility > 3) return 0.004;  // 0.4% — padrão
-    if (volatility > 1) return 0.0035; // 0.35% — baixa vol
-    return 0.003;                       // 0.3% — vol muito baixa
+    if (volatility > 8) return 0.020;  // 2.0% — mercado muito volátil
+    if (volatility > 5) return 0.015;  // 1.5%
+    if (volatility > 3) return 0.012;  // 1.2% — padrão
+    if (volatility > 1) return 0.010;  // 1.0% — baixa vol
+    return 0.008;                       // 0.8% — vol muito baixa
   };
 
   const calculateDynamicTrailingStop = useCallback((volatility: number): number => {
@@ -142,7 +143,7 @@ export const useTradingCalculations = () => {
     }
   }, []);
 
-  // 🛡️ v22: SL no S/R + TP no S/R oposto — usa estrutura real do mercado
+  // 🛡️ v25: SL ALARGADO + TP com R:R mínimo 2.5:1 — resolve PF 0.14 e stop-out 63%
   const calculateStopTakeProfit = useCallback((
     currentPrice: number,
     action: 'BUY' | 'SELL',
@@ -158,63 +159,64 @@ export const useTradingCalculations = () => {
   ): { stopLoss: string; takeProfit: string; stopLossPct: number; takeProfitPct: number } => {
     const atrValue = (atrPercent / 100) * currentPrice;
     
-    // 1) SL por ATR
-    const slATR = atrValue * 1.0;
+    // 1) SL por ATR — usar 1.5x ATR para dar espaço ao preço respirar
+    const slATR = atrValue * 1.5;
     
-    // 2) SL por estrutura (swing high/low)
+    // 2) SL por estrutura (swing high/low) — com buffer generoso
     let slStructure = slATR;
     if (highPrice && lowPrice) {
       const lastSwing = action === 'BUY' ? lowPrice : highPrice;
-      const buffer = (highPrice - lowPrice) * 0.08;
+      const buffer = (highPrice - lowPrice) * 0.15; // 15% buffer (era 8%)
       slStructure = Math.abs(currentPrice - lastSwing) + buffer;
     }
     
-    // 3) v22: SL por S/R — coloca stop atrás do nível S/R com buffer
+    // 3) SL por S/R — buffer de 0.3% (era 0.15%)
     let slSR = slATR;
     if (action === 'BUY' && m5Support && m5Support > 0) {
-      const srBuffer = m5Support * 0.0015; // 0.15% buffer além do suporte
+      const srBuffer = m5Support * 0.003; // 0.3% buffer além do suporte
       slSR = currentPrice - (m5Support - srBuffer);
-      if (slSR > 0 && slSR < slATR * 2) {
+      if (slSR > 0 && slSR < slATR * 3) {
         console.log(`🟢 SL via Suporte: ${m5Support.toFixed(4)} - buffer = SL dist ${slSR.toFixed(4)}`);
       } else {
-        slSR = slATR; // fallback se S/R muito longe
+        slSR = slATR;
       }
     } else if (action === 'SELL' && m5Resistance && m5Resistance > 0) {
-      const srBuffer = m5Resistance * 0.0015;
+      const srBuffer = m5Resistance * 0.003;
       slSR = (m5Resistance + srBuffer) - currentPrice;
-      if (slSR > 0 && slSR < slATR * 2) {
+      if (slSR > 0 && slSR < slATR * 3) {
         console.log(`🔴 SL via Resistência: ${m5Resistance.toFixed(4)} + buffer = SL dist ${slSR.toFixed(4)}`);
       } else {
         slSR = slATR;
       }
     }
     
-    // stop_final = menor entre ATR, swing e S/R
-    const slDistance = Math.min(slATR, slStructure, slSR);
+    // v25: stop_final = MEDIANA dos 3 (não o menor!) para evitar stops absurdamente apertados
+    const slValues = [slATR, slStructure, slSR].sort((a, b) => a - b);
+    const slDistance = slValues[1]; // mediana
     
-    // Bounds: 0.15% min, 0.50% max
-    const slPctMin = 0.0015;
-    const slPctMax = 0.005;
+    // v25: Bounds ALARGADOS: 0.6% min, 2.0% max (era 0.15%-0.50%)
+    const slPctMin = 0.006;
+    const slPctMax = 0.020;
     let stopLossPct = slDistance / currentPrice;
     stopLossPct = Math.max(slPctMin, Math.min(slPctMax, stopLossPct));
     
-    // v22: TP via S/R oposto quando disponível
+    // v25: TP com R:R mínimo 2.5:1 (era 2.0)
     let takeProfitPct: number;
-    const tpMultiplier = signalQuality === 'premium' ? 3.0 : signalQuality === 'high' ? 2.5 : 2.0;
+    const minRR = signalQuality === 'premium' ? 3.0 : signalQuality === 'high' ? 2.5 : 2.5;
+    const tpMultiplier = signalQuality === 'premium' ? 3.5 : signalQuality === 'high' ? 3.0 : 2.5;
     
     // Tentar usar S/R oposto como TP
     let usedSRForTP = false;
     if (action === 'BUY' && m5Resistance && m5Resistance > currentPrice) {
       const tpViaSR = (m5Resistance - currentPrice) / currentPrice;
-      // Só usar se R:R >= 2.0
-      if (tpViaSR / stopLossPct >= 2.0) {
+      if (tpViaSR / stopLossPct >= minRR) {
         takeProfitPct = tpViaSR;
         usedSRForTP = true;
         console.log(`🎯 TP via Resistência: ${m5Resistance.toFixed(4)} (R:R ${(tpViaSR/stopLossPct).toFixed(1)})`);
       }
     } else if (action === 'SELL' && m5Support && m5Support < currentPrice) {
       const tpViaSR = (currentPrice - m5Support) / currentPrice;
-      if (tpViaSR / stopLossPct >= 2.0) {
+      if (tpViaSR / stopLossPct >= minRR) {
         takeProfitPct = tpViaSR;
         usedSRForTP = true;
         console.log(`🎯 TP via Suporte: ${m5Support.toFixed(4)} (R:R ${(tpViaSR/stopLossPct).toFixed(1)})`);
@@ -227,8 +229,8 @@ export const useTradingCalculations = () => {
       takeProfitPct = tpDistance / currentPrice;
     }
     
-    // TP mínimo = 2x SL
-    takeProfitPct = Math.max(takeProfitPct!, stopLossPct * 2.0);
+    // v25: TP mínimo = minRR × SL (garante R:R 2.5+)
+    takeProfitPct = Math.max(takeProfitPct!, stopLossPct * minRR);
     
     let stopLoss: number, takeProfit: number;
     if (action === 'BUY') {
@@ -241,8 +243,8 @@ export const useTradingCalculations = () => {
 
     const priceDecimals = currentPrice < 1 ? 6 : currentPrice < 100 ? 4 : 2;
     const rr = (takeProfitPct / stopLossPct).toFixed(1);
-    const slSource = slSR < slATR && slSR < slStructure ? 'S/R' : slStructure < slATR ? 'swing' : 'ATR';
-    console.log(`🎯 v22 ${action} | SL: ${(stopLossPct*100).toFixed(3)}%(${slSource}) | TP: ${(takeProfitPct*100).toFixed(3)}%${usedSRForTP ? '(S/R)' : '(ATR)'} | R:R ${rr}:1 | Quality: ${signalQuality}`);
+    const slSource = slSR === slValues[1] ? 'S/R' : slStructure === slValues[1] ? 'swing' : 'ATR';
+    console.log(`🎯 v25 ${action} | SL: ${(stopLossPct*100).toFixed(2)}%(${slSource}) | TP: ${(takeProfitPct*100).toFixed(2)}%(${usedSRForTP ? 'S/R' : 'ATR'}) | R:R ${rr}:1 | Quality: ${signalQuality}`);
 
     return {
       stopLoss: stopLoss.toFixed(priceDecimals),
