@@ -164,7 +164,7 @@ export const MultiAssetTrader = () => {
 
   // Configurações
   const [maxOpenPositions, setMaxOpenPositions] = useState(200);
-  const MAX_CONSECUTIVE_LOSSES = 10;
+  const MAX_CONSECUTIVE_LOSSES = 5;
   const [historicalWinRate, setHistoricalWinRate] = useState(50);
   
   // Opções avançadas
@@ -823,22 +823,29 @@ export const MultiAssetTrader = () => {
         }
       }
       
-      // 🆕 VERIFICAR SE TEM ATIVOS PARA ESTA HORA
-      const currentHourUTC = new Date().getUTCHours();
-      const hourAssets = getAssetsForCurrentHour();
-      const hasGoodAssets = hourAssets.length > 0;
-      
-      // 🆕 FALLBACK: Se não tem ativos ideais, permitir os TOP 5 por score
-      const topNFallbackSymbols = new Set(
-        topVolatileAssets.slice(0, 5).map(a => a.instrument.symbol)
+      const dataDrivenSymbols = new Set(
+        filterAssetsDataDriven(
+          topVolatileAssets.map(asset => ({
+            symbol: asset.instrument.symbol,
+            assetScore: asset.assetScore,
+          }))
+        ).map(asset => asset.symbol)
       );
-      const useFallbackMode = !hasGoodAssets;
-      
-      if (!hasGoodAssets) {
-        console.log(`⚠️ Hora ${currentHourUTC}h UTC sem ativos ideais - FALLBACK ativado com Top 5: ${[...topNFallbackSymbols].join(', ')}`);
-      } else {
-        console.log(`✅ Hora ${currentHourUTC}h UTC: ${hourAssets.length} ativos ideais: ${hourAssets.map(a => a.symbol).join(', ')}`);
+
+      const candidateAssets = topVolatileAssets.filter(asset =>
+        dataDrivenSymbols.has(asset.instrument.symbol)
+      );
+
+      if (candidateAssets.length === 0) {
+        console.log('🛑 Nenhum ativo aprovado pelo filtro histórico nesta hora - ciclo encerrado');
+        return;
       }
+
+      console.log(
+        `🧭 ${candidateAssets.length}/${topVolatileAssets.length} ativos aprovados pelo filtro histórico: ${candidateAssets
+          .map(asset => asset.instrument.symbol)
+          .join(', ')}`
+      );
 
       let shouldStopTrading = false;
       let openedThisCycle = 0;
@@ -869,7 +876,7 @@ export const MultiAssetTrader = () => {
       const mlBlockedSymbols = new Set(mlAutoConfig?.blockedSymbols || []);
       
       // 🚀 v23: BATCH AI PREFETCH — fetch AI data for top 5 uncached assets in parallel
-      const uncachedSymbols = topVolatileAssets
+      const uncachedSymbols = candidateAssets
         .slice(0, 8)
         .map(a => a.instrument.symbol)
         .filter(s => !symbolsWithOpenPosition.has(s) && !mlBlockedSymbols.has(s))
@@ -890,7 +897,7 @@ export const MultiAssetTrader = () => {
         );
       }
 
-      for (const assetData of topVolatileAssets) {
+      for (const assetData of candidateAssets) {
         if (!isRunning || shouldStopTrading) break;
         
         // LIMITE DE TRADES POR CICLO
@@ -902,6 +909,7 @@ export const MultiAssetTrader = () => {
         const { instrument, ticker, volatility, priceChange, volume24h } = assetData;
         const symbol = instrument.symbol;
         const isScalpAsset = topVolNow.includes(symbol);
+        const isPriorityMajor = symbol === 'BTCUSDT' || symbol === 'ETHUSDT';
         
         // 🆕 ANÁLISE BASEADA EM DADOS POR HORA
         const symbolAnalysis = analyzeSymbol(symbol);
@@ -971,6 +979,39 @@ export const MultiAssetTrader = () => {
             skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
             continue;
           }
+
+          const historicalDecision = shouldTradeDataDriven(symbol, analysisResult.signalScore, volatility);
+          if (!historicalDecision.shouldTrade) {
+            skipCounts.set('Filtro histórico/data-driven', (skipCounts.get('Filtro histórico/data-driven') || 0) + 1);
+            continue;
+          }
+
+          const allowMediumMajor = isPriorityMajor && analysisResult.srEntry && analysisResult.pullbackCandle;
+          const qualityApproved =
+            analysisResult.signalQuality === 'high' ||
+            analysisResult.signalQuality === 'premium' ||
+            allowMediumMajor;
+
+          if (!qualityApproved) {
+            skipCounts.set('Qualidade insuficiente', (skipCounts.get('Qualidade insuficiente') || 0) + 1);
+            continue;
+          }
+
+          const hasStructureConfirmation = Boolean(analysisResult.srEntry || analysisResult.pullbackCandle);
+          const needsStructureConfirmation = !isPriorityMajor || analysisResult.signalQuality !== 'premium';
+          if (needsStructureConfirmation && !hasStructureConfirmation) {
+            skipCounts.set('Sem confirmação estrutural', (skipCounts.get('Sem confirmação estrutural') || 0) + 1);
+            continue;
+          }
+
+          let minTradeScore = isPriorityMajor ? 60 : isOptimalForHour ? 68 : 74;
+          if (analysisResult.signalQuality === 'medium') minTradeScore += 8;
+          if (volatility > 8) minTradeScore += 4;
+
+          if (historicalDecision.adjustedScore < minTradeScore) {
+            skipCounts.set('Score efetivo baixo', (skipCounts.get('Score efetivo baixo') || 0) + 1);
+            continue;
+          }
           
           // v13: FEAR & GREED DIRECTION FILTER — operar COM o mercado, não contra
           if (fearGreed) {
@@ -1035,7 +1076,13 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          const leverage = Math.max(5, Math.min(10, Math.floor(dynamicLeverage))); // v11: 5-10x ONLY
+          let leverageCap = analysisResult.signalQuality === 'premium' ? 8 : analysisResult.signalQuality === 'high' ? 7 : 5;
+          if (volatility > 6) leverageCap = Math.min(leverageCap, 6);
+          if (!isPriorityMajor) {
+            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 7 : 5);
+          }
+
+          const leverage = Math.max(5, Math.min(leverageCap, Math.floor(dynamicLeverage)));
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
@@ -1140,8 +1187,11 @@ export const MultiAssetTrader = () => {
 
           // 🆕 Usar limite de tamanho baseado em volatilidade E saldo disponível
           const maxPositionForVol = volRisk.maxPositionSize;
-          // CRÍTICO: Usar no máximo 20% do saldo DISPONÍVEL (não total)
-          let maxMarginPerTrade = Math.min(freshBalance * 0.20, maxPositionForVol, 15);
+          let maxMarginPerTrade = Math.min(
+            freshBalance * (isPriorityMajor ? 0.15 : 0.10),
+            maxPositionForVol,
+            isPriorityMajor ? 10 : 6
+          );
           
           // 🔧 ML AUTO-CORRECTOR: Aplicar multiplicador de posição (reduz tamanho após perdas)
           if (mlAutoCorrectEnabled && mlAutoConfig?.positionSizeMultiplier) {
@@ -1152,9 +1202,23 @@ export const MultiAssetTrader = () => {
             }
           }
           
-          const positionValue = maxMarginPerTrade * leverage;
-          // Limitar USD size baseado no saldo disponível
-          let usdSize = Math.min(positionValue, freshBalance * 0.8, 50);
+          const sizing = calculatePositionSize(
+            freshBalance,
+            leverage,
+            volatility,
+            historicalWinRate,
+            allOpenPositions.length + openedThisCycle,
+            Math.max(3, Math.min(maxOpenPositions, 8)),
+            analysisResult.signalScore,
+            analysisResult.signalQuality
+          );
+
+          let usdSize = Math.min(
+            sizing.usdSize,
+            maxMarginPerTrade * leverage,
+            freshBalance * (isPriorityMajor ? 0.45 : 0.30),
+            isPriorityMajor ? 40 : 20
+          );
 
           // Calcular quantidade
           const lotSizeFilter = instrument.lotSizeFilter || {};
@@ -1200,7 +1264,7 @@ export const MultiAssetTrader = () => {
           
           const sltp = calculateStopTakeProfit(
             currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfigForSLTP,
-            highPrice, lowPrice, symbolProfile
+            highPrice, lowPrice, symbolProfile, analysisResult.signalQuality, analysisResult.m5Support, analysisResult.m5Resistance
           );
           let stopLoss = sltp.stopLoss;
           let takeProfit = sltp.takeProfit;
@@ -1232,7 +1296,7 @@ export const MultiAssetTrader = () => {
             const slDist = Math.abs(currentPrice - finalSL);
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
-            console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 | SL: 0.4% | TP: 0.8%`);
+            console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 | SL: ${(sltp.stopLossPct * 100).toFixed(2)}% | TP: ${(sltp.takeProfitPct * 100).toFixed(2)}%`);
           }
 
           // 🧠 VALIDAÇÃO COM INTELIGÊNCIA DE MERCADO (Notícias, Whales, Fear & Greed)

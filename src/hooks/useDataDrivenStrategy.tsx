@@ -75,7 +75,7 @@ const GLOBAL_BLACKLIST = new Set([
   'NOTUSDT',       // Poucos dados, PnL marginal
 ]);
 
-// 🟢 SÍMBOLOS PREMIUM - Comprovados + BTC/SOL (alta liquidez)
+// 🟢 SÍMBOLOS PREMIUM - Comprovados + majors de alta liquidez
 const PREMIUM_SYMBOLS = new Map([
   ['NIGHTUSDT', { avgWinRate: 84.4, totalPnl: 3.11 }],
   ['1000PEPEUSDT', { avgWinRate: 65, totalPnl: 1.35 }],
@@ -83,8 +83,11 @@ const PREMIUM_SYMBOLS = new Map([
   ['JELLYJELLYUSDT', { avgWinRate: 60, totalPnl: 1.46 }],
   ['FLUXUSDT', { avgWinRate: 66.7, totalPnl: 0.11 }],
   ['BTCUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP mais apertados
+  ['ETHUSDT', { avgWinRate: 52, totalPnl: 0 }], // Prioridade alta pela liquidez e execução mais limpa
   ['SOLUSDT', { avgWinRate: 50, totalPnl: 0 }], // Alta liquidez, SL/TP apertados
 ]);
+
+const FALLBACK_PRIORITY_SYMBOLS = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT']);
 
 // 📊 Configurações otimizadas v4 — R:R REALISTA para aumentar Profit Factor
 // PROBLEMA: R:R 3.0 = TP nunca é atingido → PF 0.70
@@ -267,7 +270,9 @@ export const useDataDrivenStrategy = () => {
   // Filtrar ativos para hora atual
   const filterAssetsDataDriven = useCallback((assets: any[]): any[] => {
     const currentHourUTC = new Date().getUTCHours();
-    const hourAssets = getAssetsForCurrentHour();
+    const hourAssets = (HOUR_ASSET_MAP[currentHourUTC] || []).filter(a =>
+      a.winRate >= 50 && !GLOBAL_BLACKLIST.has(a.symbol)
+    );
     const hourSymbols = new Set(hourAssets.map(a => a.symbol));
     
     // Priorizar ativos ideais para esta hora
@@ -282,6 +287,18 @@ export const useDataDrivenStrategy = () => {
         return (bData?.winRate || 0) - (aData?.winRate || 0);
       });
     }
+
+    const fallbackMajors = assets.filter(asset =>
+      FALLBACK_PRIORITY_SYMBOLS.has(asset.symbol) && !GLOBAL_BLACKLIST.has(asset.symbol)
+    );
+
+    if (fallbackMajors.length > 0) {
+      return fallbackMajors.sort((a, b) => {
+        const aData = PREMIUM_SYMBOLS.get(a.symbol);
+        const bData = PREMIUM_SYMBOLS.get(b.symbol);
+        return (bData?.avgWinRate || 0) - (aData?.avgWinRate || 0);
+      });
+    }
     
     // Fallback: APENAS premium symbols (v3: sem top-N genérico)
     return assets.filter(asset => 
@@ -291,7 +308,7 @@ export const useDataDrivenStrategy = () => {
       const bData = PREMIUM_SYMBOLS.get(b.symbol);
       return (bData?.avgWinRate || 0) - (aData?.avgWinRate || 0);
     });
-  }, [getAssetsForCurrentHour]);
+  }, []);
   
   const getOptimalConfig = useCallback(() => OPTIMAL_CONFIG, []);
   
