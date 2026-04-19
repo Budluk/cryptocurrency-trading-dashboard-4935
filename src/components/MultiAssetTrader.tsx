@@ -1008,10 +1008,19 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // v26: CONFIANÇA MÍNIMA 75% (AI ou composite-derivada)
-          const aiConf = analysisResult.aiConfidence ?? 0;
-          if (aiConf < 75) {
-            skipCounts.set(`Confiança < 75% (${aiConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < 75% (${aiConf.toFixed(0)}%)`) || 0) + 1);
+          // v27: CONFIANÇA MÍNIMA 75% — usa AI se disponível, senão deriva do score técnico + composite
+          const rawAiConf = analysisResult.aiConfidence;
+          const compAbs = Math.abs(analysisResult.compositeScore ?? 0);
+          // Score técnico (0-130+) → normalizado para 0-100
+          const techConf = Math.min(100, (analysisResult.signalScore / 100) * 100);
+          // Composite (0-100) contribui se houver
+          const compConf = Math.min(100, compAbs * 1.2);
+          // Confiança efetiva: AI real (se >0) OU média ponderada técnica+composite
+          const effectiveConf = (rawAiConf && rawAiConf > 0)
+            ? rawAiConf
+            : (compAbs > 0 ? (techConf * 0.6 + compConf * 0.4) : techConf);
+          if (effectiveConf < 75) {
+            skipCounts.set(`Confiança < 75% (${effectiveConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < 75% (${effectiveConf.toFixed(0)}%)`) || 0) + 1);
             continue;
           }
 
