@@ -391,7 +391,7 @@ export type Database = {
           metadata: Json | null
           position_id: string | null
           symbol: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -401,7 +401,7 @@ export type Database = {
           metadata?: Json | null
           position_id?: string | null
           symbol?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -411,7 +411,7 @@ export type Database = {
           metadata?: Json | null
           position_id?: string | null
           symbol?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
