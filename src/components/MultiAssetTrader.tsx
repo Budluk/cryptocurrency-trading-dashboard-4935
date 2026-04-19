@@ -1008,6 +1008,24 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
+          // v26: CONFIANÇA MÍNIMA 75% (AI ou composite-derivada)
+          const aiConf = analysisResult.aiConfidence ?? 0;
+          if (aiConf < 75) {
+            skipCounts.set(`Confiança < 75% (${aiConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < 75% (${aiConf.toFixed(0)}%)`) || 0) + 1);
+            continue;
+          }
+
+          // v26: ENTRADA M1 CONFIRMADA POR M5 — direção do M1 deve alinhar com tendência M5
+          const m1Sig = analysisResult.m1Signal; // 'buy' | 'sell' | 'hold'
+          const m5Trend = comprehensiveAI?.technical?.m5?.trend; // 'up' | 'down' | 'sideways'
+          const m1m5Aligned =
+            (analysisResult.action === 'BUY' && m1Sig === 'buy' && m5Trend === 'up') ||
+            (analysisResult.action === 'SELL' && m1Sig === 'sell' && m5Trend === 'down');
+          if (!m1m5Aligned) {
+            skipCounts.set(`M1/M5 não confirmados (M1:${m1Sig}/M5:${m5Trend})`, (skipCounts.get(`M1/M5 não confirmados (M1:${m1Sig}/M5:${m5Trend})`) || 0) + 1);
+            continue;
+          }
+
           // v25: Score mínimo elevado
           let minTradeScore = isPriorityMajor ? 68 : isOptimalForHour ? 75 : 80;
           if (analysisResult.signalQuality === 'medium') minTradeScore += 10;
