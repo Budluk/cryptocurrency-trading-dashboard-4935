@@ -198,6 +198,62 @@ const AdvancedAISignals = () => {
         )}
       </Card>
 
+      {/* 🚨 BANNER DE DECISÃO DESTACADO - COMPRA / VENDA / AGUARDAR */}
+      {aiAnalysis?.ai_prediction && (
+        <Card className={`p-6 border-2 ${
+          aiAnalysis.ai_prediction.action === 'BUY' ? 'border-green-500 bg-green-500/10' :
+          aiAnalysis.ai_prediction.action === 'SELL' ? 'border-red-500 bg-red-500/10' :
+          'border-yellow-500 bg-yellow-500/10'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className={`p-4 rounded-full ${
+                aiAnalysis.ai_prediction.action === 'BUY' ? 'bg-green-500/30' :
+                aiAnalysis.ai_prediction.action === 'SELL' ? 'bg-red-500/30' :
+                'bg-yellow-500/30'
+              }`}>
+                {aiAnalysis.ai_prediction.action === 'BUY' ? (
+                  <TrendingUpIcon className="w-10 h-10 text-green-500" />
+                ) : aiAnalysis.ai_prediction.action === 'SELL' ? (
+                  <TrendingDownIcon className="w-10 h-10 text-red-500" />
+                ) : (
+                  <AlertTriangleIcon className="w-10 h-10 text-yellow-500" />
+                )}
+              </div>
+              <div>
+                <div className="text-xs uppercase text-muted-foreground tracking-wider">Decisão da IA</div>
+                <div className={`text-4xl font-extrabold ${
+                  aiAnalysis.ai_prediction.action === 'BUY' ? 'text-green-500' :
+                  aiAnalysis.ai_prediction.action === 'SELL' ? 'text-red-500' :
+                  'text-yellow-500'
+                }`}>
+                  {aiAnalysis.ai_prediction.action === 'BUY' ? '🟢 COMPRAR' :
+                   aiAnalysis.ai_prediction.action === 'SELL' ? '🔴 VENDER' :
+                   '🟡 AGUARDAR'}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  Confiança: <span className="font-bold">{aiAnalysis.ai_prediction.confidence}%</span> · Risco: <span className="font-bold">{aiAnalysis.ai_prediction.risk_level}</span>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-right">
+              <div>
+                <div className="text-xs text-muted-foreground">🎯 Alvo</div>
+                <div className="font-mono font-bold text-green-500 text-lg">
+                  ${(aiAnalysis.ai_prediction?.target || 0).toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">🛑 Stop</div>
+                <div className="font-mono font-bold text-red-500 text-lg">
+                  ${(aiAnalysis.ai_prediction?.stop || 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {aiAnalysis && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Sinal Principal da IA */}
