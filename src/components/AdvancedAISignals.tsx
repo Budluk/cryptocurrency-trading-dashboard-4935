@@ -317,6 +317,9 @@ const AdvancedAISignals = () => {
             <h3 className="font-semibold mb-4 flex items-center gap-2">
               <BarChartIcon className="w-5 h-5 text-purple-500" />
               Machine Learning Analysis
+              <Badge variant="outline" className="ml-auto font-mono">
+                {aiAnalysis.symbol} · {aiAnalysis.timeframe}
+              </Badge>
             </h3>
             
             <div className="space-y-4">
