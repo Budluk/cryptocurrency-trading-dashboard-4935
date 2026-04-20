@@ -154,21 +154,21 @@ export function OrderFlowDashboard() {
   };
 
   const handleToggleNotifications = async () => {
-    if (!notificationsEnabled) {
-      if (permission === 'default') {
-        const granted = await requestPermission();
-        if (granted) {
-          toast.success('Notificações de grandes ordens ativadas!');
-        }
-      } else if (permission === 'granted') {
-        toast.success('Notificações de grandes ordens ativadas!');
-      } else {
-        toast.error('Permissão para notificações foi negada. Verifique as configurações do navegador.');
-      }
-    } else {
+    if (permission === 'granted') {
       previousOrdersRef.current.clear();
       toast.info('Para desativar, bloqueie as notificações nas configurações do navegador.');
+      return;
     }
+
+    if (permission === 'default') {
+      const granted = await requestPermission();
+      if (granted) {
+        toast.success('Notificações de grandes ordens ativadas!');
+      }
+      return;
+    }
+
+    toast.error('Permissão para notificações foi negada. Verifique as configurações do navegador.');
   };
 
   return (
