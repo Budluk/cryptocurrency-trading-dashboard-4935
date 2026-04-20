@@ -6,11 +6,21 @@ export function useWebNotifications() {
   const [isSupported, setIsSupported] = useState(false);
 
   useEffect(() => {
-    // Check if notifications are supported
-    if ('Notification' in window) {
-      setIsSupported(true);
-      setPermission(Notification.permission);
-    }
+    const syncPermission = () => {
+      if ('Notification' in window) {
+        setIsSupported(true);
+        setPermission(Notification.permission);
+      }
+    };
+
+    syncPermission();
+    window.addEventListener('focus', syncPermission);
+    document.addEventListener('visibilitychange', syncPermission);
+
+    return () => {
+      window.removeEventListener('focus', syncPermission);
+      document.removeEventListener('visibilitychange', syncPermission);
+    };
   }, []);
 
   const requestPermission = async () => {
@@ -39,12 +49,18 @@ export function useWebNotifications() {
   };
 
   const sendNotification = (title: string, options?: NotificationOptions) => {
-    if (!isSupported) {
+    if (!('Notification' in window)) {
       console.warn('Notifications not supported');
       return;
     }
 
-    if (permission !== 'granted') {
+    const currentPermission = Notification.permission;
+
+    if (permission !== currentPermission) {
+      setPermission(currentPermission);
+    }
+
+    if (currentPermission !== 'granted') {
       console.warn('Notification permission not granted');
       return;
     }

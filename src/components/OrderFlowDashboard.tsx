@@ -34,11 +34,11 @@ interface OrderFlowData {
 export function OrderFlowDashboard() {
   const [flowData, setFlowData] = useState<OrderFlowData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const { permission, isSupported, requestPermission, sendNotification } = useWebNotifications();
   const { settings, updateSettings, resetSettings, shouldNotify } = useNotificationSettings();
   const { patterns, addOrder, addPriceUpdate } = useSuspiciousPatternDetector();
   const previousOrdersRef = useRef<Set<string>>(new Set());
+  const notificationsEnabled = permission === 'granted';
 
   useEffect(() => {
     const projectRef = 'uohdpxkfgxmtlosnmspf';
@@ -154,26 +154,21 @@ export function OrderFlowDashboard() {
   };
 
   const handleToggleNotifications = async () => {
-    if (!notificationsEnabled) {
-      // Enable notifications
-      if (permission === 'default') {
-        const granted = await requestPermission();
-        if (granted) {
-          setNotificationsEnabled(true);
-          toast.success('Notificações de grandes ordens ativadas!');
-        }
-      } else if (permission === 'granted') {
-        setNotificationsEnabled(true);
-        toast.success('Notificações de grandes ordens ativadas!');
-      } else {
-        toast.error('Permissão para notificações foi negada. Verifique as configurações do navegador.');
-      }
-    } else {
-      // Disable notifications
-      setNotificationsEnabled(false);
+    if (permission === 'granted') {
       previousOrdersRef.current.clear();
-      toast.info('Notificações de grandes ordens desativadas');
+      toast.info('Para desativar, bloqueie as notificações nas configurações do navegador.');
+      return;
     }
+
+    if (permission === 'default') {
+      const granted = await requestPermission();
+      if (granted) {
+        toast.success('Notificações de grandes ordens ativadas!');
+      }
+      return;
+    }
+
+    toast.error('Permissão para notificações foi negada. Verifique as configurações do navegador.');
   };
 
   return (
