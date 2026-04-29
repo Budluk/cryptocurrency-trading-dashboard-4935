@@ -2152,6 +2152,14 @@ export const MultiAssetTrader = () => {
           )}
         </Card>
 
+        {/* 🔍 Diagnóstico de Gates Bloqueados */}
+        <GateDiagnosticsPanel
+          skipCounts={gateDiagnostics.skipCounts}
+          totalAnalyzed={gateDiagnostics.totalAnalyzed}
+          openedThisCycle={gateDiagnostics.openedThisCycle}
+          lastCycleAt={gateDiagnostics.lastCycleAt}
+        />
+
         {/* 🚫 Monitor Anti-Perdas */}
         <AntiLossMonitor 
           getBlockedStats={getBlockedStats} 
