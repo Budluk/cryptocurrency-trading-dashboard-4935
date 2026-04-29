@@ -1113,11 +1113,11 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          // v25: Leverage máxima 5x — stops precisam de espaço para funcionar
-          let leverageCap = analysisResult.signalQuality === 'premium' ? 5 : analysisResult.signalQuality === 'high' ? 4 : 3;
-          if (volatility > 6) leverageCap = Math.min(leverageCap, 3);
+          // v28: Leverage cap aumentado — premium 6x, high 5x, medium 4x (era 5/4/3)
+          let leverageCap = analysisResult.signalQuality === 'premium' ? 6 : analysisResult.signalQuality === 'high' ? 5 : 4;
+          if (volatility > 6) leverageCap = Math.min(leverageCap, 4);
           if (!isPriorityMajor) {
-            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 4 : 3);
+            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 5 : 4);
           }
 
           const leverage = Math.max(2, Math.min(leverageCap, Math.floor(dynamicLeverage)));
