@@ -1025,10 +1025,9 @@ export const MultiAssetTrader = () => {
             ? rawAiConf
             : (compAbs > 0 ? (techConf * 0.6 + compConf * 0.4) : techConf);
           
-          // v28: Threshold dinâmico — premium 65%, high 70%, medium 75%
-          const minConf = analysisResult.signalQuality === 'premium' ? 65 
-            : analysisResult.signalQuality === 'high' ? 70 
-            : 75;
+          // v28: Threshold dinâmico via config centralizada (qualityRiskConfig)
+          const riskRule = getRiskRule(analysisResult.signalQuality);
+          const minConf = riskRule.minConfidence;
           if (effectiveConf < minConf) {
             skipCounts.set(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`) || 0) + 1);
             continue;
@@ -1049,13 +1048,13 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // v28: Score mínimo reduzido — confiança e qualidade já filtraram
-          let minTradeScore = isPriorityMajor ? 55 : isOptimalForHour ? 62 : 70;
-          if (analysisResult.signalQuality === 'medium') minTradeScore += 5;
+          // v28: Score mínimo via config centralizada
+          let minTradeScore = riskRule.minScore;
+          if (!isPriorityMajor) minTradeScore += 5;
           if (volatility > 8) minTradeScore += 3;
 
           if (historicalDecision.adjustedScore < minTradeScore) {
-            skipCounts.set('Score efetivo baixo', (skipCounts.get('Score efetivo baixo') || 0) + 1);
+            skipCounts.set(`Score < ${minTradeScore}`, (skipCounts.get(`Score < ${minTradeScore}`) || 0) + 1);
             continue;
           }
           
