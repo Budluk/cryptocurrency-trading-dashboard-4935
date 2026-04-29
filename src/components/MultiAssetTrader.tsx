@@ -1572,6 +1572,14 @@ export const MultiAssetTrader = () => {
         }
       }
 
+      // 🔍 Persistir diagnóstico de gates do ciclo para o painel UI
+      setGateDiagnostics({
+        skipCounts: Object.fromEntries(skipCounts),
+        totalAnalyzed: candidateAssets.length,
+        openedThisCycle,
+        lastCycleAt: new Date(),
+      });
+
       // Log resumido quando não abre nada no ciclo
       if (openedThisCycle === 0 && skipCounts.size > 0) {
         const topReasons = Array.from(skipCounts.entries())
