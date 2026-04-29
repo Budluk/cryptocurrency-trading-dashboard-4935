@@ -27,6 +27,8 @@ import { useManualTradeTracker } from "@/hooks/useManualTradeTracker";
 import { useAutoMLSync } from "@/hooks/useAutoMLSync";
 import { useMLAutoCorrector } from "@/hooks/useMLAutoCorrector";
 import { useDemoTrading } from "@/hooks/useDemoTrading";
+import { GateDiagnosticsPanel } from "./GateDiagnosticsPanel";
+import { getRiskRule } from "@/config/qualityRiskConfig";
 
 interface Trade {
   symbol: string;
