@@ -986,21 +986,20 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // v25: GATE RIGOROSO — só entrar com confirmação S/R + pullback candle
+          // v28 EQUILIBRADO: relaxar gates redundantes para mais entradas mantendo qualidade
           const hasSR = Boolean(analysisResult.srEntry);
           const hasPullback = Boolean(analysisResult.pullbackCandle);
-          const hasCombo = hasSR && hasPullback;
+          const hasAnyConfirm = hasSR || hasPullback;
           
-          // Premium: precisa de pelo menos S/R OU pullback
-          // High: precisa de S/R + pullback (combo)
-          // Medium: só majors com combo
+          // v28: Premium entra livre, High/Medium precisa de PELO MENOS 1 confirmação (S/R OU pullback)
           let qualityApproved = false;
           if (analysisResult.signalQuality === 'premium') {
-            qualityApproved = hasSR || hasPullback; // premium pode entrar com 1 confirmação
+            qualityApproved = true; // premium: sinal já é forte
           } else if (analysisResult.signalQuality === 'high') {
-            qualityApproved = hasCombo; // high precisa das 2 confirmações
-          } else if (analysisResult.signalQuality === 'medium' && isPriorityMajor) {
-            qualityApproved = hasCombo; // medium só majors com combo completo
+            qualityApproved = hasAnyConfirm; // high: 1 confirmação basta
+          } else if (analysisResult.signalQuality === 'medium') {
+            // medium: 1 confirmação para majors, combo para alts
+            qualityApproved = isPriorityMajor ? hasAnyConfirm : (hasSR && hasPullback);
           }
 
           if (!qualityApproved) {
@@ -1008,37 +1007,43 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // v27: CONFIANÇA MÍNIMA 75% — usa AI se disponível, senão deriva do score técnico + composite
+          // v28: CONFIANÇA MÍNIMA 70% (era 75) — mais entradas com qualidade ainda alta
           const rawAiConf = analysisResult.aiConfidence;
           const compAbs = Math.abs(analysisResult.compositeScore ?? 0);
-          // Score técnico (0-130+) → normalizado para 0-100
           const techConf = Math.min(100, (analysisResult.signalScore / 100) * 100);
-          // Composite (0-100) contribui se houver
           const compConf = Math.min(100, compAbs * 1.2);
-          // Confiança efetiva: AI real (se >0) OU média ponderada técnica+composite
           const effectiveConf = (rawAiConf && rawAiConf > 0)
             ? rawAiConf
             : (compAbs > 0 ? (techConf * 0.6 + compConf * 0.4) : techConf);
-          if (effectiveConf < 75) {
-            skipCounts.set(`Confiança < 75% (${effectiveConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < 75% (${effectiveConf.toFixed(0)}%)`) || 0) + 1);
+          
+          // v28: Threshold dinâmico — premium 65%, high 70%, medium 75%
+          const minConf = analysisResult.signalQuality === 'premium' ? 65 
+            : analysisResult.signalQuality === 'high' ? 70 
+            : 75;
+          if (effectiveConf < minConf) {
+            skipCounts.set(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`) || 0) + 1);
             continue;
           }
 
-          // v26: ENTRADA M1 CONFIRMADA POR M5 — direção do M1 deve alinhar com tendência M5
-          const m1Sig = analysisResult.m1Signal; // 'buy' | 'sell' | 'hold'
-          const m5Trend = comprehensiveAI?.technical?.m5?.trend; // 'up' | 'down' | 'sideways'
-          const m1m5Aligned =
-            (analysisResult.action === 'BUY' && m1Sig === 'buy' && m5Trend === 'up') ||
-            (analysisResult.action === 'SELL' && m1Sig === 'sell' && m5Trend === 'down');
-          if (!m1m5Aligned) {
-            skipCounts.set(`M1/M5 não confirmados (M1:${m1Sig}/M5:${m5Trend})`, (skipCounts.get(`M1/M5 não confirmados (M1:${m1Sig}/M5:${m5Trend})`) || 0) + 1);
+          // v28: M1/M5 — M5 sideways agora é PERMITIDO se M1 estiver alinhado com a ação (mercado em range tem oportunidades)
+          const m1Sig = analysisResult.m1Signal;
+          const m5Trend = comprehensiveAI?.technical?.m5?.trend;
+          const m1Aligned =
+            (analysisResult.action === 'BUY' && m1Sig === 'buy') ||
+            (analysisResult.action === 'SELL' && m1Sig === 'sell');
+          const m5NotContradicting = 
+            (analysisResult.action === 'BUY' && m5Trend !== 'down') ||
+            (analysisResult.action === 'SELL' && m5Trend !== 'up');
+          
+          if (!m1Aligned || !m5NotContradicting) {
+            skipCounts.set(`M1/M5 conflito (M1:${m1Sig}/M5:${m5Trend})`, (skipCounts.get(`M1/M5 conflito (M1:${m1Sig}/M5:${m5Trend})`) || 0) + 1);
             continue;
           }
 
-          // v25: Score mínimo elevado
-          let minTradeScore = isPriorityMajor ? 68 : isOptimalForHour ? 75 : 80;
-          if (analysisResult.signalQuality === 'medium') minTradeScore += 10;
-          if (volatility > 8) minTradeScore += 5;
+          // v28: Score mínimo reduzido — confiança e qualidade já filtraram
+          let minTradeScore = isPriorityMajor ? 55 : isOptimalForHour ? 62 : 70;
+          if (analysisResult.signalQuality === 'medium') minTradeScore += 5;
+          if (volatility > 8) minTradeScore += 3;
 
           if (historicalDecision.adjustedScore < minTradeScore) {
             skipCounts.set('Score efetivo baixo', (skipCounts.get('Score efetivo baixo') || 0) + 1);
@@ -1108,11 +1113,11 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          // v25: Leverage máxima 5x — stops precisam de espaço para funcionar
-          let leverageCap = analysisResult.signalQuality === 'premium' ? 5 : analysisResult.signalQuality === 'high' ? 4 : 3;
-          if (volatility > 6) leverageCap = Math.min(leverageCap, 3);
+          // v28: Leverage cap aumentado — premium 6x, high 5x, medium 4x (era 5/4/3)
+          let leverageCap = analysisResult.signalQuality === 'premium' ? 6 : analysisResult.signalQuality === 'high' ? 5 : 4;
+          if (volatility > 6) leverageCap = Math.min(leverageCap, 4);
           if (!isPriorityMajor) {
-            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 4 : 3);
+            leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 5 : 4);
           }
 
           const leverage = Math.max(2, Math.min(leverageCap, Math.floor(dynamicLeverage)));
