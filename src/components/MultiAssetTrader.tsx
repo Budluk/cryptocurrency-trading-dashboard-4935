@@ -27,6 +27,8 @@ import { useManualTradeTracker } from "@/hooks/useManualTradeTracker";
 import { useAutoMLSync } from "@/hooks/useAutoMLSync";
 import { useMLAutoCorrector } from "@/hooks/useMLAutoCorrector";
 import { useDemoTrading } from "@/hooks/useDemoTrading";
+import { GateDiagnosticsPanel } from "./GateDiagnosticsPanel";
+import { getRiskRule } from "@/config/qualityRiskConfig";
 
 interface Trade {
   symbol: string;
@@ -49,6 +51,13 @@ export const MultiAssetTrader = () => {
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [mlConfig, setMlConfig] = useState<any>(null);
   const { toast } = useToast();
+  // 🔍 Diagnóstico de gates do último ciclo
+  const [gateDiagnostics, setGateDiagnostics] = useState<{
+    skipCounts: Record<string, number>;
+    totalAnalyzed: number;
+    openedThisCycle: number;
+    lastCycleAt: Date | null;
+  }>({ skipCounts: {}, totalAnalyzed: 0, openedThisCycle: 0, lastCycleAt: null });
   
   // 🆕 Hook Demo Trading
   const {
@@ -1016,10 +1025,9 @@ export const MultiAssetTrader = () => {
             ? rawAiConf
             : (compAbs > 0 ? (techConf * 0.6 + compConf * 0.4) : techConf);
           
-          // v28: Threshold dinâmico — premium 65%, high 70%, medium 75%
-          const minConf = analysisResult.signalQuality === 'premium' ? 65 
-            : analysisResult.signalQuality === 'high' ? 70 
-            : 75;
+          // v28: Threshold dinâmico via config centralizada (qualityRiskConfig)
+          const riskRule = getRiskRule(analysisResult.signalQuality);
+          const minConf = riskRule.minConfidence;
           if (effectiveConf < minConf) {
             skipCounts.set(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`) || 0) + 1);
             continue;
@@ -1040,13 +1048,13 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
-          // v28: Score mínimo reduzido — confiança e qualidade já filtraram
-          let minTradeScore = isPriorityMajor ? 55 : isOptimalForHour ? 62 : 70;
-          if (analysisResult.signalQuality === 'medium') minTradeScore += 5;
+          // v28: Score mínimo via config centralizada
+          let minTradeScore = riskRule.minScore;
+          if (!isPriorityMajor) minTradeScore += 5;
           if (volatility > 8) minTradeScore += 3;
 
           if (historicalDecision.adjustedScore < minTradeScore) {
-            skipCounts.set('Score efetivo baixo', (skipCounts.get('Score efetivo baixo') || 0) + 1);
+            skipCounts.set(`Score < ${minTradeScore}`, (skipCounts.get(`Score < ${minTradeScore}`) || 0) + 1);
             continue;
           }
           
@@ -1113,8 +1121,8 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          // v28: Leverage cap aumentado — premium 6x, high 5x, medium 4x (era 5/4/3)
-          let leverageCap = analysisResult.signalQuality === 'premium' ? 6 : analysisResult.signalQuality === 'high' ? 5 : 4;
+          // v28: Leverage cap centralizado em qualityRiskConfig
+          let leverageCap = riskRule.maxLeverage;
           if (volatility > 6) leverageCap = Math.min(leverageCap, 4);
           if (!isPriorityMajor) {
             leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 5 : 4);
@@ -1563,6 +1571,14 @@ export const MultiAssetTrader = () => {
           console.error(`Erro ao processar ${symbol}:`, error);
         }
       }
+
+      // 🔍 Persistir diagnóstico de gates do ciclo para o painel UI
+      setGateDiagnostics({
+        skipCounts: Object.fromEntries(skipCounts),
+        totalAnalyzed: candidateAssets.length,
+        openedThisCycle,
+        lastCycleAt: new Date(),
+      });
 
       // Log resumido quando não abre nada no ciclo
       if (openedThisCycle === 0 && skipCounts.size > 0) {
@@ -2135,6 +2151,14 @@ export const MultiAssetTrader = () => {
             </>
           )}
         </Card>
+
+        {/* 🔍 Diagnóstico de Gates Bloqueados */}
+        <GateDiagnosticsPanel
+          skipCounts={gateDiagnostics.skipCounts}
+          totalAnalyzed={gateDiagnostics.totalAnalyzed}
+          openedThisCycle={gateDiagnostics.openedThisCycle}
+          lastCycleAt={gateDiagnostics.lastCycleAt}
+        />
 
         {/* 🚫 Monitor Anti-Perdas */}
         <AntiLossMonitor 
