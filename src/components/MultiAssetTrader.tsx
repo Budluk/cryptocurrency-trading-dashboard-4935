@@ -1121,8 +1121,8 @@ export const MultiAssetTrader = () => {
             dynamicLeverage = Math.min(dynamicLeverage, mlConfig.recommended_leverage, maxLeverageInstrument);
           }
           
-          // v28: Leverage cap aumentado — premium 6x, high 5x, medium 4x (era 5/4/3)
-          let leverageCap = analysisResult.signalQuality === 'premium' ? 6 : analysisResult.signalQuality === 'high' ? 5 : 4;
+          // v28: Leverage cap centralizado em qualityRiskConfig
+          let leverageCap = riskRule.maxLeverage;
           if (volatility > 6) leverageCap = Math.min(leverageCap, 4);
           if (!isPriorityMajor) {
             leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 5 : 4);
