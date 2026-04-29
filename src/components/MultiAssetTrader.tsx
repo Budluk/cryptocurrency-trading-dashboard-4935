@@ -51,6 +51,13 @@ export const MultiAssetTrader = () => {
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [mlConfig, setMlConfig] = useState<any>(null);
   const { toast } = useToast();
+  // 🔍 Diagnóstico de gates do último ciclo
+  const [gateDiagnostics, setGateDiagnostics] = useState<{
+    skipCounts: Record<string, number>;
+    totalAnalyzed: number;
+    openedThisCycle: number;
+    lastCycleAt: Date | null;
+  }>({ skipCounts: {}, totalAnalyzed: 0, openedThisCycle: 0, lastCycleAt: null });
   
   // 🆕 Hook Demo Trading
   const {
