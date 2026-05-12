@@ -862,6 +862,25 @@ export const MultiAssetTrader = () => {
       let shouldStopTrading = false;
       let openedThisCycle = 0;
       const skipCounts = new Map<string, number>();
+      const activePreset = getCurrentPreset();
+      // Helper: registra skip + entrada de auditoria
+      const auditSkip = (
+        symbol: string,
+        gate: string,
+        reason: string,
+        quality?: string,
+      ) => {
+        skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+        recordGateAudit({
+          symbol,
+          quality,
+          preset: activePreset,
+          outcome: 'BLOCKED',
+          gate,
+          reason,
+          rule: getRiskRule(quality, activePreset),
+        });
+      };
       const openPositionsLite = isDemoMode 
         ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side }))
         : openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
