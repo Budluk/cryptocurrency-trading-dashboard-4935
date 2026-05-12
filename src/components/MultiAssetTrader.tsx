@@ -1526,6 +1526,27 @@ export const MultiAssetTrader = () => {
               mode: isDemoMode ? 'DEMO' : (isTestnet ? 'TESTNET' : 'REAL')
             };
             console.log(`✅ ${isDemoMode ? '[DEMO]' : ''} TRADE:`, JSON.stringify(tradeLog));
+
+            // 📋 Auditoria: trade APROVADO com regras + valores aplicados
+            try {
+              const slPct = Math.abs(parseFloat(stopLoss) - currentPrice) / currentPrice * 100;
+              const tpPct = Math.abs(parseFloat(takeProfit) - currentPrice) / currentPrice * 100;
+              recordGateAudit({
+                symbol,
+                quality: analysisResult.signalQuality,
+                preset: activePreset,
+                outcome: 'APPROVED',
+                gate: 'Aprovado',
+                reason: `${analysisResult.action} ${finalLeverage}x · $${usdSize.toFixed(0)}`,
+                rule: getRiskRule(analysisResult.signalQuality, activePreset),
+                applied: {
+                  leverage: finalLeverage,
+                  stopLossPct: slPct,
+                  takeProfitPct: tpPct,
+                  trailingPct: calculateDynamicTrailingStop(volatility),
+                },
+              });
+            } catch (e) { /* não crítico */ }
             
             // Só salvar em auto_trader_positions se não for demo
             if (!isDemoMode) {
