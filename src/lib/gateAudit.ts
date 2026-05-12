@@ -59,7 +59,7 @@ const persist = () => {
 };
 
 export const recordGateAudit = (
-  e: Omit<GateAuditEntry, 'id' | 'timestamp'> & { rule: QualityRiskRule }
+  e: Omit<GateAuditEntry, 'id' | 'timestamp' | 'rules'> & { rule: QualityRiskRule }
 ) => {
   const { rule, ...rest } = e;
   const entry: GateAuditEntry = {
