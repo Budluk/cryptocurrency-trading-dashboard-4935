@@ -28,7 +28,10 @@ import { useAutoMLSync } from "@/hooks/useAutoMLSync";
 import { useMLAutoCorrector } from "@/hooks/useMLAutoCorrector";
 import { useDemoTrading } from "@/hooks/useDemoTrading";
 import { GateDiagnosticsPanel } from "./GateDiagnosticsPanel";
-import { getRiskRule } from "@/config/qualityRiskConfig";
+import { RiskPresetSelector } from "./RiskPresetSelector";
+import { GateAuditTable } from "./GateAuditTable";
+import { getRiskRule, getCurrentPreset } from "@/config/qualityRiskConfig";
+import { recordGateAudit } from "@/lib/gateAudit";
 
 interface Trade {
   symbol: string;
