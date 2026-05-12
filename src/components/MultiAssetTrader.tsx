@@ -28,7 +28,10 @@ import { useAutoMLSync } from "@/hooks/useAutoMLSync";
 import { useMLAutoCorrector } from "@/hooks/useMLAutoCorrector";
 import { useDemoTrading } from "@/hooks/useDemoTrading";
 import { GateDiagnosticsPanel } from "./GateDiagnosticsPanel";
-import { getRiskRule } from "@/config/qualityRiskConfig";
+import { RiskPresetSelector } from "./RiskPresetSelector";
+import { GateAuditTable } from "./GateAuditTable";
+import { getRiskRule, getCurrentPreset } from "@/config/qualityRiskConfig";
+import { recordGateAudit } from "@/lib/gateAudit";
 
 interface Trade {
   symbol: string;
@@ -859,6 +862,25 @@ export const MultiAssetTrader = () => {
       let shouldStopTrading = false;
       let openedThisCycle = 0;
       const skipCounts = new Map<string, number>();
+      const activePreset = getCurrentPreset();
+      // Helper: registra skip + entrada de auditoria
+      const auditSkip = (
+        symbol: string,
+        gate: string,
+        reason: string,
+        quality?: string,
+      ) => {
+        skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+        recordGateAudit({
+          symbol,
+          quality,
+          preset: activePreset,
+          outcome: 'BLOCKED',
+          gate,
+          reason,
+          rule: getRiskRule(quality, activePreset),
+        });
+      };
       const openPositionsLite = isDemoMode 
         ? demoPositions.map(p => ({ symbol: p.symbol, side: p.side }))
         : openPositions.map(p => ({ symbol: p.symbol, side: p.side }));
@@ -985,13 +1007,13 @@ export const MultiAssetTrader = () => {
 
           if (!analysisResult.shouldTrade || !analysisResult.action) {
             const reason = analysisResult.skipReason || 'Sem motivo';
-            skipCounts.set(reason, (skipCounts.get(reason) || 0) + 1);
+            auditSkip(symbol, 'Sinal', reason, analysisResult.signalQuality);
             continue;
           }
 
           const historicalDecision = shouldTradeDataDriven(symbol, analysisResult.signalScore, volatility);
           if (!historicalDecision.shouldTrade) {
-            skipCounts.set('Filtro histórico/data-driven', (skipCounts.get('Filtro histórico/data-driven') || 0) + 1);
+            auditSkip(symbol, 'Histórico/Hora', 'Filtro histórico/data-driven', analysisResult.signalQuality);
             continue;
           }
 
@@ -1012,7 +1034,7 @@ export const MultiAssetTrader = () => {
           }
 
           if (!qualityApproved) {
-            skipCounts.set('Qualidade insuficiente', (skipCounts.get('Qualidade insuficiente') || 0) + 1);
+            auditSkip(symbol, 'Qualidade', 'Qualidade insuficiente (sem S/R nem pullback)', analysisResult.signalQuality);
             continue;
           }
 
@@ -1025,11 +1047,11 @@ export const MultiAssetTrader = () => {
             ? rawAiConf
             : (compAbs > 0 ? (techConf * 0.6 + compConf * 0.4) : techConf);
           
-          // v28: Threshold dinâmico via config centralizada (qualityRiskConfig)
-          const riskRule = getRiskRule(analysisResult.signalQuality);
+          // v29: Threshold dinâmico via config centralizada + preset ativo
+          const riskRule = getRiskRule(analysisResult.signalQuality, activePreset);
           const minConf = riskRule.minConfidence;
           if (effectiveConf < minConf) {
-            skipCounts.set(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`, (skipCounts.get(`Confiança < ${minConf}% (${effectiveConf.toFixed(0)}%)`) || 0) + 1);
+            auditSkip(symbol, 'Confiança', `Confiança < ${minConf}% (atual ${effectiveConf.toFixed(0)}%)`, analysisResult.signalQuality);
             continue;
           }
 
@@ -1044,7 +1066,7 @@ export const MultiAssetTrader = () => {
             (analysisResult.action === 'SELL' && m5Trend !== 'up');
           
           if (!m1Aligned || !m5NotContradicting) {
-            skipCounts.set(`M1/M5 conflito (M1:${m1Sig}/M5:${m5Trend})`, (skipCounts.get(`M1/M5 conflito (M1:${m1Sig}/M5:${m5Trend})`) || 0) + 1);
+            auditSkip(symbol, 'Alinhamento M1/M5', `M1/M5 conflito (M1:${m1Sig}/M5:${m5Trend})`, analysisResult.signalQuality);
             continue;
           }
 
@@ -1054,23 +1076,21 @@ export const MultiAssetTrader = () => {
           if (volatility > 8) minTradeScore += 3;
 
           if (historicalDecision.adjustedScore < minTradeScore) {
-            skipCounts.set(`Score < ${minTradeScore}`, (skipCounts.get(`Score < ${minTradeScore}`) || 0) + 1);
+            auditSkip(symbol, 'Score', `Score < ${minTradeScore} (atual ${historicalDecision.adjustedScore.toFixed(0)})`, analysisResult.signalQuality);
             continue;
           }
           
           // v13: FEAR & GREED DIRECTION FILTER — operar COM o mercado, não contra
           if (fearGreed) {
             const fgValue = fearGreed.value;
-            // F&G < 25 (medo) → SÓ compra (mercado em pânico = oportunidade de compra)
             if (fgValue < 25 && analysisResult.action === 'SELL') {
               console.log(`🚫 ${symbol}: F&G ${fgValue} (medo) → SHORT bloqueado, só LONG permitido`);
-              skipCounts.set('F&G: Short bloqueado (medo)', (skipCounts.get('F&G: Short bloqueado (medo)') || 0) + 1);
+              auditSkip(symbol, 'Fear & Greed', `F&G ${fgValue} (medo) — SHORT bloqueado`, analysisResult.signalQuality);
               continue;
             }
-            // F&G > 75 (ganância) → SÓ venda
             if (fgValue > 75 && analysisResult.action === 'BUY') {
               console.log(`🚫 ${symbol}: F&G ${fgValue} (ganância) → LONG bloqueado, só SHORT permitido`);
-              skipCounts.set('F&G: Long bloqueado (ganância)', (skipCounts.get('F&G: Long bloqueado (ganância)') || 0) + 1);
+              auditSkip(symbol, 'Fear & Greed', `F&G ${fgValue} (ganância) — LONG bloqueado`, analysisResult.signalQuality);
               continue;
             }
           }
@@ -1506,6 +1526,27 @@ export const MultiAssetTrader = () => {
               mode: isDemoMode ? 'DEMO' : (isTestnet ? 'TESTNET' : 'REAL')
             };
             console.log(`✅ ${isDemoMode ? '[DEMO]' : ''} TRADE:`, JSON.stringify(tradeLog));
+
+            // 📋 Auditoria: trade APROVADO com regras + valores aplicados
+            try {
+              const slPct = Math.abs(parseFloat(stopLoss) - currentPrice) / currentPrice * 100;
+              const tpPct = Math.abs(parseFloat(takeProfit) - currentPrice) / currentPrice * 100;
+              recordGateAudit({
+                symbol,
+                quality: analysisResult.signalQuality,
+                preset: activePreset,
+                outcome: 'APPROVED',
+                gate: 'Aprovado',
+                reason: `${analysisResult.action} ${finalLeverage}x · $${usdSize.toFixed(0)}`,
+                rule: getRiskRule(analysisResult.signalQuality, activePreset),
+                applied: {
+                  leverage: finalLeverage,
+                  stopLossPct: slPct,
+                  takeProfitPct: tpPct,
+                  trailingPct: calculateDynamicTrailingStop(volatility),
+                },
+              });
+            } catch (e) { /* não crítico */ }
             
             // Só salvar em auto_trader_positions se não for demo
             if (!isDemoMode) {
@@ -2152,6 +2193,9 @@ export const MultiAssetTrader = () => {
           )}
         </Card>
 
+        {/* 🎚️ Preset de Gestão de Risco */}
+        <RiskPresetSelector />
+
         {/* 🔍 Diagnóstico de Gates Bloqueados */}
         <GateDiagnosticsPanel
           skipCounts={gateDiagnostics.skipCounts}
@@ -2159,6 +2203,9 @@ export const MultiAssetTrader = () => {
           openedThisCycle={gateDiagnostics.openedThisCycle}
           lastCycleAt={gateDiagnostics.lastCycleAt}
         />
+
+        {/* 📋 Auditoria por trade — gates aplicados */}
+        <GateAuditTable />
 
         {/* 🚫 Monitor Anti-Perdas */}
         <AntiLossMonitor 
