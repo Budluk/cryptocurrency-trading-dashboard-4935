@@ -2193,6 +2193,9 @@ export const MultiAssetTrader = () => {
           )}
         </Card>
 
+        {/* 🎚️ Preset de Gestão de Risco */}
+        <RiskPresetSelector />
+
         {/* 🔍 Diagnóstico de Gates Bloqueados */}
         <GateDiagnosticsPanel
           skipCounts={gateDiagnostics.skipCounts}
@@ -2200,6 +2203,9 @@ export const MultiAssetTrader = () => {
           openedThisCycle={gateDiagnostics.openedThisCycle}
           lastCycleAt={gateDiagnostics.lastCycleAt}
         />
+
+        {/* 📋 Auditoria por trade — gates aplicados */}
+        <GateAuditTable />
 
         {/* 🚫 Monitor Anti-Perdas */}
         <AntiLossMonitor 
