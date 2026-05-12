@@ -71,9 +71,98 @@ export const QUALITY_RISK_CONFIG: Record<SignalQuality, QualityRiskRule> = {
   },
 };
 
-export const getRiskRule = (quality?: string): QualityRiskRule => {
+// 🎚️ Presets de gestão de risco (afetam todos os tiers de qualidade)
+export type RiskPreset = 'conservador' | 'equilibrado' | 'agressivo';
+
+export interface RiskPresetModifier {
+  label: string;
+  description: string;
+  // Multiplicadores aplicados a cada regra de qualidade
+  confidenceDelta: number;     // somado a minConfidence (%)
+  scoreDelta: number;          // somado a minScore
+  leverageMult: number;        // multiplica maxLeverage
+  stopLossMult: number;        // multiplica maxStopLossPct (mais alto = SL mais largo)
+  riskRewardMult: number;      // multiplica minRiskReward
+  riskPerTradeMult: number;    // multiplica riskPerTradePct
+  trailingMult: number;        // multiplica trailingStopPct
+  breakevenMult: number;       // multiplica breakevenTriggerPct
+}
+
+export const RISK_PRESETS: Record<RiskPreset, RiskPresetModifier> = {
+  conservador: {
+    label: 'Conservador',
+    description: 'Stops apertados, R:R alto, leverage reduzida — prioriza preservar capital',
+    confidenceDelta: +5,
+    scoreDelta: +5,
+    leverageMult: 0.7,
+    stopLossMult: 0.7,
+    riskRewardMult: 1.2,
+    riskPerTradeMult: 0.6,
+    trailingMult: 0.7,
+    breakevenMult: 0.7,
+  },
+  equilibrado: {
+    label: 'Equilibrado',
+    description: 'Configuração padrão — balanço entre frequência e qualidade (recomendado)',
+    confidenceDelta: 0,
+    scoreDelta: 0,
+    leverageMult: 1.0,
+    stopLossMult: 1.0,
+    riskRewardMult: 1.0,
+    riskPerTradeMult: 1.0,
+    trailingMult: 1.0,
+    breakevenMult: 1.0,
+  },
+  agressivo: {
+    label: 'Agressivo',
+    description: 'Stops mais largos, leverage maior, mais entradas — drawdown maior aceitável',
+    confidenceDelta: -5,
+    scoreDelta: -5,
+    leverageMult: 1.3,
+    stopLossMult: 1.4,
+    riskRewardMult: 0.85,
+    riskPerTradeMult: 1.4,
+    trailingMult: 1.3,
+    breakevenMult: 1.3,
+  },
+};
+
+const PRESET_STORAGE_KEY = 'lovable.riskPreset';
+
+export const getCurrentPreset = (): RiskPreset => {
+  if (typeof window === 'undefined') return 'equilibrado';
+  const v = window.localStorage.getItem(PRESET_STORAGE_KEY) as RiskPreset | null;
+  return v && RISK_PRESETS[v] ? v : 'equilibrado';
+};
+
+export const setCurrentPreset = (p: RiskPreset) => {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(PRESET_STORAGE_KEY, p);
+    window.dispatchEvent(new CustomEvent('risk-preset-change', { detail: p }));
+  }
+};
+
+export const applyPreset = (rule: QualityRiskRule, preset: RiskPreset): QualityRiskRule => {
+  const m = RISK_PRESETS[preset];
+  const round = (n: number, d = 4) => Number(n.toFixed(d));
+  return {
+    ...rule,
+    minConfidence: Math.max(50, Math.min(95, rule.minConfidence + m.confidenceDelta)),
+    minScore: Math.max(40, rule.minScore + m.scoreDelta),
+    maxLeverage: Math.max(1, Math.round(rule.maxLeverage * m.leverageMult)),
+    maxStopLossPct: round(Math.min(0.05, rule.maxStopLossPct * m.stopLossMult)),
+    minRiskReward: round(Math.max(1.2, rule.minRiskReward * m.riskRewardMult), 2),
+    riskPerTradePct: round(Math.max(0.3, Math.min(5, rule.riskPerTradePct * m.riskPerTradeMult)), 2),
+    trailingStopPct: round(Math.min(1, rule.trailingStopPct * m.trailingMult)),
+    breakevenTriggerPct: round(rule.breakevenTriggerPct * m.breakevenMult, 2),
+  };
+};
+
+export const getRiskRule = (quality?: string, preset?: RiskPreset): QualityRiskRule => {
   const q = (quality as SignalQuality) || 'medium';
-  return QUALITY_RISK_CONFIG[q] || QUALITY_RISK_CONFIG.medium;
+  const base = QUALITY_RISK_CONFIG[q] || QUALITY_RISK_CONFIG.medium;
+  const p = preset || getCurrentPreset();
+  return applyPreset(base, p);
 };
 
 // 🏷️ Categorias de gates para o painel de diagnóstico
