@@ -101,7 +101,7 @@ export const GateAuditTable = () => {
             </TableHeader>
             <TableBody>
               {filtered.map(e => (
-                <TableRow key={e.id} className="text-xs">
+                <TableRow key={e.id} className="text-xs cursor-pointer hover:bg-background/40" onClick={() => setSelected(e)}>
                   <TableCell className="font-mono text-[10px] text-muted-foreground">
                     {new Date(e.timestamp).toLocaleTimeString()}
                   </TableCell>
