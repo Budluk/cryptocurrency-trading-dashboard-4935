@@ -55,22 +55,46 @@ export const RiskPresetSelector = () => {
         {(Object.keys(RISK_PRESETS) as RiskPreset[]).map((p) => {
           const meta = RISK_PRESETS[p];
           const active = p === preset;
+          const isCustom = !!overrides[p] && Object.keys(overrides[p]!).length > 0;
           return (
-            <Button
-              key={p}
-              variant={active ? "default" : "outline"}
-              size="sm"
-              onClick={() => select(p)}
-              className={`h-auto py-2 flex flex-col items-start gap-0.5 ${active ? '' : 'bg-background/40'}`}
-            >
-              <span className="font-bold text-xs">{meta.label}</span>
-              <span className="text-[10px] opacity-80 font-normal text-left whitespace-normal leading-tight">
-                {meta.description}
-              </span>
-            </Button>
+            <div key={p} className="relative">
+              <Button
+                variant={active ? "default" : "outline"}
+                size="sm"
+                onClick={() => select(p)}
+                className={`w-full h-auto py-2 pr-7 flex flex-col items-start gap-0.5 ${active ? '' : 'bg-background/40'}`}
+              >
+                <span className="font-bold text-xs flex items-center gap-1">
+                  {meta.label}
+                  {isCustom && (
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400" title="Personalizado" />
+                  )}
+                </span>
+                <span className="text-[10px] opacity-80 font-normal text-left whitespace-normal leading-tight">
+                  {meta.description}
+                </span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); setEditing(p); }}
+                className="absolute top-1 right-1 h-6 w-6 hover:bg-background/40"
+                title="Editar preset"
+              >
+                <Pencil className="h-3 w-3" />
+              </Button>
+            </div>
           );
         })}
       </div>
+
+      {editing && (
+        <RiskPresetEditor
+          preset={editing}
+          open={!!editing}
+          onOpenChange={(v) => { if (!v) setEditing(null); }}
+        />
+      )}
 
       {/* Preview do efeito (referência: qualidade HIGH) */}
       <div className="p-3 rounded-lg bg-background/40 border border-border/50">
