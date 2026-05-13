@@ -179,7 +179,7 @@ const DiffRow = ({ label, intended, applied, unit = '' }: { label: string; inten
   );
 };
 
-const AuditDetailDialog = ({ entry, onClose }: { entry: GateAuditEntry | null; onClose: () => void }) => {
+function AuditDetailDialog({ entry, onClose }: { entry: GateAuditEntry | null; onClose: () => void }) {
   if (!entry) return null;
   const r = entry.rules;
   const a = entry.applied || {};
