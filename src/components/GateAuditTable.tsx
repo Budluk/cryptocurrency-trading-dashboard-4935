@@ -252,4 +252,4 @@ function AuditDetailDialog({ entry, onClose }: { entry: GateAuditEntry | null; o
       </DialogContent>
     </Dialog>
   );
-};
+}
