@@ -24,6 +24,7 @@ const QUALITY_COLORS: Record<string, string> = {
 export const GateAuditTable = () => {
   const [entries, setEntries] = useState<GateAuditEntry[]>([]);
   const [filter, setFilter] = useState<'all' | 'APPROVED' | 'BLOCKED'>('all');
+  const [selected, setSelected] = useState<GateAuditEntry | null>(null);
 
   useEffect(() => {
     setEntries(getGateAuditEntries());
