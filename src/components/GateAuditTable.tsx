@@ -163,3 +163,93 @@ export const GateAuditTable = () => {
     </Card>
   );
 };
+
+// ───────────────────────── Detail dialog ─────────────────────────
+const fmtPct = (n?: number, digits = 2) => (typeof n === 'number' ? `${n.toFixed(digits)}%` : '—');
+const DiffRow = ({ label, intended, applied, unit = '' }: { label: string; intended: string; applied: string; unit?: string }) => {
+  const changed = intended !== applied;
+  return (
+    <div className={`grid grid-cols-3 gap-2 px-3 py-2 rounded text-xs ${changed ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-background/40 border border-border/40'}`}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono">{intended}{unit}</span>
+      <span className={`font-mono text-right ${changed ? 'text-indigo-300 font-semibold' : ''}`}>
+        {applied}{unit} {changed && <ArrowRight className="inline h-3 w-3 ml-1 -mt-0.5" />}
+      </span>
+    </div>
+  );
+};
+
+const AuditDetailDialog = ({ entry, onClose }: { entry: GateAuditEntry | null; onClose: () => void }) => {
+  if (!entry) return null;
+  const r = entry.rules;
+  const a = entry.applied || {};
+  // Intended TP derivado de SL máx * R:R mínimo
+  const intendedTpPct = r.maxStopLossPct * r.minRiskReward * 100;
+  const intendedSlPct = r.maxStopLossPct * 100;
+  const intendedTrailPct = r.trailingStopPct * 100;
+  const intendedRR = r.minRiskReward;
+  const appliedSlPct = a.stopLossPct;
+  const appliedTpPct = a.takeProfitPct;
+  const appliedTrailPct = (a.trailingPct ?? 0) * 100;
+  const appliedRR = appliedSlPct && appliedTpPct ? appliedTpPct / appliedSlPct : undefined;
+
+  return (
+    <Dialog open={!!entry} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm">
+            {entry.outcome === 'APPROVED' ? (
+              <CheckCircle2 className="h-4 w-4 text-green-400" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-400" />
+            )}
+            <span className="font-mono">{entry.symbol}</span>
+            {entry.quality && (
+              <Badge className={`${QUALITY_COLORS[entry.quality] || ''} border text-[10px] uppercase`}>
+                {entry.quality}
+              </Badge>
+            )}
+            <Badge variant="outline" className="text-[10px] capitalize">{entry.preset}</Badge>
+            <span className="ml-auto text-[10px] font-mono text-muted-foreground">
+              {new Date(entry.timestamp).toLocaleString()}
+            </span>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="p-3 rounded bg-background/40 border border-border/50">
+            <div className="text-[11px] text-muted-foreground uppercase mb-1">Gate / Razão</div>
+            <div className="text-sm font-medium">{entry.gate}</div>
+            {entry.reason && entry.reason !== entry.gate && (
+              <div className="text-xs text-muted-foreground mt-0.5">{entry.reason}</div>
+            )}
+          </div>
+
+          <div>
+            <div className="grid grid-cols-3 gap-2 px-3 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span>Parâmetro</span>
+              <span>Pretendido (regra)</span>
+              <span className="text-right">Aplicado no trade</span>
+            </div>
+            <div className="space-y-1.5">
+              <DiffRow label="Stop Loss" intended={fmtPct(intendedSlPct)} applied={fmtPct(appliedSlPct)} />
+              <DiffRow label="Take Profit" intended={fmtPct(intendedTpPct)} applied={fmtPct(appliedTpPct)} />
+              <DiffRow label="Risk:Reward" intended={`${intendedRR.toFixed(2)}:1`} applied={appliedRR ? `${appliedRR.toFixed(2)}:1` : '—'} />
+              <DiffRow label="Trailing Stop" intended={fmtPct(intendedTrailPct, 0)} applied={fmtPct(appliedTrailPct, 0)} />
+              <DiffRow label="Leverage" intended={`${r.maxLeverage}x`} applied={a.leverage ? `${a.leverage}x` : '—'} />
+              <DiffRow label="Confiança mín" intended={`${r.minConfidence}%`} applied={`${r.minConfidence}%`} />
+              <DiffRow label="Score mín" intended={`${r.minScore}`} applied={`${r.minScore}`} />
+              <DiffRow label="Risco/trade" intended={`${r.riskPerTradePct}%`} applied={`${r.riskPerTradePct}%`} />
+              <DiffRow label="Breakeven trigger" intended={`${r.breakevenTriggerPct}%`} applied={`${r.breakevenTriggerPct}%`} />
+            </div>
+            {entry.outcome === 'BLOCKED' && (
+              <div className="mt-3 text-[11px] text-muted-foreground italic px-1">
+                Trade bloqueado — nenhum SL/TP foi aplicado. Coluna “Aplicado” mostra a regra prevista.
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
