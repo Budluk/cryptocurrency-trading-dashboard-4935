@@ -158,6 +158,8 @@ export const GateAuditTable = () => {
           </Table>
         </ScrollArea>
       )}
+
+      <AuditDetailDialog entry={selected} onClose={() => setSelected(null)} />
     </Card>
   );
 };
