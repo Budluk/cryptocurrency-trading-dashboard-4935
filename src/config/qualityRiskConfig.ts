@@ -128,6 +128,8 @@ export const RISK_PRESETS: Record<RiskPreset, RiskPresetModifier> = {
 };
 
 const PRESET_STORAGE_KEY = 'lovable.riskPreset';
+const PRESET_OVERRIDES_KEY = 'lovable.riskPresetOverrides';
+const PRESET_OVERRIDES_EVENT = 'risk-preset-overrides-change';
 
 export const getCurrentPreset = (): RiskPreset => {
   if (typeof window === 'undefined') return 'equilibrado';
@@ -142,8 +144,86 @@ export const setCurrentPreset = (p: RiskPreset) => {
   }
 };
 
+// Overrides personalizados por preset (mantém defaults intactos)
+export type PresetOverrides = Partial<Record<RiskPreset, Partial<RiskPresetModifier>>>;
+
+export const getPresetOverrides = (): PresetOverrides => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(PRESET_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+};
+
+export const setPresetOverride = (preset: RiskPreset, mod: Partial<RiskPresetModifier> | null) => {
+  if (typeof window === 'undefined') return;
+  const all = getPresetOverrides();
+  if (mod === null) delete all[preset]; else all[preset] = mod;
+  window.localStorage.setItem(PRESET_OVERRIDES_KEY, JSON.stringify(all));
+  window.dispatchEvent(new CustomEvent(PRESET_OVERRIDES_EVENT, { detail: preset }));
+  window.dispatchEvent(new CustomEvent('risk-preset-change', { detail: getCurrentPreset() }));
+};
+
+export const subscribePresetOverrides = (cb: () => void): (() => void) => {
+  if (typeof window === 'undefined') return () => {};
+  const h = () => cb();
+  window.addEventListener(PRESET_OVERRIDES_EVENT, h);
+  return () => window.removeEventListener(PRESET_OVERRIDES_EVENT, h);
+};
+
+export const getEffectiveModifier = (preset: RiskPreset): RiskPresetModifier => {
+  const base = RISK_PRESETS[preset];
+  const ov = getPresetOverrides()[preset] || {};
+  return { ...base, ...ov };
+};
+
+export interface PresetValidation {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+// Valida um modifier checando consistência (SL < TP via R:R, trailing coerente, ranges)
+export const validatePresetModifier = (mod: RiskPresetModifier): PresetValidation => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (mod.leverageMult <= 0) errors.push('leverageMult deve ser > 0');
+  if (mod.stopLossMult <= 0) errors.push('stopLossMult deve ser > 0');
+  if (mod.riskRewardMult <= 0) errors.push('riskRewardMult deve ser > 0');
+  if (mod.trailingMult <= 0) errors.push('trailingMult deve ser > 0');
+  if (mod.breakevenMult <= 0) errors.push('breakevenMult deve ser > 0');
+  if (mod.riskPerTradeMult <= 0) errors.push('riskPerTradeMult deve ser > 0');
+
+  // Validação por qualidade: SL aplicado < TP (TP = SL * R:R), trailing coerente
+  (Object.keys(QUALITY_RISK_CONFIG) as SignalQuality[]).forEach((q) => {
+    const base = QUALITY_RISK_CONFIG[q];
+    const conf = Math.max(50, Math.min(95, base.minConfidence + mod.confidenceDelta));
+    const lev = Math.max(1, Math.round(base.maxLeverage * mod.leverageMult));
+    const sl = Math.min(0.05, base.maxStopLossPct * mod.stopLossMult);
+    const rr = Math.max(1.2, base.minRiskReward * mod.riskRewardMult);
+    const trail = Math.min(1, base.trailingStopPct * mod.trailingMult);
+    const be = base.breakevenTriggerPct * mod.breakevenMult;
+    const tp = sl * rr;
+
+    if (sl >= tp) errors.push(`[${q}] SL (${(sl*100).toFixed(2)}%) precisa ser < TP (${(tp*100).toFixed(2)}%)`);
+    if (sl < 0.001) errors.push(`[${q}] SL aplicado muito apertado (< 0.10%)`);
+    if (sl > 0.05) errors.push(`[${q}] SL aplicado excede teto (> 5%)`);
+    if (rr < 1.2) errors.push(`[${q}] R:R mínimo deve ser >= 1.2`);
+    if (trail <= 0 || trail > 1) errors.push(`[${q}] trailing deve estar entre 0 e 1 (atual ${trail.toFixed(2)})`);
+    if (be <= 0) errors.push(`[${q}] breakeven deve ser > 0`);
+    if (lev < 1 || lev > 25) errors.push(`[${q}] leverage fora do intervalo 1-25 (atual ${lev}x)`);
+    if (conf < 50 || conf > 95) errors.push(`[${q}] confiança fora de 50-95 (atual ${conf}%)`);
+
+    // warnings (não bloqueia)
+    if (trail > be / 100 * 2) warnings.push(`[${q}] trailing (${(trail*100).toFixed(0)}%) parece largo vs breakeven (${be}%)`);
+    if (rr < 1.5) warnings.push(`[${q}] R:R baixo (${rr.toFixed(2)}:1) — pouca margem`);
+  });
+
+  return { valid: errors.length === 0, errors, warnings };
+};
+
 export const applyPreset = (rule: QualityRiskRule, preset: RiskPreset): QualityRiskRule => {
-  const m = RISK_PRESETS[preset];
+  const m = getEffectiveModifier(preset);
   const round = (n: number, d = 4) => Number(n.toFixed(d));
   return {
     ...rule,
