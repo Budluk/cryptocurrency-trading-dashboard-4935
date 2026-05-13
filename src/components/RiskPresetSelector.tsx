@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sliders } from "lucide-react";
+import { Sliders, Pencil } from "lucide-react";
 import {
   RISK_PRESETS,
   RiskPreset,
@@ -10,16 +10,22 @@ import {
   setCurrentPreset,
   applyPreset,
   QUALITY_RISK_CONFIG,
+  getPresetOverrides,
+  subscribePresetOverrides,
 } from "@/config/qualityRiskConfig";
+import { RiskPresetEditor } from "./RiskPresetEditor";
 
 export const RiskPresetSelector = () => {
   const [preset, setPreset] = useState<RiskPreset>('equilibrado');
+  const [editing, setEditing] = useState<RiskPreset | null>(null);
+  const [overrides, setOverrides] = useState(() => getPresetOverrides());
 
   useEffect(() => {
     setPreset(getCurrentPreset());
-    const handler = () => setPreset(getCurrentPreset());
+    const handler = () => { setPreset(getCurrentPreset()); setOverrides(getPresetOverrides()); };
     window.addEventListener('risk-preset-change', handler);
-    return () => window.removeEventListener('risk-preset-change', handler);
+    const unsub = subscribePresetOverrides(() => setOverrides(getPresetOverrides()));
+    return () => { window.removeEventListener('risk-preset-change', handler); unsub(); };
   }, []);
 
   const select = (p: RiskPreset) => {
