@@ -6,7 +6,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ClipboardList, Trash2, CheckCircle2, XCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ClipboardList, Trash2, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 import {
   getGateAuditEntries,
   subscribeGateAudit,
