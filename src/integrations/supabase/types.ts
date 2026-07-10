@@ -232,6 +232,48 @@ export type Database = {
         }
         Relationships: []
       }
+      arbitrage_operations: {
+        Row: {
+          date_completed: string | null
+          date_created: string | null
+          entry_price: number
+          exit_price: number | null
+          id: string
+          profit: number | null
+          profit_percentage: number | null
+          quantity: number
+          status: string | null
+          trading_pair: string
+          user_id: string
+        }
+        Insert: {
+          date_completed?: string | null
+          date_created?: string | null
+          entry_price: number
+          exit_price?: number | null
+          id?: string
+          profit?: number | null
+          profit_percentage?: number | null
+          quantity: number
+          status?: string | null
+          trading_pair: string
+          user_id: string
+        }
+        Update: {
+          date_completed?: string | null
+          date_created?: string | null
+          entry_price?: number
+          exit_price?: number | null
+          id?: string
+          profit?: number | null
+          profit_percentage?: number | null
+          quantity?: number
+          status?: string | null
+          trading_pair?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       asset_correlations: {
         Row: {
           asset_1: string
@@ -436,6 +478,7 @@ export type Database = {
           highest_price: number | null
           id: string
           leverage: number | null
+          notes: string | null
           opened_at: string
           order_source: string | null
           original_quantity: number | null
@@ -465,6 +508,7 @@ export type Database = {
           highest_price?: number | null
           id?: string
           leverage?: number | null
+          notes?: string | null
           opened_at?: string
           order_source?: string | null
           original_quantity?: number | null
@@ -494,6 +538,7 @@ export type Database = {
           highest_price?: number | null
           id?: string
           leverage?: number | null
+          notes?: string | null
           opened_at?: string
           order_source?: string | null
           original_quantity?: number | null
@@ -1074,6 +1119,108 @@ export type Database = {
         }
         Relationships: []
       }
+      bybit_config: {
+        Row: {
+          api_key_encrypted: string | null
+          api_secret_encrypted: string | null
+          created_at: string | null
+          id: string
+          is_testnet: boolean | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key_encrypted?: string | null
+          api_secret_encrypted?: string | null
+          created_at?: string | null
+          id?: string
+          is_testnet?: boolean | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key_encrypted?: string | null
+          api_secret_encrypted?: string | null
+          created_at?: string | null
+          id?: string
+          is_testnet?: boolean | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      bybit_market_data: {
+        Row: {
+          created_at: string | null
+          current_price: number | null
+          high_24h: number | null
+          id: string
+          low_24h: number | null
+          symbol: string
+          timestamp: string | null
+          volume_24h: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          current_price?: number | null
+          high_24h?: number | null
+          id?: string
+          low_24h?: number | null
+          symbol: string
+          timestamp?: string | null
+          volume_24h?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          current_price?: number | null
+          high_24h?: number | null
+          id?: string
+          low_24h?: number | null
+          symbol?: string
+          timestamp?: string | null
+          volume_24h?: number | null
+        }
+        Relationships: []
+      }
+      bybit_pairs: {
+        Row: {
+          base_asset: string | null
+          created_at: string | null
+          id: string
+          max_qty: number | null
+          min_qty: number | null
+          price_precision: number | null
+          qty_precision: number | null
+          quote_asset: string | null
+          symbol: string
+          updated_at: string | null
+        }
+        Insert: {
+          base_asset?: string | null
+          created_at?: string | null
+          id?: string
+          max_qty?: number | null
+          min_qty?: number | null
+          price_precision?: number | null
+          qty_precision?: number | null
+          quote_asset?: string | null
+          symbol: string
+          updated_at?: string | null
+        }
+        Update: {
+          base_asset?: string | null
+          created_at?: string | null
+          id?: string
+          max_qty?: number | null
+          min_qty?: number | null
+          price_precision?: number | null
+          qty_precision?: number | null
+          quote_asset?: string | null
+          symbol?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       candle_data: {
         Row: {
           close: number | null
@@ -1125,6 +1272,243 @@ export type Database = {
           timeframe?: string
           timestamp?: string
           volume?: number | null
+        }
+        Relationships: []
+      }
+      complementary_bot_capital_allocation: {
+        Row: {
+          allocated_amount: number | null
+          id: string
+          reserved_amount: number | null
+          strategy_id: string
+          updated_at: string
+          used_amount: number | null
+          user_id: string
+        }
+        Insert: {
+          allocated_amount?: number | null
+          id?: string
+          reserved_amount?: number | null
+          strategy_id: string
+          updated_at?: string
+          used_amount?: number | null
+          user_id: string
+        }
+        Update: {
+          allocated_amount?: number | null
+          id?: string
+          reserved_amount?: number | null
+          strategy_id?: string
+          updated_at?: string
+          used_amount?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      complementary_bot_config: {
+        Row: {
+          created_at: string
+          daily_loss_limit: number | null
+          funding_arbitrage_settings: Json | null
+          grid_bot_settings: Json | null
+          id: string
+          max_capital_percent: number | null
+          max_concurrent_positions: number | null
+          max_leverage: number | null
+          mode: string
+          pause_all_bots: boolean | null
+          real_mode_confirmed: boolean | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_loss_limit?: number | null
+          funding_arbitrage_settings?: Json | null
+          grid_bot_settings?: Json | null
+          id?: string
+          max_capital_percent?: number | null
+          max_concurrent_positions?: number | null
+          max_leverage?: number | null
+          mode?: string
+          pause_all_bots?: boolean | null
+          real_mode_confirmed?: boolean | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_loss_limit?: number | null
+          funding_arbitrage_settings?: Json | null
+          grid_bot_settings?: Json | null
+          id?: string
+          max_capital_percent?: number | null
+          max_concurrent_positions?: number | null
+          max_leverage?: number | null
+          mode?: string
+          pause_all_bots?: boolean | null
+          real_mode_confirmed?: boolean | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      complementary_bot_funding_opportunities: {
+        Row: {
+          apr: number | null
+          created_at: string
+          funding_rate: number | null
+          id: string
+          next_funding_time: string | null
+          opportunity_score: number | null
+          spread: number | null
+          symbol: string
+          updated_at: string
+          volume_24h: number | null
+        }
+        Insert: {
+          apr?: number | null
+          created_at?: string
+          funding_rate?: number | null
+          id?: string
+          next_funding_time?: string | null
+          opportunity_score?: number | null
+          spread?: number | null
+          symbol: string
+          updated_at?: string
+          volume_24h?: number | null
+        }
+        Update: {
+          apr?: number | null
+          created_at?: string
+          funding_rate?: number | null
+          id?: string
+          next_funding_time?: string | null
+          opportunity_score?: number | null
+          spread?: number | null
+          symbol?: string
+          updated_at?: string
+          volume_24h?: number | null
+        }
+        Relationships: []
+      }
+      complementary_bot_grids: {
+        Row: {
+          capital_allocated: number
+          closed_at: string | null
+          created_at: string
+          grid_count: number
+          grids_executed: number | null
+          id: string
+          profit_accumulated: number | null
+          range_lower: number
+          range_upper: number
+          status: string
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          capital_allocated: number
+          closed_at?: string | null
+          created_at?: string
+          grid_count: number
+          grids_executed?: number | null
+          id?: string
+          profit_accumulated?: number | null
+          range_lower: number
+          range_upper: number
+          status: string
+          symbol: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          capital_allocated?: number
+          closed_at?: string | null
+          created_at?: string
+          grid_count?: number
+          grids_executed?: number | null
+          id?: string
+          profit_accumulated?: number | null
+          range_lower?: number
+          range_upper?: number
+          status?: string
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      complementary_bot_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          id: string
+          log_type: string
+          status: string
+          symbol: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          log_type: string
+          status: string
+          symbol?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          log_type?: string
+          status?: string
+          symbol?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      complementary_bot_simulated_trades: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          entry_price: number | null
+          exit_price: number | null
+          id: string
+          pnl: number | null
+          quantity: number | null
+          side: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          entry_price?: number | null
+          exit_price?: number | null
+          id?: string
+          pnl?: number | null
+          quantity?: number | null
+          side: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          entry_price?: number | null
+          exit_price?: number | null
+          id?: string
+          pnl?: number | null
+          quantity?: number | null
+          side?: string
+          symbol?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1471,6 +1855,81 @@ export type Database = {
           label?: string
           market_type?: string
           odd_value?: number
+        }
+        Relationships: []
+      }
+      funding_operations_log: {
+        Row: {
+          actual_net_profit: number | null
+          created_at: string | null
+          entry_reason: string | null
+          estimated_fees: number | null
+          estimated_slippage: number | null
+          exit_reason: string | null
+          exit_time: string | null
+          expected_funding: number | null
+          expected_net_profit: number | null
+          futures_entry_fee: number | null
+          futures_entry_price: number | null
+          id: string
+          notes: string | null
+          operation_id: string
+          opportunity_score: number | null
+          roi: number | null
+          spot_entry_fee: number | null
+          spot_entry_price: number | null
+          status: string
+          symbol: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          actual_net_profit?: number | null
+          created_at?: string | null
+          entry_reason?: string | null
+          estimated_fees?: number | null
+          estimated_slippage?: number | null
+          exit_reason?: string | null
+          exit_time?: string | null
+          expected_funding?: number | null
+          expected_net_profit?: number | null
+          futures_entry_fee?: number | null
+          futures_entry_price?: number | null
+          id?: string
+          notes?: string | null
+          operation_id: string
+          opportunity_score?: number | null
+          roi?: number | null
+          spot_entry_fee?: number | null
+          spot_entry_price?: number | null
+          status?: string
+          symbol: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          actual_net_profit?: number | null
+          created_at?: string | null
+          entry_reason?: string | null
+          estimated_fees?: number | null
+          estimated_slippage?: number | null
+          exit_reason?: string | null
+          exit_time?: string | null
+          expected_funding?: number | null
+          expected_net_profit?: number | null
+          futures_entry_fee?: number | null
+          futures_entry_price?: number | null
+          id?: string
+          notes?: string | null
+          operation_id?: string
+          opportunity_score?: number | null
+          roi?: number | null
+          spot_entry_fee?: number | null
+          spot_entry_price?: number | null
+          status?: string
+          symbol?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
