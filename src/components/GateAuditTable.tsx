@@ -166,15 +166,36 @@ export const GateAuditTable = () => {
 
 // ───────────────────────── Detail dialog ─────────────────────────
 const fmtPct = (n?: number, digits = 2) => (typeof n === 'number' ? `${n.toFixed(digits)}%` : '—');
-const DiffRow = ({ label, intended, applied, unit = '' }: { label: string; intended: string; applied: string; unit?: string }) => {
+
+const calcDeviation = (intended?: number, applied?: number): number | undefined => {
+  if (typeof intended !== 'number' || typeof applied !== 'number' || intended === 0) return undefined;
+  return ((applied - intended) / intended) * 100;
+};
+
+const DeviationBadge = ({ value }: { value?: number }) => {
+  if (value === undefined || value === 0 || !isFinite(value)) {
+    return <span className="text-[10px] text-muted-foreground text-right">—</span>;
+  }
+  const abs = Math.abs(value);
+  const severity = abs > 10 ? 'bg-red-500/20 text-red-300 border-red-500/30' : abs > 5 ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+  const sign = value > 0 ? '+' : '';
+  return (
+    <Badge variant="outline" className={`text-[10px] font-mono text-right justify-end ${severity}`}>
+      {sign}{value.toFixed(1)}%
+    </Badge>
+  );
+};
+
+const DiffRow = ({ label, intended, applied, deviation, unit = '' }: { label: string; intended: string; applied: string; deviation?: number; unit?: string }) => {
   const changed = intended !== applied;
   return (
-    <div className={`grid grid-cols-3 gap-2 px-3 py-2 rounded text-xs ${changed ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-background/40 border border-border/40'}`}>
+    <div className={`grid grid-cols-4 gap-2 px-3 py-2 rounded text-xs ${changed ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-background/40 border border-border/40'}`}>
       <span className="text-muted-foreground">{label}</span>
       <span className="font-mono">{intended}{unit}</span>
       <span className={`font-mono text-right ${changed ? 'text-indigo-300 font-semibold' : ''}`}>
         {applied}{unit} {changed && <ArrowRight className="inline h-3 w-3 ml-1 -mt-0.5" />}
       </span>
+      <span className="flex justify-end"><DeviationBadge value={deviation} /></span>
     </div>
   );
 };
@@ -192,6 +213,10 @@ function AuditDetailDialog({ entry, onClose }: { entry: GateAuditEntry | null; o
   const appliedTpPct = a.takeProfitPct;
   const appliedTrailPct = (a.trailingPct ?? 0) * 100;
   const appliedRR = appliedSlPct && appliedTpPct ? appliedTpPct / appliedSlPct : undefined;
+
+  const slDeviation = calcDeviation(intendedSlPct, appliedSlPct);
+  const tpDeviation = calcDeviation(intendedTpPct, appliedTpPct);
+  const trailingDeviation = calcDeviation(intendedTrailPct, appliedTrailPct);
 
   return (
     <Dialog open={!!entry} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -226,16 +251,17 @@ function AuditDetailDialog({ entry, onClose }: { entry: GateAuditEntry | null; o
           </div>
 
           <div>
-            <div className="grid grid-cols-3 gap-2 px-3 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <div className="grid grid-cols-4 gap-2 px-3 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
               <span>Parâmetro</span>
               <span>Pretendido (regra)</span>
               <span className="text-right">Aplicado no trade</span>
+              <span className="text-right">Desvio</span>
             </div>
             <div className="space-y-1.5">
-              <DiffRow label="Stop Loss" intended={fmtPct(intendedSlPct)} applied={fmtPct(appliedSlPct)} />
-              <DiffRow label="Take Profit" intended={fmtPct(intendedTpPct)} applied={fmtPct(appliedTpPct)} />
+              <DiffRow label="Stop Loss" intended={fmtPct(intendedSlPct)} applied={fmtPct(appliedSlPct)} deviation={slDeviation} />
+              <DiffRow label="Take Profit" intended={fmtPct(intendedTpPct)} applied={fmtPct(appliedTpPct)} deviation={tpDeviation} />
               <DiffRow label="Risk:Reward" intended={`${intendedRR.toFixed(2)}:1`} applied={appliedRR ? `${appliedRR.toFixed(2)}:1` : '—'} />
-              <DiffRow label="Trailing Stop" intended={fmtPct(intendedTrailPct, 0)} applied={fmtPct(appliedTrailPct, 0)} />
+              <DiffRow label="Trailing Stop" intended={fmtPct(intendedTrailPct, 0)} applied={fmtPct(appliedTrailPct, 0)} deviation={trailingDeviation} />
               <DiffRow label="Leverage" intended={`${r.maxLeverage}x`} applied={a.leverage ? `${a.leverage}x` : '—'} />
               <DiffRow label="Confiança mín" intended={`${r.minConfidence}%`} applied={`${r.minConfidence}%`} />
               <DiffRow label="Score mín" intended={`${r.minScore}`} applied={`${r.minScore}`} />
