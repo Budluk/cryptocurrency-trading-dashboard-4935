@@ -1,70 +1,114 @@
+## Objetivo
 
-Objetivo: eliminar os erros recorrentes do `bybit-trading` sem derrubar a UI, mantendo operação estável mesmo quando a Bybit retorna HTML/403 temporário.
+Substituir a fonte de dados cripto/Bybit por WINZ25 e WDOF26 (B3), usando **TradingView webhooks** como única fonte de cotação/sinal. Manter intactos: ML, gates de qualidade, auditoria por trade, presets de risco (conservador/equilibrado/agressivo), sistema de notificações.
 
-1) Diagnóstico (confirmado pelos logs)
-- O erro real é upstream: Bybit responde HTML com `403` (`Bybit returned HTML ...`).
-- Em pelo menos uma janela, a função ainda respondeu `500` com payload transitório (rede mostra `Status: 500` com `{"success":false,"error":"Bybit returned HTML..."}`), o que dispara erro runtime no frontend.
-- No cliente, `BybitPositionsPanel` faz `throw` quando `!data.success`; isso transforma falha temporária em erro visível e pode contribuir para “blank screen”/runtime error loop.
+Modo: **somente sinais** (sem execução em corretora). O bot exibe recomendações; você opera manualmente no Profit/corretora.
 
-2) Plano de implementação (passo a passo)
+---
 
-Passo A — Endurecer tratamento de erro no Edge Function  
-Arquivo: `supabase/functions/bybit-trading/index.ts`
-- Substituir classificação por regex “solta” por erro tipado de upstream transitório:
-  - `BybitTransientError` (campos: `code`, `status`, `retryAfterMs`, `endpoint`, `host`).
-- Em `makeBybitRequest`:
-  - Tratar explicitamente HTML, `403`, `429` e `5xx` como transitório.
-  - Não depender só da mensagem textual.
-  - Preservar fallback entre hosts (`api.bybit.com` / `api.bytick.com`) + backoff.
-- No `catch` do handler:
-  - Se erro transitório: retornar `200` com estrutura padrão:
-    - `{ success: false, transient: true, code: 'BYBIT_UPSTREAM_UNAVAILABLE', error: '...' , retryAfterMs: ... }`
-  - `500` apenas para erro interno real (bug de código/parametrização inválida).
-- Adicionar log estruturado (endpoint, host, status) para facilitar diagnóstico.
+## Arquitetura
 
-Passo B — Parar de “quebrar” UI em falha transitória  
-Arquivo: `src/components/BybitPositionsPanel.tsx`
-- Em queries de posições/saldo:
-  - Não dar `throw` para `!data.success` quando `transient === true`.
-  - Reaproveitar último snapshot válido (query cache) e continuar renderizando.
-- Ajustar `useQuery` para reduzir tempestade de retries:
-  - `retry` custom: não repetir para erro transitório já classificado.
-  - `keepPreviousData`/placeholder para evitar flicker e tela vazia.
-- Exibir estado de degradação suave:
-  - ex.: badge/aviso “Bybit instável, mostrando último dado”.
+```text
+TradingView (alertas Pine Script M1 + M5)
+        │  POST JSON  (HMAC opcional)
+        ▼
+Edge Function: tv-b3-webhook
+        │  insere tick + dispara análise
+        ▼
+Tabelas: b3_ticks, b3_signals, b3_analysis
+        │  realtime
+        ▼
+Frontend: B3Trader (novo) reaproveita
+  - useTradingCalculations (SL/TP)
+  - gateAudit + GateAuditTable
+  - qualityRiskConfig + presets
+  - AdvancedAISignals (ML)
+  - useWebNotifications
+```
 
-Passo C — Padronizar consumo do bybit-trading no cliente  
-Arquivos: `src/hooks/useBybitSync.tsx`, `src/hooks/useManualTradeTracker.tsx` (e opcionalmente outros hooks com invoke)
-- Criar helper de invocação (ex.: `invokeBybit`) para:
-  - Normalizar leitura de `{ success, transient, code, error }`.
-  - Evitar `throw` desnecessário em falhas transitórias.
-  - Reduzir duplicação de tratamento de erro.
-- Resultado: comportamento uniforme em todos os pontos de chamada.
+---
 
-Passo D — Garantir estabilidade sem perder responsividade  
-- Manter atualização frequente, mas sem escalar erro:
-  - Em falha transitória, entrar em pequeno cooldown local (ex.: 10–20s) antes de nova tentativa daquele endpoint no mesmo componente.
-- Isso reduz pressão quando a Bybit estiver em bloqueio temporário.
+## Mudanças
 
-3) Detalhes técnicos (importante)
-- Raiz do problema não é JSON parsing em si; é resposta anti-bot/WAF da Bybit (HTML 403).
-- “Corrigir” apenas com mais retries não basta; precisa:
-  - classificação determinística de erro transitório no backend
-  - fallback de UI no frontend
-  - controle de retry/cooldown para não amplificar bloqueio.
-- Mesmo com correção, bloqueio externo pode ocorrer; a meta é: sem `500` desnecessário e sem quebrar a interface.
+### 1. Backend (Supabase)
 
-4) Validação pós-implementação
-- Verificar rede do preview por 5–10 min:
-  - chamadas `bybit-trading` em falha transitória devem vir `200` com `success:false, transient:true`.
-  - não deve aparecer `Edge function returned 500` para casos de HTML/403 da Bybit.
-- Verificar logs da edge function:
-  - continuam mostrando 403/HTML quando houver bloqueio, mas sem escalar para erro interno.
-- Verificar UI:
-  - painel continua renderizando com último snapshot válido.
-  - sem blank screen/runtime loop.
+**Migração SQL** — cria:
+- `b3_ticks` (symbol, price, volume, tf, ts) — histórico de ticks recebidos do TV
+- `b3_signals` (symbol, tf, action BUY/SELL, price, ema9, ema21, vwap, rsi, atr, ts) — sinais brutos
+- `b3_analysis` (symbol, quality, confidence, score, sl, tp, trailing, leverage_suggested, gate_pass, gate_blocked_by, applied_preset, ts) — decisão final do bot
+- RLS: leitura/escrita anônima (mesmo padrão dos ai_learning_data já existentes)
+- GRANTs para anon/authenticated/service_role
+- Índices por symbol+ts DESC
+- Publica em `supabase_realtime`
 
-5) Critério de pronto
-- Zero ocorrências de `Edge function returned 500` para indisponibilidade transitória da Bybit.
-- Sem tela em branco ao ocorrer 403/HTML.
-- Dados voltam automaticamente quando Bybit normaliza.
+**Edge Function `tv-b3-webhook`** (nova):
+- Recebe POST do TradingView
+- Valida HMAC via `TRADINGVIEW_WEBHOOK_SECRET` (já existe nos secrets)
+- Insere tick + sinal
+- Roda pipeline: gates → ML lookup → decisão → grava `b3_analysis`
+- Reutiliza `gateAudit` server-side (portado pra Deno)
+
+### 2. Frontend
+
+**Novos arquivos:**
+- `src/components/B3Trader.tsx` — dashboard principal WIN/WDO (substitui MultiAssetTrader na rota `/`)
+- `src/components/B3SignalCard.tsx` — card por ativo mostrando último sinal, quality, confiança, SL/TP sugeridos
+- `src/components/B3WebhookInstructions.tsx` — mostra URL do webhook + Pine Script pronto pra copiar
+- `src/hooks/useB3Realtime.ts` — subscribe em `b3_analysis` via Supabase realtime
+
+**Reaproveitados sem mudança:**
+- `qualityRiskConfig.ts`, `gateAudit.ts`, `useTradingCalculations`
+- `GateAuditTable`, `GateDiagnosticsPanel`, `RiskPresetSelector`, `RiskPresetEditor`
+- `AdvancedAISignals` (adaptado para ler `b3_signals`)
+- `useWebNotifications` (dispara ao entrar novo APPROVED)
+
+**Removidos da rota principal** (não deletados do repo, só desligados do UI):
+- MultiAssetTrader, OrderFlowDashboard, componentes Bybit
+- MiniCharts cripto → substituídos por widget TradingView de WIN/WDO
+
+**Constantes:**
+- `B3_SYMBOLS = ['WINZ25', 'WDOF26']`
+- `B3_TIMEFRAMES = { entry: '1', confirm: '5' }`
+
+### 3. TradingView (você configura uma vez)
+
+Vou entregar Pine Script pronto para colar no TV com alerta que dispara em cada fechamento de candle M1 e M5 e envia:
+
+```json
+{
+  "secret": "SEU_TRADINGVIEW_WEBHOOK_SECRET",
+  "symbol": "{{ticker}}",
+  "tf": "{{interval}}",
+  "action": "{{strategy.order.action}}",
+  "price": {{close}},
+  "ema9": {{plot("EMA9")}},
+  "ema21": {{plot("EMA21")}},
+  "vwap": {{plot("VWAP")}},
+  "rsi": {{plot("RSI")}},
+  "atr": {{plot("ATR")}},
+  "ts": "{{timenow}}"
+}
+```
+
+URL do webhook: `https://uohdpxkfgxmtlosnmspf.supabase.co/functions/v1/tv-b3-webhook`
+
+---
+
+## Detalhes técnicos
+
+- **Ticker**: WINZ25 (mini índice, venc. dez/25) e WDOF26 (mini dólar, venc. jan/26). Quando rolar, você edita a constante `B3_SYMBOLS` — vou marcar com comentário `// TODO rolagem`.
+- **ML**: continua treinando com histórico de `b3_analysis` (win/loss inferido pelo próximo tick vs SL/TP simulado, já que não há execução real). O `ai_learning_data` recebe novos registros com `market: 'B3'`.
+- **Gates**: mesmos gates de M1/M5, confiança, score, Fear&Greed é ignorado (não aplica em índice/dólar BR); em vez disso adiciono gate de **horário de pregão B3** (09h-17h55 BRT) e gate de **eventos macro BR** via `PERPLEXITY_API_KEY` (já existe).
+- **Presets de risco**: SL/TP em pontos de WIN (1pt=R$0,20) e WDO (1pt=R$10). Multiplicadores atuais viram base; vou adaptar unidades em `qualityRiskConfig`.
+- **Notificações**: dispara quando `b3_analysis.gate_pass=true` com quality Premium/High.
+- **Sem execução**: sem chamada Bybit em lugar nenhum. Bot é read-only + análise.
+
+---
+
+## Escopo fora deste plano
+
+- Rolagem automática de contratos (você troca símbolo manualmente na virada de vencimento).
+- Integração com corretora BR (Profit/MT5) — pediu sinais apenas.
+- Backfill histórico de WIN/WDO (TV free não expõe API de histórico gratuita; ML começa a treinar do zero conforme ticks chegam).
+
+Se aprovar, implemento em uma passada: migração + edge function + frontend novo + Pine Script pronto.
