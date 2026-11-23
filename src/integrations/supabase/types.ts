@@ -1221,6 +1221,27 @@ export type Database = {
         }
         Relationships: []
       }
+      bybit_rsa_keys: {
+        Row: {
+          created_at: string
+          id: number
+          private_pem: string
+          public_pem: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          private_pem: string
+          public_pem: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          private_pem?: string
+          public_pem?: string
+        }
+        Relationships: []
+      }
       candle_data: {
         Row: {
           close: number | null
