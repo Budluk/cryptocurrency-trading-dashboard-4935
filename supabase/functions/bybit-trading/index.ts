@@ -8,6 +8,7 @@ const corsHeaders = {
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 import { handleTradingChat } from "../_shared/tradingChat.ts";
+console.log('[bybit-trading] build v29-chat');
 const RECV_WINDOW = "30000";
 const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
 
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
   const peek = await req.clone().json().catch(() => ({}));
-  if (typeof peek?.action === 'string' && peek.action.startsWith('chat_')) return handleTradingChat(req);
+  if (typeof peek?.action === 'string' && peek.action.startsWith('chat_')) return handleTradingChat(req, (a, p) => runAction(a, p ?? {}));
 
   try {
     const authHeader = req.headers.get('Authorization');
@@ -61,49 +62,7 @@ Deno.serve(async (req) => {
     
     console.log(`Bybit MAINNET - Action: ${action} - User: ${userId || 'anonymous'}`);
 
-    let result;
-
-    switch (action) {
-      case 'get_balance':
-        result = await getBalance();
-        break;
-      case 'get_positions':
-        result = await getPositions();
-        break;
-      case 'place_order':
-        result = await placeOrder(params);
-        break;
-      case 'close_position':
-        result = await closePosition(params);
-        break;
-      case 'get_instruments':
-        result = await getInstruments(params.symbol);
-        break;
-      case 'get_tickers':
-      case 'get_ticker':
-        result = await getTickers(params.symbol);
-        break;
-      case 'set_leverage':
-        result = await setLeverage(params);
-        break;
-      case 'get_closed_pnl':
-        result = await getClosedPnL(params);
-        break;
-      case 'get_order_history':
-        result = await getOrderHistory(params);
-        break;
-      case 'get_execution_list':
-        result = await getExecutionList(params);
-        break;
-      case 'get_klines':
-        result = await getKlines(params);
-        break;
-      case 'set_trading_stop':
-        result = await setTradingStop(params);
-        break;
-      default:
-        throw new Error(`Unknown action: ${action}`);
-    }
+    const result = await runAction(action, params);
 
     return new Response(JSON.stringify({ success: true, data: result }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -744,4 +703,43 @@ async function setTradingStop(params: any) {
   if (takeProfit) body.takeProfit = String(takeProfit);
 
   return makeBybitRequest('POST', '/v5/position/trading-stop', body);
+}
+
+
+async function getApiInfo() {
+  return makeBybitRequest('GET', '/v5/user/query-api', {});
+}
+
+async function runAction(action: string, params: any = {}): Promise<any> {
+  switch (action) {
+    case 'get_balance':
+      return await getBalance();
+    case 'get_positions':
+      return await getPositions();
+    case 'place_order':
+      return await placeOrder(params);
+    case 'close_position':
+      return await closePosition(params);
+    case 'get_instruments':
+      return await getInstruments(params.symbol);
+    case 'get_tickers':
+    case 'get_ticker':
+      return await getTickers(params.symbol);
+    case 'set_leverage':
+      return await setLeverage(params);
+    case 'get_closed_pnl':
+      return await getClosedPnL(params);
+    case 'get_order_history':
+      return await getOrderHistory(params);
+    case 'get_execution_list':
+      return await getExecutionList(params);
+    case 'get_klines':
+      return await getKlines(params);
+    case 'set_trading_stop':
+      return await setTradingStop(params);
+    case 'get_api_info':
+      return await getApiInfo();
+  default:
+      throw new Error(`Unknown action: ${action}`);
+  }
 }

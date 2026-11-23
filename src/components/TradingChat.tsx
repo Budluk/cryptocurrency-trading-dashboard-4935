@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Check, Loader2, MessageSquare, Send, Trash2, X } from "lucide-react";
+import { Bot, Loader2, MessageSquare, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Msg = { id: string; role: "user" | "assistant"; content: string; proposal?: { summary: string } | null; proposal_status?: string | null };
@@ -27,8 +27,7 @@ export function TradingChat() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [resolving, setResolving] = useState<string | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+    const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const load = async () => {
@@ -52,16 +51,13 @@ export function TradingChat() {
     inputRef.current?.focus();
   };
 
-  const resolve = async (id: string, decision: "confirm" | "cancel") => {
-    setResolving(id);
-    try {
-      const d = await call({ action: "chat_resolve", id, decision });
-      if (d.status === "executed") toast.success("Ordem enviada para a Bybit");
-      else if (d.status === "failed") toast.error("A Bybit recusou a ordem");
-    } catch (e) { toast.error((e as Error).message); }
-    await load();
-    setResolving(null);
-  };
+  const [api, setApi] = useState<{ ok: boolean; problem?: string; warning?: string | null; daysLeft?: number | null } | null>(null);
+  useEffect(() => {
+    call({ action: "chat_api_status" }).then(setApi).catch(() => {});
+    const t = setInterval(() => call({ action: "chat_api_status" }).then(setApi).catch(() => {}), 30 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+  const apiAlert = api && (!api.ok ? `Chave da Bybit com problema: ${api.problem}` : api.warning);
 
   const clear = async () => {
     if (!confirm("Apagar todo o histórico do chat?")) return;
@@ -73,6 +69,7 @@ export function TradingChat() {
       <Button onClick={() => setOpen(true)} size="lg" aria-label="Abrir chat de trading"
         className="fixed bottom-5 right-5 z-50 h-14 w-14 rounded-full shadow-lg p-0">
         <MessageSquare className="h-6 w-6" />
+        {apiAlert && <span className="absolute top-1 right-1 h-3 w-3 rounded-full bg-destructive" />}
       </Button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="w-full sm:max-w-md flex flex-col p-0 gap-0">
@@ -80,11 +77,12 @@ export function TradingChat() {
             <SheetTitle className="flex items-center gap-2"><Bot className="h-5 w-5 text-primary" /> Assistente de Trading</SheetTitle>
             <Button variant="ghost" size="icon" onClick={clear} aria-label="Limpar histórico" className="mr-6"><Trash2 className="h-4 w-4" /></Button>
           </SheetHeader>
+          {apiAlert && <div className="mx-4 mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">{apiAlert}</div>}
           <ScrollArea className="flex-1 px-4">
             <div className="py-4 space-y-3">
               {msgs.length === 0 && !busy && (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Pergunte sobre suas posições, a estratégia, ou peça para abrir, fechar ou ajustar uma ordem. Toda ordem pede sua confirmação.
+                  Pergunte sobre suas posições, a estratégia, ou peça para abrir, fechar ou ajustar uma ordem. Ordens pedidas aqui são executadas na hora, com stop obrigatório (máx 0,5%) e alavancagem até 8x.
                 </p>
               )}
               {msgs.map((m) => (
@@ -98,16 +96,6 @@ export function TradingChat() {
                         <Badge variant={m.proposal_status === "executed" ? "default" : "secondary"}>{STATUS[m.proposal_status || "pending"]}</Badge>
                       </div>
                       {m.content && <p className="text-xs text-muted-foreground">{m.content}</p>}
-                      {m.proposal_status === "pending" && (
-                        <div className="flex gap-2">
-                          <Button size="sm" className="flex-1" disabled={!!resolving} onClick={() => resolve(m.id, "confirm")}>
-                            {resolving === m.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Confirmar
-                          </Button>
-                          <Button size="sm" variant="outline" className="flex-1" disabled={!!resolving} onClick={() => resolve(m.id, "cancel")}>
-                            <X className="h-4 w-4" /> Cancelar
-                          </Button>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <div className="text-sm whitespace-pre-wrap text-foreground">{m.content}</div>
