@@ -1,3 +1,4 @@
+import { aiFetch } from '../_shared/aiRouter.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 
@@ -229,7 +230,7 @@ Responda em JSON VÁLIDO:
 
     console.log('🧠 Chamando IA com modelo potente:', AI_MODEL);
     
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await aiFetch({
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${LOVABLE_API_KEY}`,
@@ -445,7 +446,7 @@ Responda em JSON EXATO e VÁLIDO:
   "confidenceInAnalysis": number (0-100, quão confiável são os dados)
 }`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await aiFetch({
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${LOVABLE_API_KEY}`,

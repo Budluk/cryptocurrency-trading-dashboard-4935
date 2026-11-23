@@ -1,3 +1,4 @@
+import { aiFetch } from '../_shared/aiRouter.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 
@@ -919,7 +920,7 @@ Com base nesses dados REAIS, forneça recomendações ESPECÍFICAS e ACIONÁVEIS
 
     try {
       console.log('🤖 Consultando IA para insights...');
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      const aiResponse = await aiFetch({
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${lovableApiKey}`,

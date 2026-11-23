@@ -1,3 +1,4 @@
+import { aiFetch } from '../_shared/aiRouter.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 
@@ -830,7 +831,7 @@ REGRAS:
 
 JSON: {"action":"buy"|"sell"|"wait","confidence":0-100,"reason":"motivo principal em 10 palavras","warning":"risco se houver","leverage":15-25}`;
 
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      const aiResponse = await aiFetch({
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${lovableApiKey}`,

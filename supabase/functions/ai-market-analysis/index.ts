@@ -1,3 +1,4 @@
+import { aiFetch } from '../_shared/aiRouter.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 
@@ -216,7 +217,7 @@ Deno.serve(async (req) => {
           ? `\nAnálise de Notícias:\n- Sentimento: ${newsAnalysis.sentiment}\n- Impacto: ${newsAnalysis.impact}\n- Resumo: ${newsAnalysis.summary}\n- Confiança: ${newsAnalysis.confidence}%`
           : '\nNotícias: Não disponíveis. Foque em análise técnica pura.';
         
-        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        const aiResponse = await aiFetch({
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${lovableApiKey}`,
