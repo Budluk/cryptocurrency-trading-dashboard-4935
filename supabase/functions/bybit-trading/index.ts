@@ -7,6 +7,7 @@ const corsHeaders = {
 
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
+import { handleTradingChat } from "../_shared/tradingChat.ts";
 const RECV_WINDOW = "30000";
 const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
 
@@ -34,6 +35,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+  const peek = await req.clone().json().catch(() => ({}));
+  if (typeof peek?.action === 'string' && peek.action.startsWith('chat_')) return handleTradingChat(req);
 
   try {
     const authHeader = req.headers.get('Authorization');

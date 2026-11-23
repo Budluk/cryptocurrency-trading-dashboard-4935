@@ -24,10 +24,12 @@ import {
   LazyTraderProfileSettings,
 } from "@/pages/Index.lazy";
 import SmartAlerts from "@/components/SmartAlerts";
+import { TradingChat } from "@/components/TradingChat";
 
 const Index = () => {
   return (
     <div className="min-h-screen bg-background relative">
+      <TradingChat />
       {/* Background Effects */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px] animate-float" />
