@@ -340,6 +340,30 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log: {
+        Row: {
+          action: string
+          actor: string | null
+          at: string
+          detail: Json
+          id: string
+        }
+        Insert: {
+          action: string
+          actor?: string | null
+          at?: string
+          detail?: Json
+          id?: string
+        }
+        Update: {
+          action?: string
+          actor?: string | null
+          at?: string
+          detail?: Json
+          id?: string
+        }
+        Relationships: []
+      }
       auto_trader_config: {
         Row: {
           allow_hedging: boolean | null
@@ -3279,6 +3303,39 @@ export type Database = {
           updated_at?: string
           user_id?: string
           vwap_periods?: number
+        }
+        Relationships: []
+      }
+      strategy_leads: {
+        Row: {
+          created_at: string
+          created_by: string
+          ficha: Json
+          fontes: Json
+          id: string
+          notas: string | null
+          status: string
+          titulo: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          ficha: Json
+          fontes?: Json
+          id?: string
+          notas?: string | null
+          status?: string
+          titulo: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          ficha?: Json
+          fontes?: Json
+          id?: string
+          notas?: string | null
+          status?: string
+          titulo?: string
         }
         Relationships: []
       }
