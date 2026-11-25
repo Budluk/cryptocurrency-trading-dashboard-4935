@@ -1,4 +1,5 @@
 import { aiFetch } from '../_shared/aiRouter.ts';
+import { handleResearch } from '../_shared/researchAgent.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 
@@ -42,7 +43,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { timeframe = '1h', symbol = 'BTC/USD', analysis_type = 'comprehensive' } = await req.json();
+    const reqBody = await req.json();
+    if (typeof reqBody?.action === 'string' && reqBody.action.startsWith('research')) {
+      return await handleResearch(reqBody, req.headers.get('Authorization'));
+    }
+    const { timeframe = '1h', symbol = 'BTC/USD', analysis_type = 'comprehensive' } = reqBody;
     
     console.log(`AI Analysis request: ${symbol} - ${timeframe} - ${analysis_type}`);
 

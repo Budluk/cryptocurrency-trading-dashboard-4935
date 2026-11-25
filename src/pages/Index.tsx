@@ -5,7 +5,7 @@ import { SystemStatusBar } from "@/components/SystemStatusBar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Activity, BarChart3, Settings, TrendingUp, Zap, Clock } from "lucide-react";
+import { Activity, BarChart3, Settings, TrendingUp, Zap, Clock, Search } from "lucide-react";
 
 import {
   LazyAdvancedAISignals,
@@ -22,6 +22,7 @@ import {
   LazyAutoTraderSettings,
   LazyMLAdaptiveSettings,
   LazyTraderProfileSettings,
+  LazyResearchTab,
 } from "@/pages/Index.lazy";
 import SmartAlerts from "@/components/SmartAlerts";
 import { TradingChat } from "@/components/TradingChat";
@@ -74,7 +75,7 @@ const Index = () => {
           
           {/* Main Content - Mobile Optimized Tabs */}
           <Tabs defaultValue="trading" className="w-full">
-            <TabsList className="w-full grid grid-cols-5 mb-5 sm:mb-8 p-1 sm:p-1.5 bg-card/50 backdrop-blur-sm border border-border/40 rounded-lg sm:rounded-xl h-auto">
+            <TabsList className="w-full grid grid-cols-6 mb-5 sm:mb-8 p-1 sm:p-1.5 bg-card/50 backdrop-blur-sm border border-border/40 rounded-lg sm:rounded-xl h-auto">
               <TabsTrigger 
                 value="trading" 
                 className="py-2.5 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium rounded-md sm:rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-glow-sm transition-all flex flex-col sm:flex-row items-center gap-1"
@@ -102,6 +103,13 @@ const Index = () => {
               >
                 <Activity className="h-4 w-4 sm:h-4 sm:w-4" />
                 <span className="text-[10px] sm:text-sm">Avançado</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="research" 
+                className="py-2.5 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium rounded-md sm:rounded-lg data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-glow-sm transition-all flex flex-col sm:flex-row items-center gap-1"
+              >
+                <Search className="h-4 w-4 sm:h-4 sm:w-4" />
+                <span className="text-[10px] sm:text-sm">Pesquisa</span>
               </TabsTrigger>
               <TabsTrigger 
                 value="settings" 
@@ -148,6 +156,11 @@ const Index = () => {
               </div>
             </TabsContent>
             
+            {/* Research Tab */}
+            <TabsContent value="research" className="space-y-6 animate-fade-in">
+              <LazyResearchTab />
+            </TabsContent>
+
             {/* Settings Tab */}
             <TabsContent value="settings" className="space-y-6 animate-fade-in">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

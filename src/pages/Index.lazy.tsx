@@ -14,6 +14,7 @@ const TrailingStopVisual = lazy(() => import("@/components/TrailingStopVisual").
 const LiveMetricsPanel = lazy(() => import("@/components/LiveMetricsPanel").then(m => ({ default: m.LiveMetricsPanel })));
 const TradeHistoryTimeline = lazy(() => import("@/components/TradeHistoryTimeline").then(m => ({ default: m.TradeHistoryTimeline })));
 
+const ResearchTab = lazy(() => import("@/components/ResearchTab"));
 const AutoTraderSettings = lazy(() => import("@/components/AutoTraderSettings").then(m => ({ default: m.AutoTraderSettings })));
 const MLAdaptiveSettings = lazy(() => import("@/components/MLAdaptiveSettings").then(m => ({ default: m.MLAdaptiveSettings })));
 const TraderProfileSettings = lazy(() => import("@/components/TraderProfileSettings").then(m => ({ default: m.TraderProfileSettings })));
@@ -102,5 +103,11 @@ export const LazyLiveMetricsPanel = () => (
 export const LazyTradeHistoryTimeline = () => (
   <Suspense fallback={<ComponentSkeleton />}>
     <TradeHistoryTimeline />
+  </Suspense>
+);
+
+export const LazyResearchTab = () => (
+  <Suspense fallback={<ComponentSkeleton />}>
+    <ResearchTab />
   </Suspense>
 );

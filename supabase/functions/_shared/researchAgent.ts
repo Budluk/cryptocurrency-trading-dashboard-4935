@@ -3,7 +3,10 @@
 // Roda dentro de ai-market-analysis (verify_jwt = true). IA: aiRouter (Groq -> OpenAI -> FreeLLMAPI -> Lovable).
 import { aiFetch } from './aiRouter.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 const MAX_MESSAGE = 5000;
@@ -323,7 +326,7 @@ export async function handleResearch(body: Record<string, unknown>, authHeader: 
       const res = await aiFetch({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'auto', messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.3 }),
+        body: JSON.stringify({ model: 'google/gemini-2.5-flash', messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.3 }),
       });
       if (!res.ok) return jsonResponse({ error: `Falha na IA (HTTP ${res.status}). Tente novamente.` }, 502);
       const data = await res.json();
@@ -361,7 +364,7 @@ export async function handleResearch(body: Record<string, unknown>, authHeader: 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'auto',
+          model: 'google/gemini-2.5-flash',
           messages: [
             ...messages,
             { role: 'assistant', content: finalContent },
