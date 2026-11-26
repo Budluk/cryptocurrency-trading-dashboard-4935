@@ -1,0 +1,1 @@
+DELETE FROM public.bybit_rsa_keys WHERE id = 1;

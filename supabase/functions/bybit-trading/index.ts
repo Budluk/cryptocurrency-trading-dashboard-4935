@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { signBybitHmac } from './hmacSignature.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,7 +9,7 @@ const corsHeaders = {
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 import { handleTradingChat } from "../_shared/tradingChat.ts";
-console.log('[bybit-trading] build v29-chat');
+console.log('[bybit-trading] build v30-hmac');
 const RECV_WINDOW = "30000";
 const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
 
@@ -38,11 +39,9 @@ Deno.serve(async (req) => {
   }
   const peek = await req.clone().json().catch(() => ({}));
   if (peek?.action === 'rsa_public_key') {
-    try {
-      return new Response(JSON.stringify(await getOrCreateRsaPublicKey()), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    return new Response(JSON.stringify({ error: 'Sua conexão Bybit usa chave padrão HMAC; geração RSA desativada.' }), {
+      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
   if (typeof peek?.action === 'string' && peek.action.startsWith('chat_')) return handleTradingChat(req, (a, p) => runAction(a, p ?? {}));
 
@@ -159,49 +158,8 @@ async function getBybitServerTime(): Promise<number> {
   }
 }
 
-const svc = () => createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-let rsaKeyCache: CryptoKey | null | undefined;
-const b64 = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-const toPem = (der: ArrayBuffer, label: string) =>
-  `-----BEGIN ${label}-----\n${b64(der).match(/.{1,64}/g)!.join('\n')}\n-----END ${label}-----`;
-
-async function loadRsaKey(): Promise<CryptoKey | null> {
-  if (rsaKeyCache !== undefined) return rsaKeyCache;
-  const { data } = await svc().from('bybit_rsa_keys').select('private_pem').eq('id', 1).maybeSingle();
-  if (!data?.private_pem) { rsaKeyCache = null; return null; }
-  const der = Uint8Array.from(atob(data.private_pem.replace(/-----[^-]+-----|\s/g, '')), c => c.charCodeAt(0));
-  rsaKeyCache = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
-  return rsaKeyCache;
-}
-
-// Creates the RSA pair once; private key never leaves the server. Returns only the public key.
-async function getOrCreateRsaPublicKey(): Promise<{ publicKey: string; created: boolean }> {
-  const db = svc();
-  const { data } = await db.from('bybit_rsa_keys').select('public_pem').eq('id', 1).maybeSingle();
-  if (data?.public_pem) return { publicKey: data.public_pem, created: false };
-  const pair = await crypto.subtle.generateKey(
-    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-    true, ['sign', 'verify']);
-  const publicKey = toPem(await crypto.subtle.exportKey('spki', pair.publicKey), 'PUBLIC KEY');
-  const privatePem = toPem(await crypto.subtle.exportKey('pkcs8', pair.privateKey), 'PRIVATE KEY');
-  const { error } = await db.from('bybit_rsa_keys').insert({ id: 1, public_pem: publicKey, private_pem: privatePem });
-  if (error) throw new Error(`Falha ao salvar chave RSA: ${error.message}`);
-  rsaKeyCache = undefined;
-  return { publicKey, created: true };
-}
-
 async function generateSignature(params: string, timestamp: number): Promise<{ sign: string; type: string }> {
-  const encoder = new TextEncoder();
-  const message = encoder.encode(`${timestamp}${BYBIT_API_KEY}${RECV_WINDOW}${params}`);
-  const rsa = await loadRsaKey();
-  if (rsa) {
-    return { sign: b64(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', rsa, message)), type: '2' };
-  }
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw", encoder.encode(BYBIT_API_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", cryptoKey, message);
-  return { sign: Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join(''), type: '1' };
+  return signBybitHmac(BYBIT_API_KEY, BYBIT_API_SECRET, params, timestamp, RECV_WINDOW);
 }
 
 async function makeBybitRequest(
