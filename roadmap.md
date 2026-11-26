@@ -12,6 +12,6 @@
 ## Pendências antigas
 - [ ] Chave Bybit expirada — usuário criar Subconta de IA e cadastrar nova chave
 - [ ] Chat de trading: testar com IA real (Groq)
-- [ ] 40 alertas de segurança no banco (senhas vazadas desligada etc.)
+- [x] Alertas de acesso a tabelas corrigidos (resta: senhas vazadas = plano Pro do Supabase)
 - [ ] B3 (WINZ25/WDOF26) não operacional — migração b3_* nunca aplicada
 - [ ] FreeLLMAPI sem endereço público (Cloudflare Tunnel pendente)
