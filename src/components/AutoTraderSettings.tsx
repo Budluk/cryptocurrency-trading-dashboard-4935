@@ -95,10 +95,11 @@ const AutoTraderSettings = () => {
       });
 
       refetch();
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         title: "❌ Erro ao salvar",
-        description: error.message,
+        description: message,
         variant: "destructive",
       });
     }
