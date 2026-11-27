@@ -580,7 +580,8 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 - [x] Smoke tests 5.1b (Pesquisa, por API e interface) e 5.1c (chat normal em `dry_run`, sem escritas nem ordens). Itens 5.1a, 5.2–5.4 seguem disponíveis para conferência futura.
 - [x] CI verde em `785fa65` e novamente em `d40417e` — 7 checks bloqueantes (Build, Vitest, Bun, Lint/Typecheck, Audit, Edge Functions, gitleaks). O `c757b15` falhou apenas no check estrito do Deno por falta de `node_modules`; corrigido com `npm ci` no workflow.
 - [x] Smoke tests multi-exchange/B3: `exchange_list` com 7 venues, `place_order` em `dry_run` sem ordem real e webhook B3 com 401 para assinatura ausente/inválida (segredo configurado). Nenhuma escrita de auditoria em modo simulação.
-- [x] Build de produção corrigido: `manualChunks` agora isola os helpers CJS do Rollup em `vendor-helpers` e mantém `decimal.js` fora de `charts`, removendo o ciclo que causava `Cannot access 'P' before initialization` no preview. Validado com `vite preview` (sem erros no console e painel B3/corretores renderizado).
+- [x] Build de produção corrigido: `manualChunks` agora isola os helpers CJS do Rollup em `vendor-helpers` e mantém `decimal.js` fora de `charts`, removendo o ciclo que causava `Cannot access 'P' before initialization` no preview. Validado com `vite preview` (sem erros no console e painel B3/corretores renderizado). O preview gerenciado pelo Lovable atualizou-se sozinho após o push (`8853184`) e passou a servir os novos chunks sem erros no console.
+- [x] Observabilidade (24 h): único `ERROR` no Postgres veio do comando manual de registro da migration (`column "applied_at" does not exist`), corrigido em seguida; não há erros de aplicação. API Gateway 0,02%, Auth 0,04%.
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:

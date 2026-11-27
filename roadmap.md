@@ -13,7 +13,7 @@
 - [x] Multi-exchange no mesmo `bybit-trading` (sem nova função): Binance, OKX, Bitget, KuCoin e Gate.io em simulação por padrão, com assinantes REST, roteador, token HMAC para ordens reais e opt-in por exchange.
 - [x] B3 rodando junto com a Bybit como canal somente de sinais: contratos vigentes `WINZ26`/`WDOZ26`, webhook existente com segredo `B3_WEBHOOK_SECRET`, migration versionada e painel read-only. Nenhuma ordem B3 é enviada.
 - [x] Deploy da fase B3/multi-exchange em 27/11/2026: migration aplicada, segredo configurado, `bybit-trading`/`tradingview-webhook` redeployadas pela aba **Code** e CI 7/7 verde em `d40417e`. Smoke tests: 7 venues, `dry_run` sem ordem e webhook com 401 para assinatura inválida/ausente.
-- [x] Correção do build de produção: os helpers CJS do Rollup foram isolados em `vendor-helpers`, eliminando o ciclo `react-vendor → charts → react-vendor` que impedia a renderização (`Cannot access 'P' before initialization`). Build local servido via `vite preview`: painel carrega sem erros no console.
+- [x] Correção do build de produção: os helpers CJS do Rollup foram isolados em `vendor-helpers`, eliminando o ciclo `react-vendor → charts → react-vendor` que impedia a renderização (`Cannot access 'P' before initialization`). Validado no `vite preview` e no preview do Lovable após o push: painel carrega sem erros no console. CI 7/7 verde em `8853184`.
 
 ## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
@@ -22,8 +22,8 @@
 
 ## Validações que dependem do usuário
 - [ ] Chat de trading normal com ordem real — o `dry_run` já foi validado; autorizar uma ordem real só depois de conferir a proposta assinada e dar confirmação explícita
-- [ ] Release `v1.0.3` para `c757b15`/`785fa65`/`a471a5d`/`2564baf`/`d40417e` — criar somente com sua aprovação
-- [ ] Painel de Observabilidade sem erros após acompanhamento pós-deploy
+- [ ] Release `v1.0.3` para `c757b15`/`785fa65`/`a471a5d`/`2564baf`/`d40417e`/`ae1c80d`/`8853184` — criar somente com sua aprovação
+- [x] Painel de Observabilidade conferido: sem erros de aplicação nas últimas 24 h (o único `ERROR` foi o comando manual de registro da migration, já corrigido)
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
 
 ## Pendências externas/opcionais
