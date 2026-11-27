@@ -1,0 +1,5 @@
+475ae9f814200801aa9f094b7112ff6dbdd393e2:supabase/functions/_shared/rateLimit.test.ts:generic-api-key:69
+de4f6ea061432f6ba5837d51cb08b6086f62c3e4:src/integrations/supabase/client.ts:jwt:8
+de4f6ea061432f6ba5837d51cb08b6086f62c3e4:supabase/functions/_shared/rateLimit.test.ts:generic-api-key:67
+3419618ff2ba5a3560d52922df5c73b8dd273a03:.env:jwt:2
+596f258f384c458f7906851f10c24f28fe4466f8:src/integrations/supabase/client.ts:jwt:6
