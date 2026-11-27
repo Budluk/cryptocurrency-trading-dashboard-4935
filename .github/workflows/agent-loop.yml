@@ -18,6 +18,11 @@ on:
         options:
           - agent_loop
           - agent_daily
+      force:
+        description: 'Ignora a janela 00:00-00:05 UTC (apenas em teste)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   run:
@@ -51,9 +56,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          ACTION: ${{ github.event.inputs.action }}
+          ACTION: ${{ inputs.action }}
+          FORCE: ${{ inputs.force }}
         run: |
           curl -fsS -X POST "$SUPABASE_URL/functions/v1/ai-market-analysis" \
             -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"action\":\"$ACTION\"}"
+            -d "{\"action\":\"$ACTION\",\"force\":$FORCE}"

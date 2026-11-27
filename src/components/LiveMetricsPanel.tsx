@@ -37,7 +37,7 @@ export const LiveMetricsPanel = memo(() => {
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       return data;
     },
     staleTime: 30000,

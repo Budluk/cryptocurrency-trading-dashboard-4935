@@ -1,10 +1,11 @@
 # Checklist de Deploy e Atualização do PR #1
 
 Repositório: `https://github.com/Budluk/cryptocurrency-trading-dashboard-4935.git`
-Branch: `feat/ai-gateway-security-ci` (último commit local: `74077f8`)
+Branch: `feat/ai-gateway-security-ci` (commit da feature: `dba32ad`; correções seguintes também publicadas)
 Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`)
 
-> ⚠️ Este documento é um **guia para você executar**. Nenhum push nem deploy foi feito.
+> ⚠️ O código já foi enviado ao PR #1. **Migrations, deploy de functions e secrets não foram aplicados**
+> porque não há token de acesso ao Supabase nesta máquina.
 > Execute na raiz do repositório e em ordem.
 
 ---
@@ -125,6 +126,16 @@ psql $DB_URL -f supabase/migrations/20261127020000_bot_errors_observability.sql
 ```
 
 > Todas usam `DROP POLICY IF EXISTS` / `CREATE TABLE IF NOT EXISTS` → são seguras para reaplicar.
+
+> **Antes da migration 1:** ativar `Dashboard → Authentication → Providers → Anonymous Sign-Ins`.
+> As políticas passam a exigir `auth.uid() = user_id`; sem sessão anônima real o app
+> usa o ID fixo de fallback e **não consegue** gravar configurações. O frontend já
+> tenta `signInAnonymously()` automaticamente quando não há login (`src/lib/anonymousUser.ts`).
+> Configurações antigas gravadas sob o ID fixo ficam invisíveis para o usuário anônimo;
+> faça a migração desses dados no SQL Editor, se necessário.
+> Depois de ativar o provider, ligue `VITE_SUPABASE_ANONYMOUS_SIGNIN="true"` no `.env`.
+> Com o flag desligado (padrão), o app não tenta `/auth/v1/signup` e grava configurações
+> apenas localmente, sem produzir 401/422 no console.
 
 ### 2.3 Verificação pós-aplicação
 

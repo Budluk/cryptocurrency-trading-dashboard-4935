@@ -164,7 +164,7 @@ export const useContinuousMLTraining = () => {
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error || !mlConfig) return;
 
@@ -291,7 +291,7 @@ export const useContinuousMLTraining = () => {
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error || !mlConfig || !mlConfig.is_enabled) {
         return null;

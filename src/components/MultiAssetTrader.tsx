@@ -19,7 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useCorrelationAnalysis } from "@/hooks/useCorrelationAnalysis";
 import { useAdvancedRiskManager } from "@/hooks/useAdvancedRiskManager";
-import { getUserId } from "@/lib/anonymousUser";
+import { getUserId, getUserIdOrNull } from "@/lib/anonymousUser";
 import { AntiLossMonitor } from "./AntiLossMonitor";
 import { useDataDrivenStrategy } from "@/hooks/useDataDrivenStrategy";
 import { useArmedOrders } from "@/hooks/useArmedOrders";
@@ -284,6 +284,7 @@ export const MultiAssetTrader = () => {
   useEffect(() => {
     const restoreTraderState = async () => {
       const userId = await getUserId();
+      const authenticatedUserId = await getUserIdOrNull();
       console.log('👤 User ID:', userId);
       
       // Carregar ML config
@@ -305,20 +306,25 @@ export const MultiAssetTrader = () => {
         .eq('user_id', userId)
         .maybeSingle();
 
-      // Se não existe config, criar uma
+      // Se não existe config, criar uma apenas com sessão autenticada.
+      // Sem sessão, o RLS bloqueia o INSERT; o robô segue em modo local.
       if (!config) {
-        console.log('📝 Criando config para usuário...');
-        const { data: newConfig, error } = await supabase.from('auto_trader_config').insert({
-          user_id: userId,
-          trader_is_running: false,
-          is_active: false,
-          min_confidence: 50,
-          leverage_max: ROBOT_RISK.leverageMax
-        }).select().single();
-        
-        if (!error && newConfig) {
-          config = newConfig;
-          console.log('✅ Config criada');
+        if (!authenticatedUserId) {
+          console.info('📝 Sem sessão Supabase: config do trader mantida apenas localmente.');
+        } else {
+          console.log('📝 Criando config para usuário...');
+          const { data: newConfig, error } = await supabase.from('auto_trader_config').insert({
+            user_id: authenticatedUserId,
+            trader_is_running: false,
+            is_active: false,
+            min_confidence: 50,
+            leverage_max: ROBOT_RISK.leverageMax
+          }).select().single();
+
+          if (!error && newConfig) {
+            config = newConfig;
+            console.log('✅ Config criada');
+          }
         }
       }
 
@@ -327,8 +333,8 @@ export const MultiAssetTrader = () => {
         if (Date.now() - lastActivity < 10 * 60 * 1000) { // 10 min tolerance
           setIsRunning(true);
           toast({ title: "🔄 Trader Restaurado", description: "Operações continuam automaticamente" });
-        } else {
-          await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
+        } else if (authenticatedUserId) {
+          await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', authenticatedUserId);
         }
       }
       
@@ -933,7 +939,9 @@ export const MultiAssetTrader = () => {
             try {
               const ai = await fetchComprehensiveAI(s);
               if (ai) aiAnalysisCache.current.set(s, { data: ai, timestamp: Date.now() });
-            } catch {}
+            } catch {
+              // IA indisponível para este ativo: segue sem cache e usa os dados locais.
+            }
           })
         );
       }
@@ -1303,7 +1311,7 @@ export const MultiAssetTrader = () => {
             analysisResult.signalQuality
           );
 
-          let usdSize = Math.min(
+          const usdSize = Math.min(
             sizing.usdSize,
             maxMarginPerTrade * leverage,
             freshBalance * (isPriorityMajor ? 0.45 : 0.30),
@@ -1466,7 +1474,7 @@ export const MultiAssetTrader = () => {
           if (!leverageSuccess) continue;
 
           // Executar ordem - sempre Market
-          const orderType: 'Market' = 'Market';
+          const orderType = 'Market' as const;
           
           // 🆕 MODO DEMO: Simular trade localmente
           let orderSuccess = false;
@@ -1889,19 +1897,22 @@ export const MultiAssetTrader = () => {
     setIsRunning(true);
     setConsecutiveLosses(0);
 
-    const userId = await getUserId();
+    const userId = await getUserIdOrNull();
 
-    // Check if config exists, then insert or update
-    const { data: existing } = await supabase.from('auto_trader_config')
-      .select('id').eq('user_id', userId).maybeSingle();
+    // Sem sessão autenticada o RLS bloqueia a escrita; o robô roda localmente.
+    if (userId) {
+      // Check if config exists, then insert or update
+      const { data: existing } = await supabase.from('auto_trader_config')
+        .select('id').eq('user_id', userId).maybeSingle();
 
-    if (existing) {
-      await supabase.from('auto_trader_config')
-        .update({ trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() })
-        .eq('user_id', userId);
-    } else {
-      await supabase.from('auto_trader_config')
-        .insert({ user_id: userId, trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() });
+      if (existing) {
+        await supabase.from('auto_trader_config')
+          .update({ trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() })
+          .eq('user_id', userId);
+      } else {
+        await supabase.from('auto_trader_config')
+          .insert({ user_id: userId, trader_is_running: true, is_active: true, last_activity_at: new Date().toISOString() });
+      }
     }
 
     toast({ title: "🚀 Trader iniciado", description: `${stats.blockedSymbols.length} símbolos bloqueados` });
@@ -1911,8 +1922,10 @@ export const MultiAssetTrader = () => {
     setIsRunning(false);
     orphanCleanupDoneRef.current = false;
     
-    const userId = await getUserId();
-    await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
+    const userId = await getUserIdOrNull();
+    if (userId) {
+      await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
+    }
 
     toast({ title: "⏸️ Trader pausado", description: `P&L Total: $${totalPnL.toFixed(2)}` });
   };

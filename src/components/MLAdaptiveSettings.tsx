@@ -31,7 +31,7 @@ function MLAdaptiveSettings() {
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data;

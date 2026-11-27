@@ -63,7 +63,7 @@ function calculateOptimalSLTP(
   
   // 🎯 R:R MÍNIMO de 2:1 - FORÇADO
   const MIN_RR = 2.0;
-  let tpPercent = slPercent * MIN_RR;
+  const tpPercent = slPercent * MIN_RR;
   
   // Calcular valores absolutos
   const slDecimal = slPercent / 100;

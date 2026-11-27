@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getUserId } from "@/lib/anonymousUser";
+import { getUserId, getUserIdOrNull } from "@/lib/anonymousUser";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,10 +54,12 @@ const AutoTraderSettings = () => {
   const { data: savedConfig, refetch } = useQuery({
     queryKey: ['auto-trader-config'],
     queryFn: async () => {
+      const userId = await getUserId();
       const { data, error } = await supabase
         .from('auto_trader_config')
         .select('*')
-        .single();
+        .eq('user_id', userId)
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
       return data;
@@ -72,7 +74,14 @@ const AutoTraderSettings = () => {
 
   const saveConfig = async () => {
     try {
-      const userId = await getUserId();
+      const userId = await getUserIdOrNull();
+      if (!userId) {
+        toast({
+          title: "💾 Configuração local",
+          description: "Entre em uma conta (ou ative login anônimo) para salvar no Supabase.",
+        });
+        return;
+      }
 
       if (savedConfig?.id) {
         const { error } = await supabase

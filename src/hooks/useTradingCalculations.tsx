@@ -145,7 +145,7 @@ export const useTradingCalculations = () => {
     action: 'BUY' | 'SELL',
     atrPercent: number,
     _isScalpAsset: boolean,
-    _mlConfig: any,
+    _mlConfig: unknown,
     highPrice?: number,
     lowPrice?: number,
     symbolProfile?: SymbolRiskProfile,

@@ -13,6 +13,10 @@ dist-ssr
 coverage
 *.local
 
+# Gerados por ferramentas locais (deno check / supabase CLI)
+deno.lock
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

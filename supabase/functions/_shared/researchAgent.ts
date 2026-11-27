@@ -351,7 +351,9 @@ export async function handleResearch(body: Record<string, unknown>, authHeader: 
 
   if (!finalContent) return jsonResponse({ error: 'A pesquisa excedeu o número máximo de etapas. Tente uma pergunta mais específica.' }, 502);
 
-  let { ficha, texto } = extractFicha(finalContent);
+  const extractedFinal = extractFicha(finalContent);
+  let ficha = extractedFinal.ficha;
+  const texto = extractedFinal.texto;
 
   // Uma nova tentativa se a ficha veio ausente/inválida
   if (!ficha) {

@@ -182,10 +182,10 @@ export const useMLAutoCorrector = () => {
     }
 
     // Aplicar correções
-    let stopLoss = originalSL;
-    let takeProfit = originalTP;
-    let leverage = Math.min(originalLeverage, config.maxLeverage);
-    let quantity = originalQty * config.positionSizeMultiplier;
+    const stopLoss = originalSL;
+    const takeProfit = originalTP;
+    const leverage = Math.min(originalLeverage, config.maxLeverage);
+    const quantity = originalQty * config.positionSizeMultiplier;
 
     // Se SL/TP são em percentual, aplicar correções
     // Isso é útil quando os valores originais não estão alinhados com a config ML
@@ -209,7 +209,7 @@ export const useMLAutoCorrector = () => {
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error || !data) {
         // Primeira execução - rodar auto-correção

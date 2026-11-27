@@ -98,7 +98,7 @@ export const useAutoMLSync = (isTestnet: boolean = false, enabled: boolean = tru
         .from('ml_adaptive_config')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       
       if (error || !data) return null;
       
