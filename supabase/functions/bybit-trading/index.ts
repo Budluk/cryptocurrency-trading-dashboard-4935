@@ -380,7 +380,7 @@ async function getLotSizeMeta(symbol: string): Promise<LotSizeMeta | null> {
       maxOrderQtyRaw,
     };
   } catch (e) {
-    console.log('Lot size fetch warning:', e?.message ?? String(e));
+    console.log('Lot size fetch warning:', (e as Error)?.message ?? String(e));
     return null;
   }
 }
@@ -439,7 +439,7 @@ async function placeOrder(params: any) {
     try {
       await setLeverage({ symbol, leverage });
     } catch (e) {
-      console.log('Leverage warning:', e.message);
+      console.log('Leverage warning:', (e as Error)?.message ?? String(e));
     }
   }
 
@@ -511,7 +511,7 @@ async function placeOrder(params: any) {
       return { ...orderResult, stopResult };
     } catch (e) {
       console.error('Trading stop error:', e);
-      return { ...orderResult, stopResult: { error: e?.message ?? String(e) } };
+      return { ...orderResult, stopResult: { error: (e as Error)?.message ?? String(e) } };
     }
   }
 
@@ -645,7 +645,7 @@ async function setLeverage(params: any) {
       leverage = maxLev;
     }
   } catch (e) {
-    console.log('Leverage filter fetch warning:', e?.message ?? String(e));
+    console.log('Leverage filter fetch warning:', (e as Error)?.message ?? String(e));
   }
 
   if (!Number.isFinite(leverage) || leverage < 1) leverage = 1;

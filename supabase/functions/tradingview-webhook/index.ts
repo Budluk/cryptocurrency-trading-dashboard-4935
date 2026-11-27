@@ -1,5 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { checkRateLimit, createRateLimitResponse, getClientIdentifier, rateLimitHeaders } from '../_shared/rateLimit.ts';
+import { RISK, clampLeverage, stopDistancePct } from '../_shared/autonomousRisk.ts';
+import { guardFromState, dailyReview } from '../_shared/autonomousAgent.ts';
 
 
 const corsHeaders = {
@@ -281,16 +283,44 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Signal validated: ${validation.adjustedConfidence}% - ${validation.reason}`);
 
-    // Calcular alavancagem baseada em volatilidade (ATR)
-    let leverage = data.leverage || 20; // Default 20x
-    if (data.atr && data.price) {
-      const volatilityPct = (data.atr / data.price) * 100;
-      if (volatilityPct > 3) leverage = 10;
-      else if (volatilityPct > 2) leverage = 15;
-      else if (volatilityPct > 1) leverage = 20;
-      else leverage = 25;
+    // Gate de memória do agente autônomo: kill switch, blacklist e horários
+    // valem também para sinais vindos da TradingView.
+    const { data: agentStates } = await supabase
+      .from('agent_state')
+      .select('*')
+      .eq('symbol', data.symbol)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    const agentState = agentStates?.[0] ?? null;
+    const { data: recentTrades } = await supabase
+      .from('agent_trades')
+      .select('result, pnl_pct, closed_at, opened_at')
+      .eq('symbol', data.symbol)
+      .order('opened_at', { ascending: false })
+      .limit(200);
+    const review = dailyReview(recentTrades ?? []);
+    const volatilityPct = data.atr && data.price ? (data.atr / data.price) * 100 : undefined;
+    const gate = guardFromState(
+      agentState,
+      { price: Number(data.price) || undefined, atrPct: volatilityPct },
+      new Date().getUTCHours(),
+      new Date(),
+      review.trades ? review.winRate : undefined,
+    );
+    if (!gate.tradable) {
+      const reason = gate.reasons.join('; ') || 'risk_gate';
+      console.log(`⛔ Risk gate blocked ${data.symbol}: ${reason}`);
+      return new Response(
+        JSON.stringify({ status: "ignored", reason: "risk_gate", detail: reason }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
-    
+
+    // Alavancagem limitada ao mesmo RISK usado pelo chat (3x-6x, teto 8x).
+    const requestedLeverage = Number(data.leverage) || (volatilityPct !== undefined
+      ? (volatilityPct > 3 ? RISK.minLeverage : volatilityPct > 2 ? 4 : volatilityPct > 1 ? 5 : RISK.maxLeverage)
+      : RISK.maxLeverage);
+    const leverage = clampLeverage(requestedLeverage);
     console.log(`📊 Setting leverage: ${leverage}x`);
 
     // Primeiro, setar a alavancagem
@@ -313,13 +343,24 @@ Deno.serve(async (req) => {
     }
 
     // 🔧 CORREÇÃO CRÍTICA: Recalcular SL/TP para garantir R:R >= 2:1
-    const { stopLoss, takeProfit, riskReward } = calculateOptimalSLTP(
+    const optimal = calculateOptimalSLTP(
       data.price,
       data.action,
       data.atr,
       data.stop_loss,
       data.take_profit
     );
+    let stopLoss = optimal.stopLoss;
+    const takeProfit = optimal.takeProfit;
+    // Teto único de distância do stop: 0,5% (mesmo limite do chat).
+    if (stopDistancePct(data.price, stopLoss) > RISK.maxStopPct) {
+      stopLoss = data.action === 'buy'
+        ? data.price * (1 - RISK.maxStopPct / 100)
+        : data.price * (1 + RISK.maxStopPct / 100);
+    }
+    const riskReward = stopDistancePct(data.price, stopLoss) > 0
+      ? Math.abs(takeProfit - data.price) / Math.abs(data.price - stopLoss)
+      : 0;
 
     console.log(`📊 Final SL: ${stopLoss.toFixed(4)} | TP: ${takeProfit.toFixed(4)} | R:R: ${riskReward.toFixed(1)}:1`);
 
@@ -379,6 +420,28 @@ Deno.serve(async (req) => {
     if (logError) {
       console.error("⚠️ Log error:", logError);
     }
+
+    // Memória do agente autônomo: abre o registro para que o dailyReview e os
+    // gates futuros tenham dados reais deste sinal.
+    const { error: tradeMemoryError } = await supabase.from('agent_trades').insert({
+      user_id: SYSTEM_USER_ID,
+      symbol: data.symbol,
+      side: data.action === 'buy' ? 'Buy' : 'Sell',
+      entry: Number(data.price),
+      stop_loss: stopLoss,
+      qty: Number(data.qty),
+      result: 'open',
+      opened_at: new Date().toISOString(),
+    });
+    if (tradeMemoryError) console.error('⚠️ agent_trades insert error:', tradeMemoryError);
+
+    const { error: stateMemoryError } = await supabase.from('agent_state').upsert({
+      user_id: SYSTEM_USER_ID,
+      symbol: data.symbol,
+      last_signal_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,symbol' });
+    if (stateMemoryError) console.error('⚠️ agent_state upsert error:', stateMemoryError);
 
     return new Response(
       JSON.stringify({ 

@@ -120,8 +120,10 @@ export async function aiFetch(init: RequestInit): Promise<Response> {
     }
     
     try {
-      const { tools: _t, tool_choice: _c, ...rest } = body as Record<string, unknown>;
-      const payload = p.name === 'freellmapi' ? { ...rest, model: p.model } : { ...body, model: p.model };
+      // FreeLLMAPI is OpenAI-compatible and supports tools/tool_choice (including
+      // translating them for Gemini). Never strip them here: the trading chat
+      // needs tool calls on the first provider as well.
+      const payload = { ...body, model: p.model };
       const res = await fetch(p.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(p.key ? { Authorization: `Bearer ${p.key}` } : {}) },

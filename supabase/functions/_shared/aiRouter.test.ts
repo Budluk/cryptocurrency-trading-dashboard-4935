@@ -84,6 +84,21 @@ describe('aiRouter', () => {
     expect(response.ok).toBe(true);
   });
 
+  test('aiFetch preserves tools for FreeLLMAPI tool calling', async () => {
+    mockFetch.mockResolvedValueOnce(okResponse());
+    const tools = [{ type: 'function', function: { name: 'get_indicators', parameters: {} } }];
+
+    await aiFetch({
+      method: 'POST',
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'BTC' }], tools, tool_choice: 'auto' }),
+    });
+
+    const sent = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+    expect(sent.tools).toEqual(tools);
+    expect(sent.tool_choice).toBe('auto');
+    expect(sent.model).toBe('free-model');
+  });
+
   test('aiFetch falls back to Groq when FreeLLMAPI fails', async () => {
     mockFetch
       .mockRejectedValueOnce(new Error('FreeLLMAPI down'))
