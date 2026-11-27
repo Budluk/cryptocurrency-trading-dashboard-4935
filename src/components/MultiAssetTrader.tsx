@@ -1,3 +1,4 @@
+import { ROBOT_RISK, isBlockedHourUtc, isRobotBlacklisted, maxNotionalForRisk, capLeverage } from '@/config/robotRiskParams';
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -176,7 +177,7 @@ export const MultiAssetTrader = () => {
 
   // Configurações
   const [maxOpenPositions, setMaxOpenPositions] = useState(200);
-  const MAX_CONSECUTIVE_LOSSES = 5;
+  const MAX_CONSECUTIVE_LOSSES = ROBOT_RISK.maxConsecutiveLosses;
   const [historicalWinRate, setHistoricalWinRate] = useState(50);
   
   // Opções avançadas
@@ -311,7 +312,7 @@ export const MultiAssetTrader = () => {
           trader_is_running: false,
           is_active: false,
           min_confidence: 50,
-          leverage_max: 25
+          leverage_max: ROBOT_RISK.leverageMax
         }).select().single();
         
         if (!error && newConfig) {
@@ -640,6 +641,12 @@ export const MultiAssetTrader = () => {
         return;
       }
 
+      // Horários bloqueados (UTC)
+      if (isBlockedHourUtc()) {
+        console.log(`⏸️ Hora ${new Date().getUTCHours()}h UTC bloqueada para entradas`);
+        return;
+      }
+
       // Filtro de horário
       if (timeFilterEnabled) {
         const currentHour = new Date().getUTCHours();
@@ -725,6 +732,8 @@ export const MultiAssetTrader = () => {
         const isInTop10 = topVolNow.includes(a.instrument.symbol);
         const symbol = a.instrument.symbol;
         
+        if (isRobotBlacklisted(symbol)) return false;
+
         // Em TESTNET liberamos a lista (para treinar) sem mexer no modo REAL
         if (!isTestnet) {
           // 🆕 PRIMEIRO: Verificar BLACKLIST GLOBAL (baseado em dados históricos reais)
@@ -1148,7 +1157,7 @@ export const MultiAssetTrader = () => {
             leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 5 : 4);
           }
 
-          const leverage = Math.max(2, Math.min(leverageCap, Math.floor(dynamicLeverage)));
+          const leverage = capLeverage(Math.max(2, Math.min(leverageCap, Math.floor(dynamicLeverage))));
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
@@ -1283,7 +1292,8 @@ export const MultiAssetTrader = () => {
             sizing.usdSize,
             maxMarginPerTrade * leverage,
             freshBalance * (isPriorityMajor ? 0.45 : 0.30),
-            isPriorityMajor ? 40 : 20
+            isPriorityMajor ? 40 : 20,
+            maxNotionalForRisk(freshBalance)
           );
 
           // Calcular quantidade
@@ -1332,8 +1342,12 @@ export const MultiAssetTrader = () => {
             currentPrice, analysisResult.action, atrPercent, isScalpAsset, mlConfigForSLTP,
             highPrice, lowPrice, symbolProfile, analysisResult.signalQuality, analysisResult.m5Support, analysisResult.m5Resistance
           );
-          let stopLoss = sltp.stopLoss;
-          let takeProfit = sltp.takeProfit;
+          // Parâmetros fixos: SL 0.33% / TP 0.60%
+          sltp.stopLossPct = ROBOT_RISK.stopLossPct / 100;
+          sltp.takeProfitPct = ROBOT_RISK.takeProfitPct / 100;
+          const isBuySide = analysisResult.action === 'BUY';
+          let stopLoss = (currentPrice * (isBuySide ? 1 - sltp.stopLossPct : 1 + sltp.stopLossPct)).toFixed(6);
+          let takeProfit = (currentPrice * (isBuySide ? 1 + sltp.takeProfitPct : 1 - sltp.takeProfitPct)).toFixed(6);
 
           // 🔒 VALIDAÇÃO: Garantir SL/TP no lado correto do preço
           const slNum = parseFloat(stopLoss);
@@ -1363,8 +1377,8 @@ export const MultiAssetTrader = () => {
             const tpDist = Math.abs(finalTP - currentPrice);
             const actualRR = slDist > 0 ? tpDist / slDist : 0;
             console.log(`✅ ${symbol}: R:R ${actualRR.toFixed(2)}:1 | SL: ${(sltp.stopLossPct * 100).toFixed(2)}% | TP: ${(sltp.takeProfitPct * 100).toFixed(2)}%`);
-            if (actualRR < 2.3) {
-              console.log(`⛔ ${symbol}: R:R ${actualRR.toFixed(2)} < 2.3 — trade rejeitado`);
+            if (actualRR < 1.7) {
+              console.log(`⛔ ${symbol}: R:R ${actualRR.toFixed(2)} < 1.7 — trade rejeitado`);
               continue;
             }
           }
