@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Concluído em 27/11/2026
-- [x] PR #1 mergeado (`da99e44`); releases `v1.0.0`, `v1.0.1` e `v1.0.2`.
+- [x] PR #1 mergeado (`da99e44`); releases `v1.0.0`, `v1.0.1`, `v1.0.2` e `v1.0.3`.
 - [x] Autenticação/RLS, 5 migrations aplicadas, Edge Functions deployadas e segredos configurados.
 - [x] Aba Pesquisa (somente leitura): tabelas, agente dentro de `ai-market-analysis` e UI com URLs, anexos e ficha estruturada.
 - [x] Bloqueios 401/403 da Pesquisa testados; pesquisa real validada por API e pela interface com sessão admin temporária (removida depois). Nenhuma ordem foi executada.
@@ -22,7 +22,7 @@
 
 ## Validações que dependem do usuário
 - [ ] Chat de trading normal com ordem real — o `dry_run` já foi validado; autorizar uma ordem real só depois de conferir a proposta assinada e dar confirmação explícita
-- [ ] Release `v1.0.3` para `c757b15`/`785fa65`/`a471a5d`/`2564baf`/`d40417e`/`ae1c80d`/`8853184` — criar somente com sua aprovação
+- [x] Release `v1.0.3` publicada em 27/11/2026 com sua aprovação, apontando para `89839e2` (inclui `c757b15`, `785fa65`, `a471a5d`, `2564baf`, `d40417e`, `ae1c80d` e `8853184`)
 - [x] Painel de Observabilidade conferido: sem erros de aplicação nas últimas 24 h (o único `ERROR` foi o comando manual de registro da migration, já corrigido)
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
 
