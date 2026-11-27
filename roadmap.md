@@ -21,7 +21,7 @@
 - [ ] Exclusões definitivas de funções — aguardando indicação do usuário
 
 ## Validações que dependem do usuário
-- [ ] Chat de trading normal com ordem real — o `dry_run` já foi validado; autorizar uma ordem real só depois de conferir a proposta assinada e dar confirmação explícita
+- [x] Decisão do usuário em 27/11/2026: manter apenas simulação. O `dry_run` foi validado, mas nenhuma ordem real foi autorizada ou executada; o flag `BINANCE_ENABLE_LIVE` permanece desligado.
 - [x] Release `v1.0.3` publicada em 27/11/2026 com sua aprovação, apontando para `89839e2` (inclui `c757b15`, `785fa65`, `a471a5d`, `2564baf`, `d40417e`, `ae1c80d` e `8853184`)
 - [x] Painel de Observabilidade conferido: sem erros de aplicação nas últimas 24 h (o único `ERROR` foi o comando manual de registro da migration, já corrigido)
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
