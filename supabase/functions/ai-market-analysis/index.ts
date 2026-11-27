@@ -1,4 +1,4 @@
-import { aiFetch } from '../_shared/aiRouter.ts';
+import { aiFetch, providerHealth } from '../_shared/aiRouter.ts';
 import { handleResearch } from '../_shared/researchAgent.ts';
 import { runAgentLoop, runAgentDaily } from '../_shared/agentLoop.ts';
 import { RISK } from '../_shared/autonomousRisk.ts';
@@ -53,6 +53,16 @@ Deno.serve(async (req) => {
 
   try {
     const reqBody = await req.json();
+
+    // Status somente-leitura do roteador de IA: não chama modelos, não acessa
+    // exchange e não exige autorização de trading. Segue o verify_jwt da função
+    // (configurado no gateway do Supabase) como qualquer outra action aqui.
+    if (reqBody?.action === 'ai_status') {
+      return new Response(JSON.stringify({ success: true, ...providerHealth() }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (typeof reqBody?.action === 'string' && reqBody.action.startsWith('research')) {
       return await handleResearch(reqBody, req.headers.get('Authorization'));
     }

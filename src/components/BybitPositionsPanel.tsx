@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, RefreshCw, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, RefreshCw, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useState, lazy, Suspense } from "react";
@@ -229,79 +229,66 @@ export const BybitPositionsPanel = () => {
 
   return (
     <section aria-label="Conta e posições Bybit" className="space-y-5">
-      {/* Saldo Total Bybit - Mobile Optimized */}
-      <div className="border-b border-border pb-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Único resumo de saldo/posições da Visão geral (P&L detalhado fica no DailyPnLSummary). */}
+      <div aria-label="Resumo da conta Bybit" className="rounded-lg border border-border bg-card/60 p-3 sm:p-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 sm:gap-6">
           <div>
-            <p className="text-xs text-muted-foreground">Saldo total · USDT</p>
-            <p className="text-3xl font-semibold font-mono tabular-nums text-foreground">${totalEquity.toFixed(2)}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Saldo total · USDT</p>
+            <p className="mt-0.5 text-2xl font-semibold font-mono tabular-nums text-foreground">${totalEquity.toFixed(2)}</p>
           </div>
-          <div className="flex gap-4 sm:gap-6">
-            <div>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">Carteira</p>
-              <p className="text-sm sm:text-base font-semibold">${totalWalletBalance.toFixed(2)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">Disponível</p>
-              <p className="text-sm sm:text-base font-semibold text-success">${totalAvailableBalance.toFixed(2)}</p>
-            </div>
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Disponível</p>
+            <p className="mt-0.5 text-base font-semibold font-mono tabular-nums text-success">${totalAvailableBalance.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Carteira</p>
+            <p className="mt-0.5 text-base font-semibold font-mono tabular-nums text-foreground">${totalWalletBalance.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Posições abertas</p>
+            <p className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{positions?.length || 0}</p>
           </div>
         </div>
       </div>
 
-      {/* Header Mobile Optimized */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      {/* Cabeçalho da lista: sem contadores/P&L duplicados do resumo e do DailyPnLSummary. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
-            
+          <h3 className="flex min-h-9 items-center gap-2 text-lg font-semibold sm:text-xl">
+            <Activity className="h-5 w-5 text-primary" aria-hidden="true" />
             Posições abertas
           </h3>
           {bybitUnstable && (
-            <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-warning/50 text-warning mb-1">
+            <Badge variant="outline" className="mt-1 border-warning/50 bg-warning/10 text-warning">
               ⚠ Bybit instável — mostrando último dado
             </Badge>
           )}
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            {positions?.length || 0} posições abertas
-          </p>
         </div>
-        
-        {/* Actions Row - Mobile Optimized */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Button 
-              size="sm" 
-              variant="outline" 
-              aria-label="Atualizar posições"
-              title="Atualizar posições"
-              onClick={() => refetch()}
-              disabled={isLoading}
-              className="h-9 px-3 text-xs sm:text-sm"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </Button>
-            {positions && positions.length > 0 && (
-              <Button
-                size="sm"
-                variant="destructive"
-                aria-label="Fechar todas as posições"
-                onClick={() => setConfirmClose({ all: true })}
-                disabled={closingPosition === 'ALL'}
-                className="h-9 px-3 text-xs sm:text-sm"
-              >
-                <XCircle className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Fechar Todas</span>
-              </Button>
-            )}
-          </div>
-          
+
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="Atualizar posições"
+            title="Atualizar posições"
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="min-h-10 px-3 text-xs sm:text-sm"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          </Button>
           {positions && positions.length > 0 && (
-            <Badge 
-              variant={totalPnL >= 0 ? "default" : "destructive"} 
-              className="text-base sm:text-lg px-3 sm:px-4 py-1.5 sm:py-2 font-mono"
+            <Button
+              size="sm"
+              variant="destructive"
+              aria-label="Fechar todas as posições"
+              onClick={() => setConfirmClose({ all: true })}
+              disabled={closingPosition === 'ALL'}
+              className="min-h-10 px-3 text-xs sm:text-sm"
             >
-              {totalPnL >= 0 ? '+' : ''}${(totalPnL || 0).toFixed(2)}
-            </Badge>
+              <XCircle className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+              <span className="hidden sm:inline">Fechar Todas</span>
+            </Button>
           )}
         </div>
       </div>
@@ -345,9 +332,9 @@ export const BybitPositionsPanel = () => {
                       position.side === 'Buy' ? 'bg-success/20' : 'bg-destructive/20'
                     }`}>
                       {position.side === 'Buy' ? (
-                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-success" />
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-success" aria-hidden="true" />
                       ) : (
-                        <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
+                        <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" aria-hidden="true" />
                       )}
                     </div>
                     <div>
@@ -371,9 +358,9 @@ export const BybitPositionsPanel = () => {
                       className="h-8 w-8 p-0"
                     >
                       {expandedCharts[position.symbol] ? (
-                        <ChevronUp className="h-4 w-4" />
+                        <ChevronUp className="h-4 w-4" aria-hidden="true" />
                       ) : (
-                        <ChevronDown className="h-4 w-4" />
+                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
                       )}
                     </Button>
                     <Badge 
@@ -453,11 +440,12 @@ export const BybitPositionsPanel = () => {
                   <Button
                     variant="destructive"
                     size="sm"
+                    aria-label={`Fechar posição ${position.symbol}`}
                     onClick={() => handleClosePosition(position)}
                     disabled={closingPosition === position.symbol}
-                    className="h-9 px-4 text-xs sm:text-sm"
+                    className="min-h-10 px-4 text-xs sm:text-sm"
                   >
-                    <XCircle className="h-4 w-4 mr-1 sm:mr-2" />
+                    <XCircle className="h-4 w-4 mr-1 sm:mr-2" aria-hidden="true" />
                     {closingPosition === position.symbol ? '...' : 'Fechar'}
                   </Button>
                 </div>

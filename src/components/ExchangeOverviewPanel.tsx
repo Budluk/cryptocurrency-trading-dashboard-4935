@@ -25,7 +25,7 @@ type SimulationResult = {
   action?: string;
 };
 
-const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
+const inputClass = 'min-h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
 
 export const ExchangeOverviewPanel = () => {
   const [exchangeId, setExchangeId] = useState('BINANCE');
@@ -77,7 +77,7 @@ export const ExchangeOverviewPanel = () => {
   };
 
   return (
-    <Card className="workspace-card">
+    <Card aria-label="Visão geral de exchanges" className="workspace-card">
       <CardHeader className="gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="text-lg">B3 + corretoras</CardTitle>
@@ -154,7 +154,7 @@ export const ExchangeOverviewPanel = () => {
                 <input className={inputClass} value={qty} inputMode="decimal" onChange={(event) => setQty(event.target.value)} />
               </label>
             </div>
-            <Button size="sm" disabled={simulate.isPending} onClick={() => simulate.mutate()}>
+            <Button size="sm" className="min-h-10" disabled={simulate.isPending} onClick={() => simulate.mutate()}>
               {simulate.isPending ? 'Simulando…' : 'Simular ordem'}
             </Button>
             <p className="text-xs text-muted-foreground">O botão força <code>dry_run:true</code>. Para operar de verdade é necessário token HMAC assinado pelo servidor e opt-in por exchange.</p>

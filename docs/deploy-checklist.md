@@ -20,6 +20,15 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 > `exchange_list` (7 venues), `place_order` com `dry_run:true` (`simulated:true`,
 > `reason:"dry_run"`, nenhuma ordem) e webhook B3 sem/ com assinatura inválida (401).
 > Nenhuma ordem real foi disparada e nenhum segredo foi impresso.
+>
+> ✅ Em 28/11/2026 foram aplicadas as migrations de rollover B3 e de
+> risco/telemetria (versões `20261128120000` e `20261128130000`), e as functions
+> `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` redeployadas pela
+> aba **Code** (`POST /functions/deploy?slug=…` → HTTP 201). O CI passou a ter
+> **8 checks bloqueantes** com o job de E2E/acessibilidade. Validação local:
+> typecheck, lint (0 erros/116 avisos), 20 Vitest, 132 Bun, 5 Playwright, build,
+> audit (0), `deno check` das 3 funções e YAML dos workflows. Nenhuma ordem real
+> foi executada, nenhum segredo foi impresso e nenhum PAT foi criado.
 
 ---
 
@@ -240,13 +249,31 @@ O webhook grava `b3_ticks` + `b3_signals`, aplica pregão 09:00–17:50 BRT,
 confiança mínima 80, stop máximo de 0,5% e deduplica em 5 s. Ele **nunca**
 chama `place_order`. Contratos vencidos (WINZ25/WDOF26) são ignorados.
 
+### 2.6 Rollover B3 e orçamento de risco (✅ aplicadas em 28/11/2026)
+
+Duas migrations foram aplicadas pelo **SQL Editor** do Dashboard (sem PAT) e
+registradas em `supabase_migrations.schema_migrations`:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `20261128120000_b3_contract_rollover.sql` | Cria `b3_contracts` com vigência por símbolo (`WINZ26` até 16/12, `WDOZ26` até 01/12, `WDOF27` desde 02/12, `WINF27` desde 17/12), remove os CHECKs antigos e valida por trigger em `b3_ticks`, `b3_signals` e `b3_analysis`. `WINZ25`/`WDOF26` continuam proibidos. |
+| `20261128130000_risk_budget_and_retention.sql` | Cria `risk_budgets` por usuário (`-2%`/dia, 5 posições, 20 trades), trigger de bloqueio em `agent_trades` e `cleanup_old_telemetry(30,90)` executável somente por `service_role`. |
+
+Verificação no SQL Editor: 4 contratos vigentes, 4 functions/triggers presentes
+(`b3_assert_valid_contract_symbol`, `enforce_risk_budget_on_agent_trade`,
+`cleanup_old_telemetry` e os triggers nas tabelas B3/agent_trades) e versões
+`20261128120000`/`20261128130000` no histórico. Nenhuma linha de telemetria foi
+apagada manualmente; a limpeza padrão respeita 30/90 dias.
+
 ---
 
 ## Etapa 3 — Deploy das Edge Functions (✅ aplicadas em 27/11/2026)
 
 > Execute **na raiz do repositório** para que a CLI use o `supabase/config.toml` (que define `verify_jwt` por função).
-> Versões ativas confirmadas: `ai-market-analysis` v138, `ai-signal-gateway` v1,
-> `bybit-trading` v164 e `tradingview-webhook` v124.
+> Versões anteriores confirmadas: `ai-market-analysis` v138, `ai-signal-gateway` v1,
+> `bybit-trading` v164 e `tradingview-webhook` v124. Em 28/11/2026,
+> `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` foram atualizadas
+> pela aba **Code** (HTTP 201); o Dashboard incrementa a versão automaticamente.
 
 ```powershell
 supabase functions deploy bybit-trading       --project-ref uohdpxkfgxmtlosnmspf
@@ -315,8 +342,11 @@ supabase secrets set `
 | `OPENAI_API_KEY` (+ `OPENAI_MODEL`, default `gpt-4o-mini`) | 3º provedor do `aiRouter` | opcional |
 | `LOVABLE_API_KEY` | fallback final do `aiRouter`, chat (`google/gemini-3.8-flash`), `ai-market-analysis`, `ai-comprehensive-analysis`, `ai-trading-intelligence`, `ml-auto-corrector` | **sim — sem ela o chat não responde** |
 | `GITHUB_TOKEN` | `researchAgent` e `tradingChat` (API do GitHub) | recomendado; sem token o limite é 60 req/h |
+| `B3_WEBHOOK_SECRET` | `tradingview-webhook` (HMAC do canal B3) | sim, para sinais B3; no Actions é opcional (smoke pula o teste assinado) |
+| `<ID>_API_KEY` / `<ID>_API_SECRET` / `<ID>_API_PASSPHRASE` | roteador multi-exchange em `bybit-trading` | só se quiser ordens reais na venue; `BINANCE_ENABLE_LIVE` e equivalentes permanecem desligados |
 
 > Segredos com espaços ou `=` no valor precisam de aspas (PowerShell: use aspas duplas, como acima).
+> Procedimento de rotação sem expor valores: `docs/secrets-runbook.md`.
 > Depois de setar: `supabase secrets list --project-ref uohdpxkfgxmtlosnmspf` para conferir.
 
 ---
@@ -515,7 +545,18 @@ curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
 # esperado: JSON com results; linhas novas em ai_decisions e agent_routine_log
 ```
 
-Na aplicação: abrir o painel **Observabilidade** → as 4 consultas (`bot_errors`, `auto_trader_logs`, `ai_decisions`, `audit_log`) devem carregar sem erro → clicar em **"Testar chave"** (chama `chat_api_status`) → esperar `chave válida`.
+Na aplicação: abrir o painel **Observabilidade** → as consultas (`bot_errors`, `auto_trader_logs`, `ai_decisions`, `audit_log` e estado do agente) devem carregar sem erro → clicar em **"Testar chave"** (chama `chat_api_status`) → esperar `chave válida`. O painel também mostra o provedor de IA ativo, consultado pela action `ai_status`:
+
+```powershell
+curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
+  -H "Authorization: Bearer $ANON" -H "apikey: $ANON" -H "Content-Type: application/json" `
+  -d '{\"action\":\"ai_status\"}'
+# esperado: {"success":true,"providers":[...],"fallbackConfigured":true}
+# cada provider traz apenas name/model/configured/circuitOpen/failures/rateLimited
+```
+
+> `ai_status` não chama modelos e nunca devolve chaves, URLs ou segredos. A função
+> mantém `verify_jwt = true`; use o token da sessão ou a anon key.
 
 ### 5.4 Gateway de sinais (`ai-signal-gateway`)
 
@@ -534,14 +575,43 @@ npm ci --legacy-peer-deps
 npm run lint:ci              # 0 erros e no máximo 116 avisos (orçamento atual)
 npm run audit:ci             # bloqueia vulnerabilidades de produção moderate/high/critical (hoje: 0)
 npm run typecheck            # tsc --noEmit -p tsconfig.app.json  (deve passar)
-npm run test:coverage        # Vitest (inclui src/lib/chatAttachments.test.ts)
+npm run test                 # Vitest (20 testes)
+npm run build
 
+# E2E e acessibilidade (o chamador inicia o preview):
+npm run build
+npm run preview -- --host 127.0.0.1 --port 4173   # em outro terminal
+npm run test:e2e -- --workers=1                   # 5 testes Playwright
+
+# Edge functions (Bun): inclui exchangeGateway/exchangeRegistry/exchangeAdapters/b3Signals
 cd supabase\functions\_shared
-bun test rateLimit.test.ts aiRouter.test.ts autonomousRisk.test.ts autonomousAgent.test.ts indicators.test.ts agentLoop.test.ts researchContext.test.ts
+bun test *.test.ts
 cd ..\bybit-trading
 bun test hmacSignature.test.ts
 cd ..\..\..
+
+# Checagem estrita das funções bloqueantes:
+npx --yes deno@latest check supabase/functions/bybit-trading/index.ts supabase/functions/tradingview-webhook/index.ts supabase/functions/ai-market-analysis/index.ts
 ```
+
+O CI de `main` tem **8 checks bloqueantes**: Lint & Typecheck, Vitest,
+E2E/Acessibilidade, Bun, Build, Security Audit, gitleaks e Edge Functions Check.
+O job `test-e2e` instala Chromium, sobe o `vite preview` e anexa o relatório do
+Playwright como artifact.
+
+### 5.6 Daily Smoke (produção, somente simulação)
+
+`Actions → Daily Smoke → Run workflow` (também agenda todo dia às 09:00 BRT).
+Usa `vars.SUPABASE_URL` e `secrets.SUPABASE_SERVICE_ROLE_KEY`; nunca imprime
+valores de segredo e **não** executa ordens reais:
+
+- `exchange_list`: espera 7 venues.
+- `place_order`: `dry_run:true` → `simulated:true`, `reason:"dry_run"`.
+- `ai_status`: lista configurada de provedores, sem chaves/URLs.
+- Webhook B3 sem assinatura → 401; com `B3_WEBHOOK_SECRET` configurado no
+  Actions, assinatura válida com `confidence:75` → `ignored` (abaixo do mínimo 80,
+  portanto sem gravar sinal).
+- `bot_errors` em 24 h (aviso, não falha) e `cleanup_old_telemetry(30,90)`.
 
 ---
 
@@ -585,6 +655,9 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 - [x] Release `v1.0.3` publicada no GitHub com aprovação explícita, apontando para `89839e2`: https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/releases/tag/v1.0.3
 - [x] Revisão responsiva: preview em desktop e em iframe com viewport de 390 px — sem rolagem horizontal, navegação e painel B3/corretores renderizados, nenhum erro no console.
 - [x] Decisão do usuário: manter somente simulação. Nenhuma ordem real foi autorizada/executada e `BINANCE_ENABLE_LIVE` continua desligado.
+- [x] Melhorias de 28/11: rollover B3, saúde dos provedores de IA, risco no servidor, telemetria com retenção, E2E/acessibilidade, simplificação visual e runbook de segredos. Migrations aplicadas, 3 functions redeployadas pela aba **Code** e validação local verde (inclui Playwright 5/5 e Bun 132).
+- [ ] CI 8/8 e `Daily Smoke` de produção: confirmar após o push e registrar o run ID aqui.
+- [ ] Release `v1.0.4`: não publicada; aguardando aprovação explícita.
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:
@@ -605,5 +678,6 @@ Rollbacks:
 4. **`npm audit` — resolvido em 27/11/2026.** `react-router-dom` subiu de `^6.26.2` para `^7.18.7` (com `react-router@7.18.7`), corrigindo os 2 avisos `moderate` (open redirect e desserialização de erro em SSR). `npm run audit:ci` agora usa `--audit-level=moderate` e reporta **0 vulnerabilidades**; typecheck, 20 testes Vitest, lint (0 erros/116 avisos) e build passaram com a v7. O uso de rotas no app é apenas declarativo (`BrowserRouter`/`Routes`/`Route`/`Navigate`/`Outlet`), preservado na v7.
 5. **Chat normal com IA real** — o modo Pesquisa foi validado e o `dry_run` do chat comum passou em produção (seção 5.1c), sem ordens nem escritas. A confirmação de ordens reais segue sem teste em produção: só execute com sua autorização explícita, conferindo a proposta assinada antes de Confirmar. A `bybit-trading` já foi redeployada pela aba **Code**.
 6. **Plano Pro do Supabase** — necessário apenas para os alertas de "senhas vazadas".
-7. **Conta admin permanente e revisão visual** — a validação na UI usou sessão temporária; falta testar com a conta do usuário e conferir celular/desktop.
-8. **Créditos na OpenAI/Lovable** — OpenAI sem quota e Lovable sem créditos; o Groq free tier pode devolver `429` (~60 s). O agente já repete uma vez; créditos eliminam o gargalo.
+7. **Conta admin permanente** — a validação na UI usou sessão temporária; a revisão visual em desktop e no viewport de 390 px foi concluída em 28/11 (Playwright/axe sem violações críticas/graves), mas a conta do usuário ainda não foi usada.
+8. **Créditos na OpenAI/Lovable** — OpenAI sem quota e Lovable sem créditos; o Groq free tier pode devolver `429` (~60 s). O `aiRouter` repete uma vez com `Retry-After` curto; créditos eliminam o gargalo.
+9. **`ai_status` e segredo B3 no Actions** — `ai_status` exige JWT da função (`verify_jwt = true`); `B3_WEBHOOK_SECRET` no Actions é opcional e, se ausente, o `Daily Smoke` pula só o teste assinado.

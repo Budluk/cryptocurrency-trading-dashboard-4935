@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  exchangeCredentials, exchangeSummary, isB3Symbol, isExchangeLiveEnabled,
-  isExpiredB3Symbol, normalizeSymbol, SUPPORTED_EXCHANGES,
+  B3_CONTRACTS, B3_SYMBOLS, exchangeCredentials, exchangeSummary, getExchangeSpec,
+  isB3Symbol, isExchangeLiveEnabled, isExpiredB3Symbol, normalizeSymbol, SUPPORTED_EXCHANGES,
 } from './exchangeRegistry.ts';
+
+const dia20 = new Date('2026-11-20T14:00:00Z');
+const dia02 = new Date('2026-12-02T14:00:00Z');
+const dia03 = new Date('2026-12-03T14:00:00Z');
+const dia18 = new Date('2026-12-18T14:00:00Z');
 
 describe('exchange registry', () => {
   it('registra Bybit, cinco exchanges e B3', () => {
@@ -12,13 +17,45 @@ describe('exchange registry', () => {
     expect(exchangeSummary()).toHaveLength(7);
   });
 
-  it('aceita somente contratos B3 vigentes', () => {
-    expect(isB3Symbol('WINZ26')).toBe(true);
-    expect(isB3Symbol('WDOZ26')).toBe(true);
-    expect(isB3Symbol('WINZ25')).toBe(false); // vencido não é aceito
+  it('registra os quatro contratos vigentes/agendados sem habilitar ordens na B3', () => {
+    const b3 = getExchangeSpec('B3')!;
+    expect(b3.symbols).toEqual(['WINZ26', 'WDOZ26', 'WINF27', 'WDOF27']);
+    expect([...B3_SYMBOLS]).toEqual(b3.symbols);
+    expect(B3_CONTRACTS.map((c) => [c.symbol, c.validFrom, c.expiresAt, c.ativo])).toEqual([
+      ['WINZ26', '2026-01-01', '2026-12-16', true],
+      ['WDOZ26', '2026-01-01', '2026-12-01', true],
+      ['WINF27', '2026-12-17', '2027-01-31', true],
+      ['WDOF27', '2026-12-02', '2027-01-31', true],
+    ]);
+    expect(b3.supportsOrders).toBe(false);
+    expect(isExchangeLiveEnabled(b3, () => 'true')).toBe(false);
+  });
+
+  it('aceita somente contratos B3 vigentes na data informada', () => {
+    expect(isB3Symbol('WINZ26', dia20)).toBe(true);
+    expect(isB3Symbol('WDOZ26', dia20)).toBe(true);
+    expect(isB3Symbol('WDOF27', dia20)).toBe(false);
+    expect(isB3Symbol('WINF27', dia20)).toBe(false);
+    expect(isB3Symbol('WDOZ26', dia02)).toBe(false);
+    expect(isB3Symbol('WDOF27', dia02)).toBe(true);
+    expect(isB3Symbol('WDOF27', dia03)).toBe(true);
+    expect(isB3Symbol('WINZ26', dia18)).toBe(false);
+    expect(isB3Symbol('WINF27', dia18)).toBe(true);
+    expect(isB3Symbol('winf27-perp', dia18)).toBe(true);
+    expect(isB3Symbol('WINZ25', dia20)).toBe(false);
+    expect(isB3Symbol('WINZ25', dia18)).toBe(false);
+    expect(isB3Symbol('WDOF26', dia20)).toBe(false);
+    expect(isB3Symbol('WDOF26', dia18)).toBe(false);
+    expect(isB3Symbol('BTCUSDT', dia20)).toBe(false);
+    expect(isB3Symbol('WINZ26', new Date('invalid'))).toBe(false);
+  });
+
+  it('mantém a rejeição explícita dos contratos legados', () => {
     expect(isExpiredB3Symbol('WINZ25')).toBe(true);
     expect(isExpiredB3Symbol('WDOF26')).toBe(true);
+    expect(isExpiredB3Symbol('winz25-perp')).toBe(true);
     expect(isExpiredB3Symbol('WINZ26')).toBe(false);
+    expect(isExpiredB3Symbol('WDOF27')).toBe(false);
   });
 
   it('normaliza símbolos por exchange', () => {

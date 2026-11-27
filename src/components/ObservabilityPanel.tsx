@@ -16,6 +16,10 @@ import { toast } from "sonner";
 type AgentState = SupabaseDatabase["public"]["Tables"]["agent_state"]["Row"];
 type AgentRoutine = SupabaseDatabase["public"]["Tables"]["agent_routine_log"]["Row"];
 type AgentTrade = SupabaseDatabase["public"]["Tables"]["agent_trades"]["Row"];
+type ProviderHealth = {
+  name: string; model: string; configured: boolean;
+  circuitOpen: boolean; failures: number; rateLimited: boolean;
+};
 
 const dayAgo = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 const time = (v: string | null | undefined) =>
@@ -131,6 +135,18 @@ export function ObservabilityPanel() {
     refetchInterval: 30000,
   });
 
+  const aiStatus = useQuery({
+    queryKey: ["obs-ai-status"],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("ai-market-analysis", { body: { action: "ai_status" } });
+      if (error) throw error;
+      const payload = data as { providers?: ProviderHealth[]; fallbackConfigured?: boolean } | null;
+      return { providers: payload?.providers ?? [], fallbackConfigured: !!payload?.fallbackConfigured };
+    },
+    refetchInterval: 60000,
+    retry: 1,
+  });
+
   const audit = useQuery({
     queryKey: ["obs-audit"],
     queryFn: async () => {
@@ -151,7 +167,7 @@ export function ObservabilityPanel() {
   });
 
   const refreshAll = () => {
-    ["obs-errors", "obs-logs", "obs-decisions", "obs-audit", "obs-agent-state", "obs-agent-routine", "obs-agent-trades"]
+    ["obs-errors", "obs-logs", "obs-decisions", "obs-audit", "obs-agent-state", "obs-agent-routine", "obs-agent-trades", "obs-ai-status"]
       .forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
   };
 
@@ -186,6 +202,13 @@ export function ObservabilityPanel() {
       agentBlocked: states.filter((s) => s.blacklisted || (s.kill_until && new Date(s.kill_until) > new Date())).length,
     };
   }, [errors.data, decisions.data, logs.data, agentState.data, agentTrades.data]);
+
+  const activeProvider = useMemo(() => {
+    const list = aiStatus.data?.providers ?? [];
+    return list.find((p) => p.configured && !p.circuitOpen && !p.rateLimited)
+      ?? list.find((p) => p.configured && !p.circuitOpen)
+      ?? null;
+  }, [aiStatus.data]);
 
   const failing = errors.isError || logs.isError || decisions.isError
     || agentState.isError || agentRoutine.isError || agentTrades.isError;
@@ -226,6 +249,10 @@ export function ObservabilityPanel() {
           <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-xs">
             {apiCheck ? (apiCheck.ok ? <ShieldCheck className="h-4 w-4 text-success" /> : <AlertTriangle className="h-4 w-4 text-destructive" />) : <Server className="h-4 w-4 text-muted-foreground" />}
             <span>{apiCheck ? `Bybit: ${apiCheck.ok ? "OK" : apiCheck.detail} (${apiCheck.ms}ms)` : "Bybit: não verificado"}</span>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-xs" aria-label="Provedor de IA ativo">
+            {activeProvider ? <Bot className="h-4 w-4 text-success" /> : <AlertTriangle className="h-4 w-4 text-warning" />}
+            <span>IA: {activeProvider ? `${activeProvider.name} (${activeProvider.model})` : aiStatus.isError ? "indisponível" : "sem provedor livre"}</span>
           </div>
         </div>
 

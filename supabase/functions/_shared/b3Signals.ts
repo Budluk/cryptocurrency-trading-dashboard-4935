@@ -3,7 +3,7 @@
  * a B3 é integrada como fonte de sinais e simulação ao lado da Bybit.
  */
 
-import { B3_SYMBOLS, isB3Symbol, isExpiredB3Symbol, normalizeSymbol } from './exchangeRegistry.ts';
+import { isB3Symbol, isExpiredB3Symbol, normalizeSymbol } from './exchangeRegistry.ts';
 import { RISK, clampLeverage } from './autonomousRisk.ts';
 
 export interface B3Alert {
@@ -51,11 +51,9 @@ export function isB3TradingWindow(date: Date): boolean {
 }
 
 export function validateB3Alert(input: B3Alert, date = new Date()): B3Validation {
-  if (!isB3Symbol(input.symbol)) {
-    return { ok: false, reason: `Símbolo B3 inválido. Use ${B3_SYMBOLS.join(' ou ')}` };
-  }
-  if (isExpiredB3Symbol(input.symbol)) {
-    return { ok: false, reason: 'Contrato vencido (WINZ25/WDOF26). Usar WINZ26/WDOZ26' };
+  // Validação genérica: a lista de contratos e a vigência ficam no registry.
+  if (!isB3Symbol(input.symbol, date) || isExpiredB3Symbol(input.symbol)) {
+    return { ok: false, reason: 'Símbolo B3 inválido ou contrato não vigente na data atual' };
   }
   if (!/^(buy|sell|compra|venda)$/i.test(String(input.action ?? ''))) {
     return { ok: false, reason: 'Ação deve ser buy ou sell' };

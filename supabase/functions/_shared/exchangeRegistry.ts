@@ -17,8 +17,7 @@ export interface ExchangeSpec {
   id: ExchangeId;
   name: string;
   kind: ExchangeKind;
-  /** Símbolos negociáveis; no caso da B3, contratos vigentes.
-   * Revisar a rolagem na virada do mês/vencimento. */
+  /** Símbolos conhecidos; na B3, a vigência é filtrada por isB3Symbol. */
   symbols: string[];
   keyEnv: string;
   secretEnv: string;
@@ -33,12 +32,41 @@ export interface ExchangeSpec {
   brokers?: string[];
 }
 
-export const B3_SYMBOLS = ['WINZ26', 'WDOZ26'] as const;
+/** Vigência civil (Brasília) de cada contrato B3; datas inclusivas. */
+export interface B3Contract {
+  symbol: string;
+  validFrom: string; // YYYY-MM-DD
+  expiresAt: string; // YYYY-MM-DD
+  ativo: boolean;
+}
 
 /**
- * Contratos B3 vigentes em 27/11/2026. WINZ26 vence em 16/12/2026 e
- * WDOZ26 em 01/12/2026. Não usar WINZ25/WDOF26 (vencidos).
+ * Registro dos contratos B3. A rolagem é feita aqui (e na tabela
+ * public.b3_contracts): WDOZ26 -> WDOF27 em 02/12/2026 e
+ * WINZ26 -> WINF27 em 17/12/2026. WINZ25/WDOF26 nunca são aceitos.
  */
+export const B3_CONTRACTS: readonly B3Contract[] = [
+  { symbol: 'WINZ26', validFrom: '2026-01-01', expiresAt: '2026-12-16', ativo: true },
+  { symbol: 'WDOZ26', validFrom: '2026-01-01', expiresAt: '2026-12-01', ativo: true },
+  { symbol: 'WINF27', validFrom: '2026-12-17', expiresAt: '2027-01-31', ativo: true },
+  { symbol: 'WDOF27', validFrom: '2026-12-02', expiresAt: '2027-01-31', ativo: true },
+];
+
+/** Contratos vigentes e agendados (para registry/UI); a vigência é checada por isB3Symbol. */
+export const B3_SYMBOLS: readonly string[] = B3_CONTRACTS.map((c) => c.symbol);
+
+/** Data civil de Brasília, no formato YYYY-MM-DD (comparável lexicograficamente). */
+function b3TradingDate(date: Date): string | null {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+/** Registro único de venues; a B3 usa os contratos acima, sem ordens reais. */
 export const SUPPORTED_EXCHANGES: readonly ExchangeSpec[] = [
   {
     id: 'BYBIT', name: 'Bybit', kind: 'crypto-perp',
@@ -104,13 +132,19 @@ export function getExchangeSpec(value: unknown): ExchangeSpec | null {
   return SUPPORTED_EXCHANGES.find((s) => s.id === value) ?? null;
 }
 
-export function isB3Symbol(symbol: unknown): boolean {
+export function isB3Symbol(symbol: unknown, date: Date = new Date()): boolean {
   if (typeof symbol !== 'string') return false;
+  const day = b3TradingDate(date);
+  if (!day) return false;
   const upper = symbol.trim().toUpperCase();
-  return B3_SYMBOLS.some((s) => s === upper || upper.startsWith(`${s}-`));
+  return B3_CONTRACTS.some((contract) =>
+    contract.ativo &&
+    day >= contract.validFrom && day <= contract.expiresAt &&
+    (upper === contract.symbol || upper.startsWith(`${contract.symbol}-`)),
+  );
 }
 
-/** Nunca aceita contratos vencidos (WINZ25/WDOF26). */
+/** Nunca aceita os contratos legados vencidos (WINZ25/WDOF26). */
 export function isExpiredB3Symbol(symbol: unknown): boolean {
   if (typeof symbol !== 'string') return false;
   return /^(WINZ25|WDOF26)(\b|-|$)/i.test(symbol.trim());

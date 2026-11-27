@@ -115,14 +115,14 @@ export const DailyPnLSummary = memo(() => {
   const gridCols = cards.length === 1 ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-4';
 
   return (
-    <div className={`grid ${gridCols} gap-2 sm:gap-4`}>
+    <section aria-label="Resumo de P&L" className={`grid ${gridCols} gap-2 sm:gap-4`}>
       {cards.map(card => {
         const IconComponent = card.icon;
         return (
           <Card key={card.key} className="stat-card group p-3 sm:p-4">
             <div className="flex items-start justify-between mb-2 sm:mb-4">
               <div className={`p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl ${getIconBgClass(card.value)} transition-colors`}>
-                <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" />
+                <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
               </div>
               <div className="hidden sm:block">{card.badge}</div>
             </div>
@@ -131,11 +131,11 @@ export const DailyPnLSummary = memo(() => {
               <p className={`text-xl sm:text-3xl font-bold font-mono tracking-tight ${getColorClass(card.value)}`}>
                 {formatValue(card.value)}
               </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground/70 hidden sm:block">{card.sublabel}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">{card.sublabel}</p>
             </div>
           </Card>
         );
       })}
-    </div>
+    </section>
   );
 });

@@ -13,9 +13,13 @@ dist-ssr
 coverage
 *.local
 
-# Gerados por ferramentas locais (deno check / supabase CLI)
+# Gerados por ferramentas locais (deno check / supabase CLI / Playwright)
 deno.lock
 supabase/.temp/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 
 # Editor directories and files
 .vscode/*

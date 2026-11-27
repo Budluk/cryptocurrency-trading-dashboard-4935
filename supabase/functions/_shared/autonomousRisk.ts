@@ -92,6 +92,48 @@ export function hasEnoughLiquidity(rvol?: number): boolean {
   return (rvol ?? 0) >= RISK.minRvol;
 }
 
+/**
+ * Orçamento diário aplicado no servidor antes de qualquer ordem real.
+ * Os limites podem ser sobrescritos por `public.risk_budgets` no banco.
+ */
+export const BUDGET = {
+  maxDailyLossPct: -2,
+  maxOpenPositions: 5,
+  maxDailyTrades: 20,
+} as const;
+
+export interface RiskBudgetLimits {
+  maxDailyLossPct: number;
+  maxOpenPositions: number;
+  maxDailyTrades: number;
+}
+
+export interface RiskBudgetState {
+  dailyPnlPct?: number;
+  openPositions?: number;
+  dailyTrades?: number;
+}
+
+/** Bloqueia novas entradas quando o orçamento diário foi consumido. */
+export function checkRiskBudget(
+  state: RiskBudgetState,
+  limits: RiskBudgetLimits = BUDGET,
+): { allowed: boolean; reason?: string } {
+  const daily = Number(state.dailyPnlPct ?? 0);
+  if (Number.isFinite(daily) && daily <= limits.maxDailyLossPct) {
+    return { allowed: false, reason: `perda diária de ${Math.abs(daily).toFixed(2)}% atingiu ${Math.abs(limits.maxDailyLossPct)}%` };
+  }
+  const open = Number(state.openPositions ?? 0);
+  if (Number.isFinite(open) && open >= limits.maxOpenPositions) {
+    return { allowed: false, reason: `${open} posições abertas (limite ${limits.maxOpenPositions})` };
+  }
+  const trades = Number(state.dailyTrades ?? 0);
+  if (Number.isFinite(trades) && trades >= limits.maxDailyTrades) {
+    return { allowed: false, reason: `${trades} operações hoje (limite ${limits.maxDailyTrades})` };
+  }
+  return { allowed: true };
+}
+
 /** Alavancagem sempre dentro da faixa 3x-6x, com teto duro de 8x. */
 export function clampLeverage(requested: number): number {
   if (!Number.isFinite(requested)) return RISK.minLeverage;

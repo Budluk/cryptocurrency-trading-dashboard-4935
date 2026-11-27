@@ -11,6 +11,7 @@ import {
   maxRiskQuantity,
   stopDistancePct,
   decisionGuard,
+  checkRiskBudget,
 } from './autonomousRisk.ts';
 
 describe('autonomousRisk', () => {
@@ -86,6 +87,18 @@ describe('autonomousRisk', () => {
     expect(g.regime).toBe('trend');
     expect(g.tradable).toBe(false);
     expect(g.reason).toContain('perdas');
+  });
+
+  test('orçamento diário bloqueia perda, excesso de posições e de operações', () => {
+    expect(checkRiskBudget({ dailyPnlPct: -1.5, openPositions: 2, dailyTrades: 4 }).allowed).toBe(true);
+    expect(checkRiskBudget({ dailyPnlPct: -2 }).allowed).toBe(false);
+    expect(checkRiskBudget({ openPositions: 5 }).allowed).toBe(false);
+    expect(checkRiskBudget({ dailyTrades: 20 }).allowed).toBe(false);
+    const custom = checkRiskBudget(
+      { dailyPnlPct: -1, openPositions: 2, dailyTrades: 4 },
+      { maxDailyLossPct: -3, maxOpenPositions: 3, maxDailyTrades: 5 },
+    );
+    expect(custom.allowed).toBe(true);
   });
 
   test('system prompt usa os mesmos limites do código', () => {

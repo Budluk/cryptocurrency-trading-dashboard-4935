@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "audit:fix": "npm audit fix --force"
   },
@@ -71,7 +73,9 @@
     "vaul": "^0.9.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
     "@eslint/js": "^9.9.0",
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/typography": "^0.5.15",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.4.0",

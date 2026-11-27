@@ -9,7 +9,7 @@ const corsHeaders = {
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 import { handleTradingChat } from "../_shared/tradingChat.ts";
-import { RISK } from "../_shared/autonomousRisk.ts";
+import { RISK, checkRiskBudget, type RiskBudgetState } from "../_shared/autonomousRisk.ts";
 import { handleExchangeAction } from "../_shared/exchangeGateway.ts";
 // Correção de SL/TP com lado invertido: usa o teto central de 0,5%, não 2%.
 const STOP_FALLBACK = RISK.maxStopPct / 100;
@@ -424,6 +424,11 @@ function normalizeQtyString(rawQty: number, meta: LotSizeMeta, reduceOnly: boole
 }
 
 async function placeOrder(params: any) {
+  const riskState = params.__risk_state as RiskBudgetState | undefined;
+  if (riskState) {
+    const budget = checkRiskBudget(riskState);
+    if (!budget.allowed) throw new Error(`Limite de risco: ${budget.reason}`);
+  }
   const {
     symbol,
     side,
@@ -719,14 +724,45 @@ async function getApiInfo() {
   return makeBybitRequest('GET', '/v5/user/query-api', {});
 }
 
+/** Estado de risco do dia, lido no servidor; falha fechada se o banco não responder. */
+async function loadRiskState(userId: string): Promise<RiskBudgetState> {
+  const db = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  const [states, open, todayTrades] = await Promise.all([
+    db.from('agent_state').select('daily_pnl_pct').eq('user_id', userId),
+    db.from('agent_trades').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('result', 'open'),
+    db.from('agent_trades').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('opened_at', `${today}T00:00:00Z`),
+  ]);
+  const error = states.error || open.error || todayTrades.error;
+  if (error) throw new Error(`Não foi possível validar limites de risco: ${error.message}`);
+  const daily = (states.data ?? []).map((r: any) => Number(r.daily_pnl_pct) || 0);
+  return {
+    dailyPnlPct: daily.length ? Math.min(...daily) : 0,
+    openPositions: open.count ?? 0,
+    dailyTrades: todayTrades.count ?? 0,
+  };
+}
+
 async function runAction(action: string, params: any = {}): Promise<any> {
   // Somente rotas exchange_* ou uma exchange explícita entram no roteador
   // multi-exchange. Todo o caminho Bybit existente permanece como era.
   const explicitExchange = typeof params?.exchange === 'string' && params.exchange !== 'BYBIT';
+  // Bybit nativo sempre é real (ignora `dry_run` do roteador); as demais
+  // venues só chegam ao caminho real com `dry_run:false`.
+  const realOrder = action === 'place_order' &&
+    (explicitExchange ? params.dry_run === false : true);
+  const riskState = realOrder
+    ? await loadRiskState(String(params.__auth_user_id || ANON_USER_ID))
+    : undefined;
+  const routedParams = riskState ? { ...params, __risk_state: riskState } : params;
   if (EXCHANGE_ACTIONS.has(action) && (action.startsWith('exchange_') || explicitExchange)) {
-    return await handleExchangeAction(action, params, {
+    return await handleExchangeAction(action, routedParams, {
       userId: String(params.__auth_user_id || ANON_USER_ID),
       confirmationKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+      riskState,
     });
   }
   switch (action) {

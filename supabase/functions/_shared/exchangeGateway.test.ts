@@ -13,6 +13,12 @@ const readEnv = (name: string) => {
   return values[name];
 };
 
+const liveCtx: ExchangeContext = {
+  ...ctx,
+  readEnv,
+  riskState: { dailyPnlPct: 0, openPositions: 0, dailyTrades: 0 },
+};
+
 describe('exchange gateway', () => {
   it('lista venues sem tocar credenciais', async () => {
     const result = await handleExchangeAction('exchange_list', {}, ctx);
@@ -66,7 +72,7 @@ describe('exchange gateway', () => {
     await expect(handleExchangeAction('place_order', {
       exchange: 'BINANCE', dry_run: false,
       symbol: 'BTCUSDT', side: 'Buy', qty: '0.02', confirm_token: pending.token,
-    }, { ...ctx, readEnv })).rejects.toThrow('Confirmação');
+    }, liveCtx)).rejects.toThrow('Confirmação');
 
     let captured = '';
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -76,7 +82,7 @@ describe('exchange gateway', () => {
     const result = await handleExchangeAction('place_order', {
       exchange: 'BINANCE', dry_run: false,
       symbol: 'BTCUSDT', side: 'Buy', qty: '0.01', confirm_token: pending.token,
-    }, { ...ctx, readEnv });
+    }, liveCtx);
     expect(result.simulated).toBe(false);
     expect(captured).toContain('fapi.binance.com');
   });
@@ -88,6 +94,28 @@ describe('exchange gateway', () => {
     const token = (proposal.pending as { token: string }).token;
     await expect(handleExchangeAction('place_order', {
       exchange: 'BINANCE', dry_run: false, symbol: 'BTCUSDT', side: 'Buy', qty: '1', confirm_token: token,
-    }, { ...ctx, userId: 'outro', readEnv })).rejects.toThrow('Confirmação');
+    }, { ...liveCtx, userId: 'outro' })).rejects.toThrow('Confirmação');
+  });
+
+  it('ordem real é bloqueada sem estado de risco ou quando o orçamento acabou', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return new Response('{}'); }) as typeof fetch;
+    const order = { exchange: 'BINANCE', dry_run: false, symbol: 'BTCUSDT', side: 'Buy', qty: '0.01' };
+    await expect(handleExchangeAction('place_order', order, { ...ctx, readEnv })).rejects.toThrow('Estado de risco');
+    await expect(handleExchangeAction('place_order', order, {
+      ...liveCtx, riskState: { dailyPnlPct: -2, openPositions: 1, dailyTrades: 1 },
+    })).rejects.toThrow('Limite de risco');
+    await expect(handleExchangeAction('place_order', order, {
+      ...liveCtx, riskState: { dailyPnlPct: 0, openPositions: 5, dailyTrades: 1 },
+    })).rejects.toThrow('posições abertas');
+    expect(calls).toBe(0);
+  });
+
+  it('simulação ignora o orçamento e continua disponível', async () => {
+    const result = await handleExchangeAction('place_order', {
+      exchange: 'BINANCE', symbol: 'BTCUSDT', side: 'Buy', qty: '0.01',
+    }, { ...liveCtx, riskState: { dailyPnlPct: -5, openPositions: 99, dailyTrades: 99 } });
+    expect(result.simulated).toBe(true);
+    expect(result.reason).toBe('dry_run');
   });
 });

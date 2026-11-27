@@ -13,7 +13,7 @@ import {
   type EnvReader, type ExchangeSpec,
 } from './exchangeRegistry.ts';
 import { sendExchangeRequest } from './exchangeAdapters.ts';
-import { clampLeverage, RISK } from './autonomousRisk.ts';
+import { checkRiskBudget, clampLeverage, RISK, type RiskBudgetState } from './autonomousRisk.ts';
 import { makeConfirmationToken, matchesConfirmation, verifyConfirmationToken } from './tradingChat.ts';
 
 export type ExchangeParams = Record<string, unknown>;
@@ -22,6 +22,8 @@ export interface ExchangeContext {
   userId: string;
   confirmationKey: string;
   readEnv?: EnvReader;
+  /** Estado de risco do usuário; obrigatório para ordens reais (falha fechada). */
+  riskState?: RiskBudgetState;
 }
 
 const WRITE_TOOLS: Record<string, string> = {
@@ -138,6 +140,11 @@ export async function handleExchangeAction(
     const creds = exchangeCredentials(spec, readEnv);
     if (!isExchangeLiveEnabled(spec, readEnv) || !creds.key || !creds.secret) {
       return simulatedWrite(spec, action, params, 'live_not_enabled');
+    }
+    if (action === 'place_order') {
+      if (!ctx.riskState) throw new Error('Estado de risco indisponível; ordem real bloqueada');
+      const budget = checkRiskBudget(ctx.riskState);
+      if (!budget.allowed) throw new Error(`Limite de risco: ${budget.reason}`);
     }
     const tool = WRITE_TOOLS[action];
     const confirmation = await verifyConfirmationToken(params.confirm_token, ctx.userId, ctx.confirmationKey);

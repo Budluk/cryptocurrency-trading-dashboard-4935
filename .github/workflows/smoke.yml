@@ -1,0 +1,106 @@
+# Smoke test diário de produção (somente leitura + simulação).
+# Nunca envia ordem real: `place_order` é chamado com dry_run:true e o webhook
+# B3 usa confidence 75 (abaixo do mínimo 80), portanto não grava sinais.
+# Segredos ficam em env do job; o workflow nunca imprime seus valores.
+name: Daily Smoke
+
+on:
+  schedule:
+    - cron: '0 12 * * *'   # 09:00 BRT
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      B3_WEBHOOK_SECRET: ${{ secrets.B3_WEBHOOK_SECRET }}
+    steps:
+      - name: exchange_list (7 venues)
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS -X POST "$SUPABASE_URL/functions/v1/bybit-trading" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"exchange_list"}')
+          count=$(printf '%s' "$body" | jq '.data.exchanges | length')
+          echo "venues=$count"
+          test "$count" -eq 7
+          printf '%s' "$body" | jq -r '.data.exchanges[].id' | sort | tr '\n' ' ' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: place_order em dry_run (nenhuma ordem real)
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS -X POST "$SUPABASE_URL/functions/v1/bybit-trading" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"place_order","exchange":"BINANCE","symbol":"BTCUSDT","side":"Buy","qty":0.001,"dry_run":true}')
+          printf '%s' "$body" | jq -e '.data.simulated == true and .data.reason == "dry_run"'
+          echo "- place_order: simulado, reason=dry_run" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ai_status (provedores configurados, sem segredos)
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS -X POST "$SUPABASE_URL/functions/v1/ai-market-analysis" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"ai_status"}')
+          printf '%s' "$body" | jq -e '.success == true and (.providers | type == "array")'
+          printf '%s' "$body" | jq -r '.providers[] | "- IA \(.name): configured=\(.configured) circuitOpen=\(.circuitOpen) failures=\(.failures)"' >> "$GITHUB_STEP_SUMMARY"
+          # Nenhuma chave ou URL pode aparecer no snapshot.
+          if printf '%s' "$body" | grep -Eqi 'api[_-]?key|secret|https?://'; then
+            echo "ai_status expôs informação sensível" >&2
+            exit 1
+          fi
+
+      - name: Webhook B3 sem assinatura deve ser 401
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/b3_unsigned.json -w '%{http_code}' \
+            -X POST "$SUPABASE_URL/functions/v1/tradingview-webhook" \
+            -H "Content-Type: application/json" \
+            -d '{"market":"B3","symbol":"WINZ26","action":"buy","price":130000,"confidence":90,"qty":1}')
+          echo "status=$code"
+          test "$code" -eq 401
+          echo "- webhook B3 sem assinatura: 401" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Webhook B3 assinado (opcional, confidence abaixo do mínimo)
+        if: env.B3_WEBHOOK_SECRET != ''
+        run: |
+          set -euo pipefail
+          body='{"market":"B3","symbol":"WINZ26","action":"buy","price":130000,"confidence":75,"qty":1,"atr":300,"rsi":61}'
+          sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$B3_WEBHOOK_SECRET" -binary | base64 -w0)
+          response=$(curl -fsS -X POST "$SUPABASE_URL/functions/v1/tradingview-webhook" \
+            -H "Content-Type: application/json" \
+            -H "X-B3-Signature: $sig" \
+            -d "$body")
+          printf '%s' "$response" | jq -e '.status == "ignored"'
+          echo "- webhook B3 assinado: ignored (sem ordens/sinais gravados)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Erros de aplicação nas últimas 24 h
+        run: |
+          set -euo pipefail
+          since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          body=$(curl -fsS -G "$SUPABASE_URL/rest/v1/bot_errors" \
+            -H "apikey: $SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            --data-urlencode "select=id" \
+            --data-urlencode "created_at=gte.$since")
+          count=$(printf '%s' "$body" | jq 'length')
+          echo "- bot_errors (24h): $count" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$count" -gt 0 ]; then
+            echo "::warning::$count erro(s) de aplicação registrado(s) nas últimas 24 h"
+          fi
+
+      - name: Limpeza de telemetria (30/90 dias)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/cleanup_old_telemetry" \
+            -H "apikey: $SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"telemetry_days":30,"audit_days":90}')
+          printf '%s' "$body" | jq -c . >> "$GITHUB_STEP_SUMMARY"

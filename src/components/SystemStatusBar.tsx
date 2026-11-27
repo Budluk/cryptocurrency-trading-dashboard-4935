@@ -1,28 +1,10 @@
-import { memo, useMemo } from "react";
-import { Badge } from "@/components/ui/badge";
+import { memo } from "react";
 import { usePositions } from "@/contexts/PositionsContext";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getUserId } from "@/lib/anonymousUser";
-import { 
-  Activity, 
-  Brain, 
-  Wifi, 
-  WifiOff, 
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  Zap
-} from "lucide-react";
+import { Brain, Wifi, WifiOff, Zap } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-interface SystemStatus {
-  bybit: 'connected' | 'disconnected' | 'error';
-  ml: 'active' | 'training' | 'inactive';
-  autoTrader: 'running' | 'paused' | 'stopped';
-}
 
 export const SystemStatusBar = memo(() => {
   const { openPositions, closedPositions } = usePositions();
@@ -59,33 +41,6 @@ export const SystemStatusBar = memo(() => {
     refetchInterval: 60000,
   });
 
-  const stats = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-
-    const closedToday = closedPositions.filter(p => 
-      p.closed_at && new Date(p.closed_at) >= today
-    );
-
-    const todayPnL = closedToday.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
-    const unrealizedPnL = openPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
-    const winCount = closedToday.filter(p => (p.realized_pnl || 0) > 0).length;
-    const lossCount = closedToday.filter(p => (p.realized_pnl || 0) < 0).length;
-    const winRate = closedToday.length > 0 ? (winCount / closedToday.length) * 100 : 0;
-
-    return {
-      openCount: openPositions.length,
-      closedTodayCount: closedToday.length,
-      todayPnL,
-      unrealizedPnL,
-      totalPnL: todayPnL + unrealizedPnL,
-      winRate,
-      winCount,
-      lossCount,
-    };
-  }, [openPositions, closedPositions]);
-
   const getMLStatus = () => {
     if (!mlConfig) return { status: 'inactive', label: 'ML Inativo', color: 'text-muted-foreground' };
     if (mlConfig.is_enabled && mlConfig.confidence_score >= 70) {
@@ -108,9 +63,6 @@ export const SystemStatusBar = memo(() => {
     return { status: 'stopped', label: 'Auto OFF', color: 'text-muted-foreground' };
   };
 
-  const mlStatus = getMLStatus();
-  const autoStatus = getAutoTraderStatus();
-
   const getBybitStatus = () => {
     // Consider connected if we have positions or recent activity
     if (openPositions.length > 0 || closedPositions.length > 0) {
@@ -119,21 +71,23 @@ export const SystemStatusBar = memo(() => {
     return { status: 'disconnected', label: 'Bybit', color: 'text-warning' };
   };
 
+  const mlStatus = getMLStatus();
+  const autoStatus = getAutoTraderStatus();
   const bybitStatus = getBybitStatus();
 
+  // Apenas estado de conexão/serviços: contadores e P&L são exibidos no resumo da Visão geral.
   return (
     <TooltipProvider>
-      <div className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-card/50 backdrop-blur-sm border border-border/40 text-xs">
-        {/* Connection Status */}
+      <div role="status" aria-label="Status do sistema" className="flex min-h-9 flex-wrap items-center justify-end gap-1.5 rounded-lg border border-border/60 bg-background/60 px-2 py-1 text-xs">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/50 ${bybitStatus.color}`}>
+            <div className="flex min-h-8 items-center gap-1.5 rounded-md bg-secondary/60 px-2">
               {bybitStatus.status === 'connected' ? (
-                <Wifi className="h-3 w-3" />
+                <Wifi className={`h-3.5 w-3.5 ${bybitStatus.color}`} aria-hidden="true" />
               ) : (
-                <WifiOff className="h-3 w-3" />
+                <WifiOff className={`h-3.5 w-3.5 ${bybitStatus.color}`} aria-hidden="true" />
               )}
-              <span className="font-medium">{bybitStatus.label}</span>
+              <span className="font-medium text-foreground">{bybitStatus.label}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent>
@@ -141,12 +95,11 @@ export const SystemStatusBar = memo(() => {
           </TooltipContent>
         </Tooltip>
 
-        {/* ML Status */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/50 ${mlStatus.color}`}>
-              <Brain className="h-3 w-3" />
-              <span className="font-medium">{mlStatus.label}</span>
+            <div className="flex min-h-8 items-center gap-1.5 rounded-md bg-secondary/60 px-2">
+              <Brain className={`h-3.5 w-3.5 ${mlStatus.color}`} aria-hidden="true" />
+              <span className="font-medium text-foreground">{mlStatus.label}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent>
@@ -154,74 +107,17 @@ export const SystemStatusBar = memo(() => {
           </TooltipContent>
         </Tooltip>
 
-        {/* Auto Trader Status */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/50 ${autoStatus.color}`}>
-              <Zap className="h-3 w-3" />
-              <span className="font-medium">{autoStatus.label}</span>
+            <div className="flex min-h-8 items-center gap-1.5 rounded-md bg-secondary/60 px-2">
+              <Zap className={`h-3.5 w-3.5 ${autoStatus.color}`} aria-hidden="true" />
+              <span className="font-medium text-foreground">{autoStatus.label}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent>
             <p>Auto Trader: {autoStatus.status === 'running' ? 'Executando' : 'Parado'}</p>
           </TooltipContent>
         </Tooltip>
-
-        <div className="hidden sm:block h-4 w-px bg-border/50" />
-
-        {/* Open Positions */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/50">
-              <Activity className="h-3 w-3 text-primary" />
-              <span className="font-medium">{stats.openCount}</span>
-              <span className="text-muted-foreground">abertas</span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{stats.openCount} posições abertas</p>
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Today's Trades */}
-        {stats.closedTodayCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/50">
-                <Clock className="h-3 w-3 text-muted-foreground" />
-                <span className="text-success">{stats.winCount}W</span>
-                <span className="text-muted-foreground">/</span>
-                <span className="text-destructive">{stats.lossCount}L</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Hoje: {stats.closedTodayCount} trades ({stats.winRate.toFixed(0)}% win rate)</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {/* Quick PnL */}
-        {stats.totalPnL !== 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${
-                stats.totalPnL > 0 ? 'bg-success/10' : 'bg-destructive/10'
-              }`}>
-                {stats.totalPnL > 0 ? (
-                  <TrendingUp className="h-3 w-3 text-success" />
-                ) : (
-                  <TrendingDown className="h-3 w-3 text-destructive" />
-                )}
-                <span className={`font-bold ${stats.totalPnL > 0 ? 'text-success' : 'text-destructive'}`}>
-                  {stats.totalPnL > 0 ? '+' : ''}${stats.totalPnL.toFixed(2)}
-                </span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>P&L Hoje: ${stats.todayPnL.toFixed(2)} realizado + ${stats.unrealizedPnL.toFixed(2)} aberto</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
       </div>
     </TooltipProvider>
   );

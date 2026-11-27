@@ -56,13 +56,14 @@ export const EXCHANGES: readonly ExchangeInfo[] = [
   },
   {
     id: 'B3', name: 'B3 (WIN/WDO)', kind: 'b3-futures',
-    symbols: ['WINZ26', 'WDOZ26'], quoteCurrency: 'BRL',
+    symbols: ['WINZ26', 'WDOZ26', 'WINF27', 'WDOF27'], quoteCurrency: 'BRL',
     supportsOrders: false, brokers: ['XP', 'Inter', 'Rico', 'Genial'],
     credentialNames: [], enableFlag: 'B3_ENABLE_LIVE',
   },
 ];
 
-export const B3_CONTRACTS = ['WINZ26', 'WDOZ26'] as const;
+/** Contratos vigentes e agendados; a vigência é validada no backend. */
+export const B3_CONTRACTS = ['WINZ26', 'WDOZ26', 'WINF27', 'WDOF27'] as const;
 
 export function getExchangeInfo(id: string): ExchangeInfo | undefined {
   return EXCHANGES.find((exchange) => exchange.id === id);
