@@ -1,6 +1,6 @@
 // Trading chat assistant (served through bybit-trading, actions chat_*). Orders execute automatically within hard risk limits.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { aiFetch } from './aiRouter.ts';
+import { aiFetch, webSearchFetch } from './aiRouter.ts';
 
 type Exec = (action: string, params?: Record<string, unknown>) => Promise<any>;
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
@@ -47,33 +47,26 @@ const decodeEntities = (s: string) => s
   .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
   .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
 
-async function webSearch(query: string): Promise<string> {
-  const key = Deno.env.get('PERPLEXITY_API_KEY');
-  if (!key) return 'Busca web indisponível: PERPLEXITY_API_KEY não configurada.';
+// Read-only URL fetching must never reach private/metadata networks.
+function isPublicHttpUrl(raw: string): boolean {
   try {
-    const res = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          { role: 'system', content: 'Pesquise e responda de forma factual e concisa, em português.' },
-          { role: 'user', content: query.slice(0, 4000) },
-        ],
-        max_tokens: 1500,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) return `Busca falhou (HTTP ${res.status}).`;
-    const data = await res.json();
-    const answer = data?.choices?.[0]?.message?.content ?? '';
-    const citations = Array.isArray(data?.citations) ? `\nFontes: ${data.citations.join(', ')}` : '';
-    return (answer + citations).slice(0, 8000) || 'Sem resultados.';
-  } catch (e) { return `Busca falhou: ${(e as Error).message}`; }
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return false;
+    if (h.includes(':')) return false; // IPv6 literal (loopback/link-local ambiguity)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) {
+      const [a, b] = h.split('.').map(Number);
+      if (a === 0 || a === 10 || a === 127 || a >= 224
+        || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31)
+        || (a === 192 && b === 168)) return false;
+    }
+    return true;
+  } catch { return false; }
 }
 
 async function fetchPage(url: string): Promise<string> {
-  if (!/^https?:\/\//i.test(url)) return 'URL inválida.';
+  if (!isPublicHttpUrl(url)) return 'URL inválida ou não pública.';
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000), redirect: 'follow' });
     if (!res.ok) return `Não consegui abrir a fonte (HTTP ${res.status}).`;
@@ -133,6 +126,7 @@ async function youtubeTranscript(url: string): Promise<string> {
     if (!cap) return 'Vídeo sem transcrição disponível.';
     const tracks = JSON.parse(cap[1]);
     const track = tracks.find((t: { languageCode?: string }) => t.languageCode?.startsWith('pt')) ?? tracks[0];
+    if (!isPublicHttpUrl(track.baseUrl)) return 'Transcrição indisponível (URL insegura).';
     const xml = await (await fetch(track.baseUrl, { signal: AbortSignal.timeout(15000) })).text();
     const text = [...xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)].map((x) => decodeEntities(x[1])).join(' ').replace(/\s+/g, ' ').trim();
     return text ? text.slice(0, 12000) : 'Vídeo sem transcrição disponível.';
@@ -151,7 +145,7 @@ export async function apiStatus(exec: Exec) {
 async function runTool(db: any, exec: Exec, name: string, a: any): Promise<{ out: string; action?: { summary: string; ok: boolean } }> {
   if (a.symbol) a.symbol = String(a.symbol).toUpperCase();
   switch (name) {
-    case 'web_search': return { out: await webSearch(String(a.query ?? '')) };
+    case 'web_search': return { out: await webSearchFetch(String(a.query ?? '')) };
     case 'fetch_page': return { out: await fetchPage(String(a.url ?? '')) };
     case 'github_repo': return { out: await githubRepo(String(a.owner ?? ''), String(a.repo ?? ''), a.path ? String(a.path) : undefined) };
     case 'youtube_transcript': return { out: await youtubeTranscript(String(a.url ?? '')) };

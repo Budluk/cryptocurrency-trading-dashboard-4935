@@ -1,7 +1,7 @@
 // Agente de Pesquisa de estratégias de trading.
 // SOMENTE LEITURA: sem ferramentas de trading, ordens, saldo ou chaves de exchange.
-// Roda dentro de ai-market-analysis (verify_jwt = true). IA: aiRouter (Groq -> OpenAI -> FreeLLMAPI -> Lovable).
-import { aiFetch } from './aiRouter.ts';
+// Roda dentro de ai-market-analysis (verify_jwt = true). IA: aiRouter (FreeLLMAPI -> Groq -> OpenAI -> Lovable).
+import { aiFetch, webSearchFetch } from './aiRouter.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,34 +85,26 @@ function decodeEntities(s: string): string {
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
 }
 
-async function webSearch(query: string): Promise<string> {
-  const key = Deno.env.get('PERPLEXITY_API_KEY');
-  if (!key) return 'Busca web indisponível: PERPLEXITY_API_KEY não configurada.';
+// Read-only URL fetching must never reach private/metadata networks.
+function isPublicHttpUrl(raw: string): boolean {
   try {
-    const res = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          { role: 'system', content: 'Pesquise e responda de forma factual e concisa, em português.' },
-          { role: 'user', content: query },
-        ],
-        max_tokens: 1500,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) return `Busca falhou (HTTP ${res.status}).`;
-    const data = await res.json();
-    const answer = data?.choices?.[0]?.message?.content ?? '';
-    const citations = Array.isArray(data?.citations) ? `\nFontes: ${data.citations.join(', ')}` : '';
-    return (answer + citations).slice(0, 8000) || 'Sem resultados.';
-  } catch (e) {
-    return `Busca falhou: ${(e as Error).message}`;
-  }
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return false;
+    if (h.includes(':')) return false; // IPv6 literal (loopback/link-local ambiguity)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) {
+      const [a, b] = h.split('.').map(Number);
+      if (a === 0 || a === 10 || a === 127 || a >= 224
+        || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31)
+        || (a === 192 && b === 168)) return false;
+    }
+    return true;
+  } catch { return false; }
 }
 
 async function fetchPage(url: string): Promise<string> {
+  if (!isPublicHttpUrl(url)) return 'URL inválida ou não pública.';
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000), redirect: 'follow' });
     if (!res.ok) return `Não consegui abrir a fonte (HTTP ${res.status}). Pode ser paywall, login ou bloqueio de robots.`;
@@ -189,6 +181,7 @@ async function youtubeTranscript(url: string): Promise<string> {
     if (!capMatch) return 'sem transcrição disponível';
     const tracks = JSON.parse(capMatch[1]);
     const track = tracks.find((t: { languageCode?: string }) => t.languageCode?.startsWith('pt')) ?? tracks[0];
+    if (!isPublicHttpUrl(track.baseUrl)) return 'Transcrição indisponível (URL insegura).';
     const xml = await (await fetch(track.baseUrl, { signal: AbortSignal.timeout(15000) })).text();
     const texts = [...xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)].map((x) => decodeEntities(x[1]));
     const full = texts.join(' ').replace(/\s+/g, ' ').trim();
@@ -200,7 +193,7 @@ async function youtubeTranscript(url: string): Promise<string> {
 
 async function runTool(name: string, args: Record<string, unknown>): Promise<string> {
   switch (name) {
-    case 'web_search': return webSearch(String(args.query ?? ''));
+    case 'web_search': return webSearchFetch(String(args.query ?? ''));
     case 'fetch_page': return fetchPage(String(args.url ?? ''));
     case 'github_repo': return githubRepo(String(args.owner ?? ''), String(args.repo ?? ''), args.path ? String(args.path) : undefined);
     case 'youtube_transcript': return youtubeTranscript(String(args.url ?? ''));
