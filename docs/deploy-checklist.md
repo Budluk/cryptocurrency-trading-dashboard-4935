@@ -495,7 +495,7 @@ curl.exe -s -X POST "$URL/functions/v1/ai-signal-gateway" `
 ```powershell
 npm ci --legacy-peer-deps
 npm run lint:ci              # 0 erros e no máximo 116 avisos (orçamento atual)
-npm run audit:ci             # bloqueia vulnerabilidades de produção high/critical
+npm run audit:ci             # bloqueia vulnerabilidades de produção moderate/high/critical (hoje: 0)
 npm run typecheck            # tsc --noEmit -p tsconfig.app.json  (deve passar)
 npm run test:coverage        # Vitest (inclui src/lib/chatAttachments.test.ts)
 
@@ -559,7 +559,7 @@ Rollbacks:
 1. **B3 (WINZ25/WDOF26) não operacional** — migração `b3_*` nunca aplicada e **não existe no repositório** (só em `.lovable/plan.md`/`roadmap.md`). Opcional.
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
 3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
-4. **`npm audit`** — `npm run audit:ci` bloqueia high/critical; hoje são 0 high/critical e restam 2 `moderate` em `react-router`.
+4. **`npm audit` — resolvido em 27/11/2026.** `react-router-dom` subiu de `^6.26.2` para `^7.18.7` (com `react-router@7.18.7`), corrigindo os 2 avisos `moderate` (open redirect e desserialização de erro em SSR). `npm run audit:ci` agora usa `--audit-level=moderate` e reporta **0 vulnerabilidades**; typecheck, 20 testes Vitest, lint (0 erros/116 avisos) e build passaram com a v7. O uso de rotas no app é apenas declarativo (`BrowserRouter`/`Routes`/`Route`/`Navigate`/`Outlet`), preservado na v7.
 5. **Chat normal com IA real** — o modo Pesquisa foi validado e o `dry_run` do chat comum passou em produção (seção 5.1c), sem ordens nem escritas. A confirmação de ordens reais segue sem teste em produção: só execute com sua autorização explícita, conferindo a proposta assinada antes de Confirmar. A `bybit-trading` já foi redeployada pela aba **Code**.
 6. **Plano Pro do Supabase** — necessário apenas para os alertas de "senhas vazadas".
 7. **Conta admin permanente e revisão visual** — a validação na UI usou sessão temporária; falta testar com a conta do usuário e conferir celular/desktop.

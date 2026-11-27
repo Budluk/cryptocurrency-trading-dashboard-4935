@@ -9,6 +9,7 @@
 - [x] Chat flutuante validado na UI com URL do repositório: fontes citadas, ficha e persistência no histórico.
 - [x] Chat normal com **confirmação explícita** (token HMAC assinado pelo servidor, 5 min) antes de abrir/fechar/ajustar ordens e **modo simulação** (`dry_run`) sem ordens nem escritas. Gates reaplicados na confirmação.
 - [x] CI 7/7 verde em `785fa65` (correção do check Deno com `npm ci`); `bybit-trading` redeployada pela aba **Code** (HTTP 201) e smoke test `chat_send`/`dry_run:true` validado em produção: 200, contagens inalteradas e nenhuma ordem.
+- [x] `npm audit` sem vulnerabilidades de produção: `react-router-dom` atualizado para `^7.18.7` e `audit:ci` endurecido para `--audit-level=moderate`; typecheck, testes, lint e build verdes.
 
 ## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
