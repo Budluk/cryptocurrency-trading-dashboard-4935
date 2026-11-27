@@ -8,6 +8,11 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 > ativados os **Anonymous Sign-Ins** (com correção da trigger de `demo_accounts`) e configurados
 > a variável e o segredo do `agent-loop`. Os comandos abaixo permanecem como registro
 > reprodutível; não precisa repeti-los. O B3 continua sem migration operacional (ver 2.4).
+>
+> ✅ Em 27/11/2026, após os commits `c757b15` e `785fa65`, a CI tornou-se 7/7 verde e
+> a `bybit-trading` foi redeployada pela aba **Code** do Dashboard (HTTP 201). O smoke
+> teste de `chat_send` com `dry_run: true` retornou HTTP 200 sem ordens nem escritas
+> (detalhes em 5.1c). Nenhum PAT foi criado e nenhum segredo foi impresso.
 
 ---
 
@@ -416,6 +421,20 @@ curl.exe -s -X POST "$URL/functions/v1/bybit-trading" `
 # conferir no SQL: contagens de trading_chat_messages/agent_* inalteradas e nenhuma ordem em get_order_history
 ```
 
+> **Validação em 27/11/2026:** com o código de `c757b15` já em `main` e a CI 7/7
+> verde em `785fa65` (o check estrito do Deno passou a instalar as dependências
+> antes de rodar), a `bybit-trading` foi redeployada pela aba **Code** do
+> Dashboard — `POST /functions/deploy?slug=bybit-trading` retornou **201**. O
+> conteúdo publicado de `tradingChat.ts` e `autonomousPrompt.ts` foi comparado
+> por hash com os arquivos do repositório (idênticos). O smoke test acima,
+> enviado com `action:"chat_send"`, `dry_run:true` e mensagem de compra de
+> BTCUSDT com stop ATR, retornou **200** com `{"ok":true,"dryRun":true,...}` e
+> nenhuma ação simulada (`simulated: []`). No SQL Editor, as contagens antes e
+> depois foram **26** mensagens, **0** `agent_state`, **0** `agent_trades` e
+> **0** `agent_routine_log`. Os logs da função registraram apenas **uma** chamada
+> `POST` na janela, sem `execute_order`. Nenhuma ordem real foi disparada e o B3
+> (`WINZ25`/`WDOF26`) permanece intocado.
+
 ### 5.2 Webhook da TradingView (`tradingview-webhook`)
 
 Sem assinatura → deve dar 401; sem secret → 503:
@@ -520,9 +539,9 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 ## Etapa 7 — Pós-deploy e rollback
 
 - [x] `supabase migration list` → 5 migrations "Applied" (registradas via Management API; nomes em 2.3).
-- [x] Edge Functions deployadas: `bybit-trading`, `tradingview-webhook`, `ai-market-analysis` e `ai-signal-gateway` (a última redeployada pela aba **Code**).
-- [ ] Smoke tests 5.1–5.4: item 5.1b (Pesquisa) validado por API e interface; conferir os demais se ainda não foram executados.
-- [x] CI verde em `20085fb` — 7 checks bloqueantes (Build, Vitest, Bun, Lint/Typecheck, Audit, Edge Functions, gitleaks).
+- [x] Edge Functions deployadas: `bybit-trading`, `tradingview-webhook`, `ai-market-analysis` e `ai-signal-gateway`. A `bybit-trading` e a `ai-market-analysis` foram redeployadas pela aba **Code** do Dashboard.
+- [x] Smoke tests 5.1b (Pesquisa, por API e interface) e 5.1c (chat normal em `dry_run`, sem escritas nem ordens). Itens 5.1a, 5.2–5.4 seguem disponíveis para conferência futura.
+- [x] CI verde em `785fa65` — 7 checks bloqueantes (Build, Vitest, Bun, Lint/Typecheck, Audit, Edge Functions, gitleaks). O `c757b15` falhou apenas no check estrito do Deno por falta de `node_modules`; corrigido com `npm ci` no workflow.
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:
@@ -541,7 +560,7 @@ Rollbacks:
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
 3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
 4. **`npm audit`** — `npm run audit:ci` bloqueia high/critical; hoje são 0 high/critical e restam 2 `moderate` em `react-router`.
-5. **Chat normal com IA real** — o modo Pesquisa foi validado; o chat comum agora exige confirmação para ordens e tem modo simulação sem escritas, mas segue sem teste de IA real em produção. Comece pelo `dry_run` da seção 5.1c. A `bybit-trading` precisa de redeploy pela aba **Code** após este commit.
+5. **Chat normal com IA real** — o modo Pesquisa foi validado e o `dry_run` do chat comum passou em produção (seção 5.1c), sem ordens nem escritas. A confirmação de ordens reais segue sem teste em produção: só execute com sua autorização explícita, conferindo a proposta assinada antes de Confirmar. A `bybit-trading` já foi redeployada pela aba **Code**.
 6. **Plano Pro do Supabase** — necessário apenas para os alertas de "senhas vazadas".
 7. **Conta admin permanente e revisão visual** — a validação na UI usou sessão temporária; falta testar com a conta do usuário e conferir celular/desktop.
 8. **Créditos na OpenAI/Lovable** — OpenAI sem quota e Lovable sem créditos; o Groq free tier pode devolver `429` (~60 s). O agente já repete uma vez; créditos eliminam o gargalo.

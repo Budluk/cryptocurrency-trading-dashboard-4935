@@ -8,6 +8,7 @@
 - [x] CI com 7 checks bloqueantes, 7/7 verdes; gitleaks com allowlist dos commits antigos já revogados.
 - [x] Chat flutuante validado na UI com URL do repositório: fontes citadas, ficha e persistência no histórico.
 - [x] Chat normal com **confirmação explícita** (token HMAC assinado pelo servidor, 5 min) antes de abrir/fechar/ajustar ordens e **modo simulação** (`dry_run`) sem ordens nem escritas. Gates reaplicados na confirmação.
+- [x] CI 7/7 verde em `785fa65` (correção do check Deno com `npm ci`); `bybit-trading` redeployada pela aba **Code** (HTTP 201) e smoke test `chat_send`/`dry_run:true` validado em produção: 200, contagens inalteradas e nenhuma ordem.
 
 ## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
@@ -15,7 +16,8 @@
 - [ ] Exclusões definitivas de funções — aguardando indicação do usuário
 
 ## Validações que dependem do usuário
-- [ ] Chat de trading normal com IA real — começar pelo modo simulação (já disponível) e só autorizar uma ordem real depois de conferir a proposta
+- [ ] Chat de trading normal com ordem real — o `dry_run` já foi validado; autorizar uma ordem real só depois de conferir a proposta assinada e dar confirmação explícita
+- [ ] Release `v1.0.3` para `c757b15`/`785fa65` — criar somente com sua aprovação
 - [ ] Painel de Observabilidade sem erros após acompanhamento pós-deploy
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
 
