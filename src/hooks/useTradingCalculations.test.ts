@@ -28,13 +28,13 @@ describe('useTradingCalculations', () => {
     expect(Number(calc.takeProfit)).toBeLessThan(50000);
   });
 
-  it('keeps stop loss inside the v25 bounds (0.6% - 2.0%)', () => {
+  it('keeps stops inside the central RISK bounds (0.25% - 0.5%)', () => {
     const { calculateStopTakeProfit } = useCalc();
     const tight = calculateStopTakeProfit(50000, 'BUY', 0.01, false, null);
     const wide = calculateStopTakeProfit(50000, 'BUY', 10, false, null);
 
-    expect(tight.stopLossPct).toBeGreaterThanOrEqual(0.006);
-    expect(wide.stopLossPct).toBeLessThanOrEqual(0.02);
+    expect(tight.stopLossPct).toBeGreaterThanOrEqual(0.0025);
+    expect(wide.stopLossPct).toBeLessThanOrEqual(0.005);
   });
 
   it('uses M5 support/resistance for BUY stops and targets', () => {
@@ -65,9 +65,19 @@ describe('useTradingCalculations', () => {
     expect(result.qty).toBeGreaterThan(0);
   });
 
+  it('never risks more than 0.5% of the balance, even for premium signals', () => {
+    const { calculatePositionSize, calculateStopTakeProfit } = useCalc();
+    const balance = 1000;
+    const size = calculatePositionSize(balance, 5, 10, 90, 0, 3, undefined, 'premium');
+    const stopPct = calculateStopTakeProfit(50000, 'BUY', 10, false, null).stopLossPct;
+    expect(size.usdSize * stopPct).toBeLessThanOrEqual(balance * 0.005 + 1e-9);
+  });
+
   it('computes leverage from volatility and balance', () => {
     const { getLeverageForScalping, getLeverageForBalance } = useCalc();
-    expect(getLeverageForScalping(0.2)).toBeGreaterThan(0);
-    expect(getLeverageForBalance(1000, 60)).toBeGreaterThan(0);
+    expect(getLeverageForScalping(0.2)).toBeGreaterThanOrEqual(3);
+    expect(getLeverageForScalping(0.2)).toBeLessThanOrEqual(6);
+    expect(getLeverageForBalance(1000, 60)).toBeGreaterThanOrEqual(3);
+    expect(getLeverageForBalance(1000, 60)).toBeLessThanOrEqual(6);
   });
 });

@@ -296,10 +296,13 @@ export async function handleResearch(body: Record<string, unknown>, authHeader: 
   const history = Array.isArray(body.history) ? body.history.slice(-10) : [];
   const historyMsgs = history
     .filter((m: unknown) => m !== null && typeof m === 'object')
-    .map((m: Record<string, unknown>) => ({
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: String(m.content ?? '').slice(0, 2000),
-    }));
+    .map((m) => {
+      const o = m as Record<string, unknown>;
+      return {
+        role: o.role === 'assistant' ? 'assistant' : 'user',
+        content: String(o.content ?? '').slice(0, 2000),
+      };
+    });
 
   const urlNote = urls.length
     ? `\n\nURLs enviadas pelo usuário (leia com as ferramentas fetch_page / github_repo / youtube_transcript conforme o tipo):\n${urls.join('\n')}`

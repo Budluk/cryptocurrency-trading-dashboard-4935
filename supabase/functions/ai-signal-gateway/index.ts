@@ -1,6 +1,8 @@
 import { aiFetch } from '../_shared/aiRouter.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { checkRateLimit, createRateLimitResponse, getClientIdentifier } from '../_shared/rateLimit.ts';
+import { RISK } from '../_shared/autonomousRisk.ts';
+import { guardFromState } from '../_shared/autonomousAgent.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -353,10 +355,26 @@ Deno.serve(async (req) => {
     if (sourceSignals.length < 2) {
       gateBlockedBy.push('insufficient_sources');
     }
-    // Time gate - no trading outside major hours (optional, configurable)
+    // Gate central do agente: kill switch, blacklist, horários bloqueados e RVOL.
+    // Substitui a janela antiga (12h-22h), que divergia do RISK.
     const hour = new Date().getUTCHours();
-    if (hour < 12 || hour > 22) { // 09:00-19:00 BRT approx
-      gateBlockedBy.push('outside_trading_hours');
+    const rvolCandidate = sourceSignals
+      .map((s) => Number(s.metadata?.rvol ?? (s.metadata as any)?.indicators?.rvol))
+      .find((v) => Number.isFinite(v) && v > 0);
+    let guardReasons: string[] = [];
+    try {
+      const { data: stateRows } = await supabase.from('agent_state').select('*')
+        .eq('symbol', symbol).order('updated_at', { ascending: false }).limit(1);
+      const guard = guardFromState(stateRows?.[0] ?? null, { rvol: rvolCandidate }, hour, new Date());
+      guardReasons = guard.tradable ? [] : guard.reasons;
+    } catch (guardError) {
+      console.warn('Gateway: não foi possível ler agent_state', guardError);
+    }
+    gateBlockedBy.push(...guardReasons);
+
+    // Alavancagem sempre dentro da faixa 3x-6x (teto absoluto 8x).
+    if (suggestedLeverage !== undefined && Number.isFinite(suggestedLeverage)) {
+      suggestedLeverage = Math.max(RISK.minLeverage, Math.min(RISK.maxLeverage, Math.round(suggestedLeverage)));
     }
 
     const gatePass = gateBlockedBy.length === 0 && finalAction !== 'WAIT';
@@ -402,7 +420,7 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('AI Signal Gateway error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error)?.message ?? String(error) }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }

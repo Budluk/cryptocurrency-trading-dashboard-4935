@@ -1,4 +1,5 @@
 import { ROBOT_RISK, isBlockedHourUtc, isRobotBlacklisted, maxNotionalForRisk, capLeverage } from '@/config/robotRiskParams';
+import { getGatewaySignal } from '@/hooks/useSignalGateway';
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -228,7 +229,7 @@ export const MultiAssetTrader = () => {
             entry_price: trade.entry_price,
             exit_price: trade.exit_price || trade.current_price || trade.entry_price,
             realized_pnl: trade.realized_pnl || 0,
-            leverage: trade.leverage || 10,
+            leverage: trade.leverage || ROBOT_RISK.leverageMax,
             volatility: trade.volatility || 2,
             confidence: trade.confidence || 50,
             close_reason: trade.close_reason || 'UNKNOWN',
@@ -240,7 +241,7 @@ export const MultiAssetTrader = () => {
           recordTradeResult(
             trade.symbol,
             trade.side,
-            trade.leverage || 10,
+            trade.leverage || ROBOT_RISK.leverageMax,
             trade.realized_pnl || 0,
             trade.volatility || undefined // Passar volatilidade para análise
           );
@@ -1064,6 +1065,20 @@ export const MultiAssetTrader = () => {
             continue;
           }
 
+          // Gateway de sinais como veto: bloqueio/divergência do consenso
+          // impedem a entrada. Indisponibilidade do gateway não bloqueia.
+          {
+            const gateway = await getGatewaySignal(symbol);
+            if (gateway?.gatePass === false && gateway.finalAction === 'WAIT') {
+              auditSkip(symbol, 'Gateway IA', `Bloqueado: ${(gateway.gateBlockedBy ?? []).join(', ') || 'sem consenso'}`, analysisResult.signalQuality);
+              continue;
+            }
+            if (gateway?.gatePass && gateway.finalAction !== analysisResult.action) {
+              auditSkip(symbol, 'Gateway IA', `Divergência: gateway ${gateway.finalAction} x analisador ${analysisResult.action}`, analysisResult.signalQuality);
+              continue;
+            }
+          }
+
           // v28: M1/M5 — M5 sideways agora é PERMITIDO se M1 estiver alinhado com a ação (mercado em range tem oportunidades)
           const m1Sig = analysisResult.m1Signal;
           const m5Trend = comprehensiveAI?.technical?.m5?.trend;
@@ -1157,7 +1172,7 @@ export const MultiAssetTrader = () => {
             leverageCap = Math.min(leverageCap, analysisResult.srEntry && analysisResult.pullbackCandle ? 5 : 4);
           }
 
-          const leverage = capLeverage(Math.max(2, Math.min(leverageCap, Math.floor(dynamicLeverage))));
+          const leverage = capLeverage(Math.max(ROBOT_RISK.minLeverage, Math.min(leverageCap, Math.floor(dynamicLeverage))));
 
           // 🚫 Verificar padrão perdedor ANTES de entrar
           const patternCheck = isPatternBlocked(symbol, analysisResult.action === 'BUY' ? 'Buy' : 'Sell', leverage);
@@ -1333,8 +1348,8 @@ export const MultiAssetTrader = () => {
             mlConfigForSLTP = {
               ...mlConfig,
               is_enabled: true,
-              recommended_stop_loss_pct: Math.max(0.8, Math.min(2.0, mlAutoConfig.stopLossPct || 1.2)),
-              recommended_take_profit_pct: Math.max(1.6, Math.min(4.0, (mlAutoConfig.stopLossPct || 1.2) * 2.0)),
+              recommended_stop_loss_pct: Math.min(ROBOT_RISK.maxStopPct, Math.max(0.25, mlAutoConfig.stopLossPct || 0.33)),
+              recommended_take_profit_pct: Math.max(0.5, Math.min(ROBOT_RISK.maxStopPct * 3, (mlAutoConfig.stopLossPct || 0.33) * 2.0)),
             };
           }
           
