@@ -373,14 +373,18 @@ curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
 > **Validação em 27/11/2026:** autenticação/autorização, leitura de URLs, ficha
 > estruturada, fontes e persistência no histórico foram confirmados em runtime.
 > O modelo antigo `llama-3.3-70b-versatile` foi descontinuado no Groq; configurei
-> `GROQ_MODEL=openai/gpt-oss-120b` e reduzi as fontes enviadas ao prompt para
-> 3.000 caracteres (deploy da função `ai-market-analysis` v141). Uma pesquisa com
-> a URL deste repositório retornou `research: true`, texto em português, ficha
-> válida e `Fontes: [1] ...`, terminando com
-> `Modo pesquisa: nenhuma ordem foi executada.`. O fallback Lovable segue sem
-> créditos e a OpenAI sem quota; se o Groq devolver 429 por limite de
-> tokens/minuto do plano free, aguarde ~60 s (circuit breaker) e repita —
-> nenhuma ordem é enviada em nenhum caso.
+> `GROQ_MODEL=openai/gpt-oss-120b`, reduzi as fontes do prompt para 1.800
+> caracteres e limitei a resposta a 1.600 tokens. `aiRouter` passou a expor o
+> `429` do provedor somente quando o chamador pede (`exposeRetryable429`, uso
+> exclusivo da pesquisa) e `researchAgent` repete uma vez após o `retry-after`
+> (teto de 10 s); o fallback final do trading permanece inalterado. A função
+> `ai-market-analysis` foi redeployada pela aba **Code** do Dashboard (HTTP 201,
+> após a v141). O smoke test final com a URL deste repositório retornou HTTP
+> 200, `research: true`, ficha válida, `Fontes: [1] ...` e
+> `Modo pesquisa: nenhuma ordem foi executada.`; o SQL confirmou 2 mensagens e 1
+> evento `research` em `audit_log`, com 0 leads e 0 ordens. O fallback Lovable
+> segue sem créditos e a OpenAI sem quota; se ainda assim aparecer 429 por
+> tokens/minuto do plano free, aguarde ~60 s (circuit breaker) e repita.
 >
 > O fluxo também foi validado na **interface** (Chrome headless apontando para o
 > `npm run dev` local, com sessão admin temporária injetada): abrir o chat
