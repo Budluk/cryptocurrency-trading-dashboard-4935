@@ -29,6 +29,16 @@ interface BybitPosition {
   unrealisedPnl: string;
   liqPrice: string;
   positionValue: string;
+  avgPrice?: string;
+  stopLoss?: string;
+  takeProfit?: string;
+  [key: string]: unknown;
+}
+
+interface BybitBalance {
+  totalEquity?: string;
+  totalWalletBalance?: string;
+  totalAvailableBalance?: string;
   [key: string]: unknown;
 }
 
@@ -87,9 +97,9 @@ export const BybitPositionsPanel = () => {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     placeholderData: (prev: BybitPosition[] | undefined) => prev, // keep previous data on error
-    retry: (failureCount, error: Error) => {
+    retry: (failureCount, error: unknown) => {
       // Don't retry transient errors (already handled with cooldown)
-      if ((error as any)?.transient) return false;
+      if ((error as { transient?: boolean } | null)?.transient) return false;
       return failureCount < 2;
     },
   });
@@ -115,16 +125,16 @@ export const BybitPositionsPanel = () => {
       if (!data?.success) throw new Error(data?.error || 'Erro ao buscar saldo');
 
       setBybitUnstable(false);
-      const balanceData = data.data;
-      return balanceData?.list?.[0] || balanceData || null;
+      const payload = data.data as (BybitBalance & { list?: BybitBalance[] }) | null;
+      return payload?.list?.[0] || payload || null;
     },
     refetchInterval: 20000,
     staleTime: 15000,
     gcTime: 300000,
     refetchOnWindowFocus: false,
-    placeholderData: (prev: any) => prev,
-    retry: (failureCount, error: any) => {
-      if (error?.transient) return false;
+    placeholderData: (prev: BybitBalance | null | undefined) => prev,
+    retry: (failureCount, error: unknown) => {
+      if ((error as { transient?: boolean } | null)?.transient) return false;
       return failureCount < 2;
     },
   });
@@ -133,8 +143,8 @@ export const BybitPositionsPanel = () => {
   const totalWalletBalance = parseFloat(balanceData?.totalWalletBalance || '0');
   const totalAvailableBalance = parseFloat(balanceData?.totalAvailableBalance || '0');
 
-  const totalPnL = positions?.reduce((sum: number, p: any) => 
-    sum + parseFloat(p.unrealisedPnl || 0), 0) || 0;
+  const totalPnL = positions?.reduce((sum: number, p: BybitPosition) =>
+    sum + parseFloat(p.unrealisedPnl || '0'), 0) || 0;
 
   // 🔴 MUTATION PARA FECHAR POSIÇÃO
   const closePositionMutation = useMutation({
@@ -170,17 +180,17 @@ export const BybitPositionsPanel = () => {
       setClosingPosition(null);
       setConfirmClose(null);
     },
-    onError: (error: any, variables) => {
+    onError: (error: unknown, variables) => {
       toast({
         title: "❌ Erro ao Fechar Posição",
-        description: error.message || `Falha ao fechar ${variables.symbol}`,
+        description: error instanceof Error ? error.message : `Falha ao fechar ${variables.symbol}`,
         variant: "destructive"
       });
       setClosingPosition(null);
     }
   });
 
-  const handleClosePosition = (position: any) => {
+  const handleClosePosition = (position: BybitPosition) => {
     setConfirmClose(position);
   };
 
@@ -205,10 +215,10 @@ export const BybitPositionsPanel = () => {
           title: "✅ Todas as Posições Fechadas",
           description: `${positions?.length || 0} posições fechadas com sucesso`,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast({
           title: "❌ Erro ao Fechar Posições",
-          description: error.message || 'Algumas posições podem não ter sido fechadas',
+          description: error instanceof Error ? error.message : 'Algumas posições podem não ter sido fechadas',
           variant: "destructive"
         });
       } finally {
@@ -309,7 +319,7 @@ export const BybitPositionsPanel = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {positions.map((position: any, idx: number) => {
+          {positions.map((position: BybitPosition, idx: number) => {
             const pnl = parseFloat(position.unrealisedPnl || '0') || 0;
             const positionValue = parseFloat(position.positionValue || '1') || 1;
             const pnlPercentage = (pnl / positionValue) * 100;

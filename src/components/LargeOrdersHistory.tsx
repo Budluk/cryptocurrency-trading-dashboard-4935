@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,19 +18,52 @@ interface LargeOrder {
   detected_at: string;
 }
 
+interface LargeOrderChartPoint {
+  time: string;
+  buy: number;
+  sell: number;
+  institutional: number;
+}
+
+function buildChartData(ordersData: LargeOrder[]): LargeOrderChartPoint[] {
+  // Group orders by time intervals (5 minute buckets)
+  const timeGroups = new Map<string, { buy: number; sell: number; institutional: number }>();
+
+  ordersData.forEach((order) => {
+    const timeKey = format(new Date(order.detected_at), 'HH:mm');
+
+    if (!timeGroups.has(timeKey)) {
+      timeGroups.set(timeKey, { buy: 0, sell: 0, institutional: 0 });
+    }
+
+    const group = timeGroups.get(timeKey)!;
+    if (order.side === 'BUY') {
+      group.buy += order.value_usd;
+    } else {
+      group.sell += order.value_usd;
+    }
+    if (order.is_institutional) {
+      group.institutional += order.value_usd;
+    }
+  });
+
+  return Array.from(timeGroups.entries())
+    .map(([time, values]) => ({
+      time,
+      buy: values.buy / 1000000, // Convert to millions
+      sell: values.sell / 1000000,
+      institutional: values.institutional / 1000000,
+    }))
+    .reverse()
+    .slice(-20); // Last 20 time periods
+}
+
 export function LargeOrdersHistory() {
   const [orders, setOrders] = useState<LargeOrder[]>([]);
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<LargeOrderChartPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchOrders();
-    // Interval desabilitado temporariamente para melhorar performance
-    // const interval = setInterval(fetchOrders, 30000); // Aumentado para 30s
-    // return () => clearInterval(interval);
-  }, []);
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('large_orders')
@@ -42,50 +75,21 @@ export function LargeOrdersHistory() {
 
       if (data) {
         setOrders(data);
-        processChartData(data);
+        setChartData(buildChartData(data));
       }
     } catch (error) {
       console.error('Error fetching large orders:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const processChartData = (ordersData: LargeOrder[]) => {
-    // Group orders by time intervals (5 minute buckets)
-    const timeGroups = new Map<string, { buy: number; sell: number; institutional: number }>();
-
-    ordersData.forEach((order) => {
-      const time = new Date(order.detected_at);
-      const timeKey = format(time, 'HH:mm');
-
-      if (!timeGroups.has(timeKey)) {
-        timeGroups.set(timeKey, { buy: 0, sell: 0, institutional: 0 });
-      }
-
-      const group = timeGroups.get(timeKey)!;
-      if (order.side === 'BUY') {
-        group.buy += order.value_usd;
-      } else {
-        group.sell += order.value_usd;
-      }
-      if (order.is_institutional) {
-        group.institutional += order.value_usd;
-      }
-    });
-
-    const chartDataArray = Array.from(timeGroups.entries())
-      .map(([time, values]) => ({
-        time,
-        buy: values.buy / 1000000, // Convert to millions
-        sell: values.sell / 1000000,
-        institutional: values.institutional / 1000000,
-      }))
-      .reverse()
-      .slice(-20); // Last 20 time periods
-
-    setChartData(chartDataArray);
-  };
+  useEffect(() => {
+    void fetchOrders();
+    // Interval desabilitado temporariamente para melhorar performance
+    // const interval = setInterval(fetchOrders, 30000); // Aumentado para 30s
+    // return () => clearInterval(interval);
+  }, [fetchOrders]);
 
   const formatVolume = (volume: number) => {
     if (volume >= 1000000) {

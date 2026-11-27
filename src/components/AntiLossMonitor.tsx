@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,9 +52,14 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
+  const getBlockedStatsRef = useRef(getBlockedStats);
+
+  useEffect(() => {
+    getBlockedStatsRef.current = getBlockedStats;
+  }, [getBlockedStats]);
 
   // Sincronizar PnL diretamente do Bybit - busca histórico completo
-  const syncPnLFromBybit = async (): Promise<number> => {
+  const syncPnLFromBybit = useCallback(async (): Promise<number> => {
     try {
       console.log('🔄 Iniciando sync do histórico Bybit...');
       
@@ -161,12 +166,12 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
       console.error('❌ Erro sync:', e);
       return 0;
     }
-  };
+  }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     setIsLoading(true);
     try {
-      const blockedStats = getBlockedStats();
+      const blockedStats = getBlockedStatsRef.current();
 
       // Buscar trades das últimas 24h (ignorar user_id para compatibilidade)
       const { data: recentTrades } = await supabase
@@ -201,7 +206,7 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
       console.error('Erro ao buscar stats:', error);
     }
     setIsLoading(false);
-  };
+  }, []);
 
   // Auto-sync ao carregar - sempre tenta sincronizar primeiro
   useEffect(() => {
@@ -234,7 +239,7 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
     
     const interval = setInterval(fetchStats, 60000); // 1 min
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchStats, syncPnLFromBybit, toast]);
 
   const getStatusColor = () => {
     if (blockedCount > 2) return 'text-red-500';
