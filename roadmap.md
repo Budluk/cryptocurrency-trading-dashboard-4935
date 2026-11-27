@@ -33,7 +33,7 @@
 
 ## Validações que dependem do usuário
 - [x] Decisão do usuário em 27/11/2026: manter apenas simulação. O `dry_run` foi validado, mas nenhuma ordem real foi autorizada ou executada; o flag `BINANCE_ENABLE_LIVE` permanece desligado.
-- [ ] Release `v1.0.4`: não criada. Será publicada somente com aprovação explícita após o push e o CI 8/8 verde.
+- [x] Release `v1.0.4` publicada em 28/11/2026 com aprovação explícita, apontando para `aaa87f9`: https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/releases/tag/v1.0.4
 - [x] Release `v1.0.3` publicada em 27/11/2026 com sua aprovação, apontando para `89839e2` (inclui `c757b15`, `785fa65`, `a471a5d`, `2564baf`, `d40417e`, `ae1c80d` e `8853184`)
 - [x] Painel de Observabilidade conferido: sem erros de aplicação nas últimas 24 h (o único `ERROR` foi o comando manual de registro da migration, já corrigido)
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase

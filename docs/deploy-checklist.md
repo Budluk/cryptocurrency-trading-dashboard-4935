@@ -677,7 +677,7 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 - [x] Melhorias de 28/11: rollover B3, saúde dos provedores de IA, risco no servidor, telemetria com retenção, E2E/acessibilidade, simplificação visual e runbook de segredos. Migrations aplicadas, 3 functions redeployadas pela aba **Code** e validação local verde (inclui Playwright 5/5 e Bun 132).
 - [x] CI 8/8 verde no run `46076354002` (`98ef4fa`): Lint & Typecheck, Vitest, E2E/Acessibilidade, Bun, Build, Audit, gitleaks e Edge Functions Check.
 - [x] `Daily Smoke` de produção verde no run `46077182693` (detalhes em 5.6). Nenhuma ordem real foi enviada.
-- [ ] Release `v1.0.4`: não publicada; aguardando aprovação explícita.
+- [x] Release `v1.0.4` publicada em 28/11/2026 com aprovação explícita, apontando para `aaa87f9`: https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/releases/tag/v1.0.4
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:
