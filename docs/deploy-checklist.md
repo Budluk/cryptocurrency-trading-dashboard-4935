@@ -23,12 +23,19 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 >
 > ✅ Em 28/11/2026 foram aplicadas as migrations de rollover B3 e de
 > risco/telemetria (versões `20261128120000` e `20261128130000`), e as functions
-> `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` redeployadas pela
-> aba **Code** (`POST /functions/deploy?slug=…` → HTTP 201). O CI passou a ter
+> `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` publicadas pela
+> aba **Code** com o conteúdo local colado no editor
+> (`POST /functions/deploy?slug=…` → HTTP 201). O CI passou a ter
 > **8 checks bloqueantes** com o job de E2E/acessibilidade. Validação local:
 > typecheck, lint (0 erros/116 avisos), 20 Vitest, 132 Bun, 5 Playwright, build,
-> audit (0), `deno check` das 3 funções e YAML dos workflows. Nenhuma ordem real
+> audit (0), `deno check` das 3 funções e YAML dos workflows. CI 8/8 no run
+> `46076354002` e `Daily Smoke` verde no run `46077182693`. Nenhuma ordem real
 > foi executada, nenhum segredo foi impresso e nenhum PAT foi criado.
+>
+> ⚠️ O primeiro `Daily Smoke` falhou no passo `ai_status` porque um deploy feito
+> apenas clicando em **Deploy updates** republicou o código antigo que já estava
+> no editor do Dashboard. É obrigatório colar/carregar o conteúdo local dos
+> arquivos alterados (inclusive os `_shared`) antes de confirmar o deploy.
 
 ---
 
@@ -299,6 +306,11 @@ Detalhes de `verify_jwt` (importante para os testes):
 
 A pasta `supabase/functions/_shared/` **não é deployada à parte** — é empacotada junto em cada função.
 Se você mexeu em qualquer outra função (`ml-adaptive-learning`, `ai-comprehensive-analysis`, `market-intelligence`, `sentiment-analysis`, `ai-trading-intelligence`, `order-flow-analysis`, `portfolio-rebalancer`, `ml-auto-corrector`), redesploye também.
+
+> Ao usar a aba **Code**, selecione cada arquivo alterado no editor, substitua o
+> conteúdo pelo texto do repositório e só então clique em **Deploy updates**.
+> Clicar diretamente no botão republica o que já estava hospedado — foi o que
+> causou a primeira falha do `ai_status` no smoke de 28/11.
 
 ---
 
@@ -613,6 +625,13 @@ valores de segredo e **não** executa ordens reais:
   portanto sem gravar sinal).
 - `bot_errors` em 24 h (aviso, não falha) e `cleanup_old_telemetry(30,90)`.
 
+> **Validação em 28/11/2026 (run `46077182693`):** sucesso — 7 venues
+> (`B3 BINANCE BITGET BYBIT GATEIO KUCOIN OKX`), `place_order` simulado com
+> `reason=dry_run`, `ai_status` com Groq/OpenAI configurados e nenhum segredo no
+> resumo, webhook B3 sem assinatura respondendo 401, `bot_errors` 0 em 24 h e
+> limpeza com 0 linhas removidas. O passo assinado foi pulado porque
+> `B3_WEBHOOK_SECRET` não está configurado no Actions (opcional).
+
 ---
 
 ## Etapa 6 — Atualizar o PR #1 (sem fazer agora; execute quando estiver pronto)
@@ -656,7 +675,8 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 - [x] Revisão responsiva: preview em desktop e em iframe com viewport de 390 px — sem rolagem horizontal, navegação e painel B3/corretores renderizados, nenhum erro no console.
 - [x] Decisão do usuário: manter somente simulação. Nenhuma ordem real foi autorizada/executada e `BINANCE_ENABLE_LIVE` continua desligado.
 - [x] Melhorias de 28/11: rollover B3, saúde dos provedores de IA, risco no servidor, telemetria com retenção, E2E/acessibilidade, simplificação visual e runbook de segredos. Migrations aplicadas, 3 functions redeployadas pela aba **Code** e validação local verde (inclui Playwright 5/5 e Bun 132).
-- [ ] CI 8/8 e `Daily Smoke` de produção: confirmar após o push e registrar o run ID aqui.
+- [x] CI 8/8 verde no run `46076354002` (`98ef4fa`): Lint & Typecheck, Vitest, E2E/Acessibilidade, Bun, Build, Audit, gitleaks e Edge Functions Check.
+- [x] `Daily Smoke` de produção verde no run `46077182693` (detalhes em 5.6). Nenhuma ordem real foi enviada.
 - [ ] Release `v1.0.4`: não publicada; aguardando aprovação explícita.
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 

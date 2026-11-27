@@ -23,8 +23,8 @@
 - [x] E2E + acessibilidade: 5 testes Playwright (console, B3/venues, `dry_run`, viewport 390 px e `axe` sem violações críticas/graves) e novo job `test-e2e` no CI, que passa a ter 8 checks bloqueantes.
 - [x] Simplificação visual: cabeçalho e resumo enxutos, detalhes secundários recolhidos em `<details>`, rótulos acessíveis e alvos mobile maiores; o robô permanece montado entre abas (`forceMount`).
 - [x] Validação local em 28/11: typecheck, `lint:ci` (116 avisos/0 erros), Vitest (20), Bun (132), build, `audit:ci` (0 vulnerabilidades), `deno check` das 3 funções bloqueantes, YAML dos workflows e Playwright (5/5) — todos verdes.
-- [x] Migrations aplicadas pelo SQL Editor com versões registradas e functions `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` redeployadas pela aba **Code** (HTTP 201). Nenhum segredo foi impresso, nenhum PAT foi criado e nenhuma ordem real foi executada.
-- [ ] CI 8/8 e `Daily Smoke` em produção: confirmar após o push de `main`.
+- [x] Migrations aplicadas pelo SQL Editor com versões registradas e functions `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` redeployadas pela aba **Code** com o conteúdo local colado no editor (HTTP 201). Nenhum segredo foi impresso, nenhum PAT foi criado e nenhuma ordem real foi executada.
+- [x] CI 8/8 verde no run `46076354002` (`98ef4fa`); `Daily Smoke` verde no run `46077182693`: 7 venues, `dry_run`, `ai_status` sem segredos, webhook B3 sem assinatura 401, 0 erros em 24 h e limpeza com 0 linhas. O primeiro disparo do smoke falhou porque um deploy anterior da aba **Code** ainda continha o código antigo; após colar os arquivos locais no editor e publicar novamente, o smoke passou.
 
 ## Simplificação visual (concluída em 28/11/2026)
 - [x] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
