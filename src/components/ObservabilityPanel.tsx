@@ -6,15 +6,28 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database as SupabaseDatabase } from "@/integrations/supabase/types";
 import {
   Activity, AlertTriangle, CheckCircle2, Database, RefreshCw, Server, ShieldCheck,
-  Clock3, CircleSlash,
+  Clock3, CircleSlash, Bot,
 } from "lucide-react";
 import { toast } from "sonner";
+
+type AgentState = SupabaseDatabase["public"]["Tables"]["agent_state"]["Row"];
+type AgentRoutine = SupabaseDatabase["public"]["Tables"]["agent_routine_log"]["Row"];
+type AgentTrade = SupabaseDatabase["public"]["Tables"]["agent_trades"]["Row"];
 
 const dayAgo = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 const time = (v: string | null | undefined) =>
   v ? new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+
+/** Tabela ausente significa migration não aplicada — não é falha de conexão. */
+const missingTable = (error: { code?: string; message?: string } | null) =>
+  !!error && (
+    error.code === "PGRST205" ||
+    error.code === "42P01" ||
+    /Could not find the table|schema cache|relation .+ does not exist/i.test(error.message ?? "")
+  );
 
 function Metric({ label, value, hint, tone = "default" }: { label: string; value: string | number; hint?: string; tone?: "default" | "good" | "bad" }) {
   const color = tone === "good" ? "text-success" : tone === "bad" ? "text-destructive" : "text-foreground";
@@ -64,8 +77,56 @@ export function ObservabilityPanel() {
       const { data, error } = await supabase.from("ai_decisions")
         .select("id, symbol, final_action, final_confidence, gate_pass, gate_blocked_by, sources, created_at")
         .order("created_at", { ascending: false }).limit(100);
-      if (error) throw error;
-      return data ?? [];
+      if (error) {
+        if (missingTable(error)) return { rows: [] as { id: string; symbol: string; final_action: string; final_confidence: number; gate_pass: boolean; gate_blocked_by: string[] | null; sources: string[]; created_at: string }[], unavailable: true };
+        throw error;
+      }
+      return { rows: data ?? [], unavailable: false };
+    },
+    refetchInterval: 30000,
+  });
+
+  const agentState = useQuery({
+    queryKey: ["obs-agent-state"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("agent_state")
+        .select("symbol, consecutive_losses, consecutive_stops, daily_pnl_pct, kill_until, blacklisted, last_signal_at, updated_at")
+        .order("updated_at", { ascending: false }).limit(100);
+      if (error) {
+        if (missingTable(error)) return { rows: [] as AgentState[], unavailable: true };
+        throw error;
+      }
+      return { rows: (data ?? []) as AgentState[], unavailable: false };
+    },
+    refetchInterval: 30000,
+  });
+
+  const agentRoutine = useQuery({
+    queryKey: ["obs-agent-routine"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("agent_routine_log")
+        .select("id, kind, summary, payload, created_at, user_id")
+        .order("created_at", { ascending: false }).limit(100);
+      if (error) {
+        if (missingTable(error)) return { rows: [] as AgentRoutine[], unavailable: true };
+        throw error;
+      }
+      return { rows: (data ?? []) as AgentRoutine[], unavailable: false };
+    },
+    refetchInterval: 30000,
+  });
+
+  const agentTrades = useQuery({
+    queryKey: ["obs-agent-trades"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("agent_trades")
+        .select("id, symbol, side, entry, result, pnl_pct, opened_at, closed_at")
+        .eq("result", "open").order("opened_at", { ascending: false }).limit(100);
+      if (error) {
+        if (missingTable(error)) return { rows: [] as AgentTrade[], unavailable: true };
+        throw error;
+      }
+      return { rows: (data ?? []) as AgentTrade[], unavailable: false };
     },
     refetchInterval: 30000,
   });
@@ -90,7 +151,8 @@ export function ObservabilityPanel() {
   });
 
   const refreshAll = () => {
-    ["obs-errors", "obs-logs", "obs-decisions", "obs-audit"].forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
+    ["obs-errors", "obs-logs", "obs-decisions", "obs-audit", "obs-agent-state", "obs-agent-routine", "obs-agent-trades"]
+      .forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
   };
 
   const checkApi = async () => {
@@ -112,17 +174,21 @@ export function ObservabilityPanel() {
     const since = dayAgo();
     const recentErrors = (errors.data ?? []).filter((e) => (e.created_at ?? e.timestamp ?? "") >= since);
     const openErrors = recentErrors.filter((e) => !e.resolved);
-    const recentDecisions = (decisions.data ?? []).filter((d) => d.created_at >= since);
+    const recentDecisions = (decisions.data?.rows ?? []).filter((d) => d.created_at >= since);
     const approved = recentDecisions.filter((d) => d.gate_pass).length;
+    const states = agentState.data?.rows ?? [];
     return {
       openErrors: openErrors.length,
       decisions24h: recentDecisions.length,
       approvalRate: recentDecisions.length ? `${Math.round((approved / recentDecisions.length) * 100)}%` : "—",
       lastEvent: logs.data?.[0]?.created_at ?? null,
+      agentOpen: agentTrades.data?.rows.length ?? 0,
+      agentBlocked: states.filter((s) => s.blacklisted || (s.kill_until && new Date(s.kill_until) > new Date())).length,
     };
-  }, [errors.data, decisions.data, logs.data]);
+  }, [errors.data, decisions.data, logs.data, agentState.data, agentTrades.data]);
 
-  const failing = errors.isError || logs.isError || decisions.isError;
+  const failing = errors.isError || logs.isError || decisions.isError
+    || agentState.isError || agentRoutine.isError || agentTrades.isError;
 
   return (
     <Card className="bg-card/60 border-border/50">
@@ -140,10 +206,11 @@ export function ObservabilityPanel() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Metric label="Erros abertos (24h)" value={metrics.openErrors} tone={metrics.openErrors > 0 ? "bad" : "good"} hint="bot_errors não resolvidos" />
           <Metric label="Decisões IA (24h)" value={metrics.decisions24h} hint="registradas pelo gateway" />
           <Metric label="Taxa de aprovação" value={metrics.approvalRate} tone="good" hint="gate_pass / decisões" />
+          <Metric label="Posições agente" value={metrics.agentOpen} hint="agent_trades abertas" />
           <Metric label="Último evento" value={metrics.lastEvent ? time(metrics.lastEvent) : "—"} hint="auto_trader_logs" />
         </div>
 
@@ -153,8 +220,8 @@ export function ObservabilityPanel() {
             <span>Supabase: {failing ? "erro ao consultar" : "conectado"}</span>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-xs">
-            <CheckCircle2 className={`h-4 w-4 ${decisions.data?.length ? "text-success" : "text-muted-foreground"}`} />
-            <span>Gateway IA: {decisions.data?.length ? `${decisions.data.length} decisões no log` : "sem registros"}</span>
+            <CheckCircle2 className={`h-4 w-4 ${decisions.data?.rows.length ? "text-success" : "text-muted-foreground"}`} />
+            <span>Gateway IA: {decisions.data?.unavailable ? "migration pendente" : decisions.data?.rows.length ? `${decisions.data.rows.length} decisões no log` : "sem registros"}</span>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-xs">
             {apiCheck ? (apiCheck.ok ? <ShieldCheck className="h-4 w-4 text-success" /> : <AlertTriangle className="h-4 w-4 text-destructive" />) : <Server className="h-4 w-4 text-muted-foreground" />}
@@ -163,10 +230,11 @@ export function ObservabilityPanel() {
         </div>
 
         <Tabs defaultValue="events">
-          <TabsList className="grid grid-cols-4">
+          <TabsList className="grid grid-cols-5">
             <TabsTrigger value="events">Eventos</TabsTrigger>
             <TabsTrigger value="errors">Erros</TabsTrigger>
             <TabsTrigger value="decisions">Decisões IA</TabsTrigger>
+            <TabsTrigger value="agent">Agente</TabsTrigger>
             <TabsTrigger value="audit">Auditoria</TabsTrigger>
           </TabsList>
 
@@ -203,8 +271,9 @@ export function ObservabilityPanel() {
 
           <TabsContent value="decisions">
             <ScrollArea className="h-64 rounded-md border border-border/50 p-2">
-              {(decisions.data ?? []).length === 0 && <p className="text-xs text-muted-foreground p-2">O gateway ainda não gravou decisões. Aplique a migration e envie um sinal.</p>}
-              {decisions.data?.map((d) => (
+              {decisions.data?.unavailable && <p className="text-xs text-warning p-2">Tabela `ai_decisions` ausente: aplique `20261127000000_fix_rls_policies.sql`.</p>}
+              {!decisions.data?.unavailable && (decisions.data?.rows.length ?? 0) === 0 && <p className="text-xs text-muted-foreground p-2">O gateway ainda não gravou decisões. Envie um sinal para popular o log.</p>}
+              {decisions.data?.rows.map((d) => (
                 <div key={d.id} className="flex gap-2 items-center text-xs border-b border-border/30 py-1.5 last:border-0">
                   <span className="w-20 text-muted-foreground">{time(d.created_at)}</span>
                   <span className="font-semibold w-16">{d.symbol}</span>
@@ -212,6 +281,48 @@ export function ObservabilityPanel() {
                   <span className="w-14">{d.final_confidence}%</span>
                   <Badge variant={d.gate_pass ? "default" : "outline"} className="text-[10px]">{d.gate_pass ? "aprovado" : "bloqueado"}</Badge>
                   <span className="text-muted-foreground truncate flex-1">{d.gate_blocked_by?.join(", ") || d.sources.join(", ")}</span>
+                </div>
+              ))}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="agent">
+            <ScrollArea className="h-64 rounded-md border border-border/50 p-2 space-y-2">
+              {(agentState.data?.unavailable || agentRoutine.data?.unavailable || agentTrades.data?.unavailable) &&
+                <p className="text-xs text-warning p-2">Memória do agente ausente: aplique as migrations `agent_autonomous_memory` e `agent_trades_take_profit`.</p>}
+
+              <div className="flex items-center gap-2 text-xs font-medium"><Bot className="h-3.5 w-3.5 text-primary" /> Estado por ativo</div>
+              {agentState.data?.rows.length === 0 && <p className="text-xs text-muted-foreground p-2">Sem estado persistido. O loop registra a cada 5 min.</p>}
+              {agentState.data?.rows.map((s) => (
+                <div key={`${s.user_id}-${s.symbol}`} className="flex flex-wrap items-center gap-2 text-xs border-b border-border/30 py-1.5 last:border-0">
+                  <span className="font-semibold w-20">{s.symbol}</span>
+                  <Badge variant="outline" className="text-[10px]">perdas {s.consecutive_losses}</Badge>
+                  <Badge variant="outline" className="text-[10px]">stops {s.consecutive_stops}</Badge>
+                  <span className={Number(s.daily_pnl_pct) < 0 ? "text-destructive" : "text-success"}>{Number(s.daily_pnl_pct).toFixed(2)}%</span>
+                  {s.blacklisted && <Badge variant="destructive" className="text-[10px]">blacklist</Badge>}
+                  {s.kill_until && new Date(s.kill_until) > new Date() && <Badge variant="destructive" className="text-[10px]">kill até {time(s.kill_until)}</Badge>}
+                  <span className="text-muted-foreground ml-auto">atualizado {time(s.updated_at)}</span>
+                </div>
+              ))}
+
+              <div className="text-xs font-medium pt-2">Rotina (loop, diária, kill switch)</div>
+              {agentRoutine.data?.rows.length === 0 && <p className="text-xs text-muted-foreground p-2">Nenhuma rotina registrada.</p>}
+              {agentRoutine.data?.rows.map((r) => (
+                <div key={r.id} className="flex gap-2 text-xs border-b border-border/30 py-1.5 last:border-0">
+                  <span className="text-muted-foreground whitespace-nowrap">{time(r.created_at)}</span>
+                  <Badge variant="outline" className="h-fit text-[10px]">{r.kind}</Badge>
+                  <span className="flex-1">{r.summary}</span>
+                </div>
+              ))}
+
+              <div className="text-xs font-medium pt-2">Posições abertas (saídas reconciliadas pelo loop)</div>
+              {agentTrades.data?.rows.length === 0 && <p className="text-xs text-muted-foreground p-2">Nenhuma posição aberta.</p>}
+              {agentTrades.data?.rows.map((t) => (
+                <div key={t.id} className="flex gap-2 text-xs border-b border-border/30 py-1.5 last:border-0">
+                  <span className="font-semibold w-20">{t.symbol}</span>
+                  <Badge variant="outline" className="h-fit text-[10px]">{t.side}</Badge>
+                  <span>entrada {t.entry}</span>
+                  <span className="text-muted-foreground ml-auto">aberta {time(t.opened_at)}</span>
                 </div>
               ))}
             </ScrollArea>

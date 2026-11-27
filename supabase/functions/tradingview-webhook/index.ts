@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { checkRateLimit, createRateLimitResponse, getClientIdentifier, rateLimitHeaders } from '../_shared/rateLimit.ts';
 import { RISK, clampLeverage, stopDistancePct } from '../_shared/autonomousRisk.ts';
 import { guardFromState, dailyReview } from '../_shared/autonomousAgent.ts';
+import { reconcileSymbolExits } from '../_shared/agentExits.ts';
 
 
 const corsHeaders = {
@@ -421,14 +422,23 @@ Deno.serve(async (req) => {
       console.error("⚠️ Log error:", logError);
     }
 
-    // Memória do agente autônomo: abre o registro para que o dailyReview e os
-    // gates futuros tenham dados reais deste sinal.
+    // Memória do agente autônomo: antes de abrir um novo registro, reconcilia
+    // saídas por SL/TP da posição anterior (o preço pode ter cruzado o nível
+    // entre dois sinais, sem passar pelo chat).
+    const exitReconciliation = await reconcileSymbolExits(supabase, data.symbol, Number(data.price));
+    if (exitReconciliation.errors.length) {
+      console.warn('⚠️ reconciliação de saídas:', exitReconciliation.errors);
+    }
+
+    // Abre o registro para que o dailyReview e os gates futuros tenham dados
+    // reais deste sinal.
     const { error: tradeMemoryError } = await supabase.from('agent_trades').insert({
       user_id: SYSTEM_USER_ID,
       symbol: data.symbol,
       side: data.action === 'buy' ? 'Buy' : 'Sell',
       entry: Number(data.price),
       stop_loss: stopLoss,
+      take_profit: takeProfit,
       qty: Number(data.qty),
       result: 'open',
       opened_at: new Date().toISOString(),
@@ -452,6 +462,10 @@ Deno.serve(async (req) => {
           stopLoss,
           takeProfit,
           riskReward
+        },
+        agentMemory: {
+          reconciledExits: exitReconciliation.exits.length,
+          errors: exitReconciliation.errors.length
         }
       }),
       { 

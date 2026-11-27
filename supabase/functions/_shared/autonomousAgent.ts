@@ -21,7 +21,13 @@ export interface AgentStateRow {
 }
 
 export interface AgentTradeRow {
+  id?: string | null;
+  user_id?: string | null;
   symbol?: string | null;
+  side?: string | null;
+  entry?: number | string | null;
+  stop_loss?: number | string | null;
+  take_profit?: number | string | null;
   result?: string | null;
   pnl_pct?: number | string | null;
   closed_at?: string | null;
@@ -91,6 +97,72 @@ export function applyTradeResult(state: AgentStateRow, result: string, pnlPct: n
   if (kill.active) next.kill_until = new Date(Date.now() + kill.pauseHours * 3600_000).toISOString();
   next.blacklisted = shouldBlacklist({ consecutiveStops: n(next.consecutive_stops) });
   return next;
+}
+
+export interface ReconciledExit extends AgentTradeRow {
+  entryPrice: number;
+  exitPrice: number;
+  result: 'stop' | 'win' | 'loss';
+  pnlPct: number;
+  reason: 'stop_loss' | 'take_profit';
+}
+
+/**
+ * Reconhece saídas por SL/TP de posições abertas usando o preço atual.
+ * Função pura: o chamador (loop, webhook ou chat) decide como persistir.
+ * Em caso de SL e TP na mesma vela, prevalece o stop — critério conservador.
+ * No máximo uma posição aberta por símbolo/lado para não fechar duplicatas.
+ */
+export function reconcileExits(
+  trades: AgentTradeRow[],
+  priceBySymbol: Record<string, number | undefined>,
+): ReconciledExit[] {
+  const prices = new Map<string, number>();
+  for (const [symbol, raw] of Object.entries(priceBySymbol)) {
+    const price = n(raw);
+    if (price !== undefined && price > 0) prices.set(symbol.toUpperCase(), price);
+  }
+
+  const sorted = [...trades].sort((a, b) =>
+    new Date(b.opened_at ?? 0).getTime() - new Date(a.opened_at ?? 0).getTime());
+  const seen = new Set<string>();
+  const exits: ReconciledExit[] = [];
+
+  for (const trade of sorted) {
+    if (trade.result && trade.result !== 'open') continue;
+    const symbol = String(trade.symbol ?? '').toUpperCase();
+    const price = prices.get(symbol);
+    const entry = n(trade.entry);
+    if (!symbol || price === undefined || entry === undefined || entry <= 0) continue;
+
+    const side = String(trade.side ?? 'Buy').toLowerCase() === 'sell' ? 'Sell' : 'Buy';
+    const key = `${symbol}:${side}`;
+    if (seen.has(key)) continue;
+
+    const stop = n(trade.stop_loss);
+    const target = n(trade.take_profit);
+    const stopHit = stop !== undefined && stop > 0 && (side === 'Buy' ? price <= stop : price >= stop);
+    const targetHit = target !== undefined && target > 0 && (side === 'Buy' ? price >= target : price <= target);
+    if (!stopHit && !targetHit) continue;
+
+    seen.add(key);
+    const pnlPct = side === 'Buy'
+      ? ((price - entry) / entry) * 100
+      : ((entry - price) / entry) * 100;
+    const reason = stopHit ? 'stop_loss' : 'take_profit';
+    exits.push({
+      ...trade,
+      symbol,
+      side,
+      entryPrice: entry,
+      exitPrice: price,
+      pnlPct,
+      result: stopHit ? 'stop' : pnlPct >= 0 ? 'win' : 'loss',
+      reason,
+    });
+  }
+
+  return exits;
 }
 
 export interface DailyReview {

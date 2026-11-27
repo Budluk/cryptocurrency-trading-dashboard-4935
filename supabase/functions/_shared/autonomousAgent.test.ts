@@ -4,6 +4,7 @@ import {
   dailyReview,
   guardFromState,
   isDailyWindow,
+  reconcileExits,
   type AgentTradeRow,
 } from './autonomousAgent.ts';
 
@@ -74,5 +75,61 @@ describe('autonomousAgent', () => {
     expect(isDailyWindow(new Date('2026-11-27T00:04:00Z'))).toBe(true);
     expect(isDailyWindow(new Date('2026-11-27T00:06:00Z'))).toBe(false);
     expect(isDailyWindow(new Date('2026-11-27T01:00:00Z'))).toBe(false);
+  });
+});
+
+describe('reconcileExits', () => {
+  const base: AgentTradeRow = {
+    id: 't1',
+    user_id: 'u1',
+    symbol: 'btcusdt',
+    side: 'Buy',
+    entry: 100,
+    stop_loss: 99.5,
+    take_profit: 101,
+    result: 'open',
+    opened_at: '2026-11-27T12:00:00Z',
+  };
+
+  test('reconhece stop em compra e calcula P&L negativo', () => {
+    const [exit] = reconcileExits([base], { BTCUSDT: 99.4 });
+    expect(exit).toBeDefined();
+    expect(exit.result).toBe('stop');
+    expect(exit.reason).toBe('stop_loss');
+    expect(exit.pnlPct).toBeCloseTo(-0.6, 6);
+  });
+
+  test('reconhece take profit em venda e calcula P&L positivo', () => {
+    const [exit] = reconcileExits([{
+      ...base, id: 't2', side: 'Sell', entry: 100, stop_loss: 101, take_profit: 98,
+    }], { BTCUSDT: 97.9 });
+    expect(exit.result).toBe('win');
+    expect(exit.reason).toBe('take_profit');
+    expect(exit.pnlPct).toBeCloseTo(2.1, 6);
+  });
+
+  test('stop prevalece quando SL e TP são atingidos na mesma vela', () => {
+    const [exit] = reconcileExits([{
+      ...base, stop_loss: 99, take_profit: 98,
+    }], { BTCUSDT: 97.5 });
+    expect(exit.result).toBe('stop');
+    expect(exit.reason).toBe('stop_loss');
+  });
+
+  test('ignora trades fechados, preços inválidos e duplicatas do mesmo ativo/lado', () => {
+    const trades: AgentTradeRow[] = [
+      { ...base, id: 'recente', opened_at: '2026-11-27T12:10:00Z' },
+      { ...base, id: 'antigo', opened_at: '2026-11-27T12:00:00Z' },
+      { ...base, id: 'fechado', result: 'win' },
+      { ...base, id: 'sem-preco', symbol: 'ETHUSDT' },
+    ];
+    const exits = reconcileExits(trades, { BTCUSDT: 99.4, ETHUSDT: Number.NaN });
+    expect(exits).toHaveLength(1);
+    expect(exits[0].id).toBe('recente');
+  });
+
+  test('sem preço disponível não há reconciliação', () => {
+    expect(reconcileExits([base], {})).toHaveLength(0);
+    expect(reconcileExits([base], { BTCUSDT: 99.8 })).toHaveLength(0);
   });
 });

@@ -37,12 +37,17 @@ Select-Content .env   # contém apenas VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISH
 
 ## Etapa 1 — Revogar o token GitHub vazado e criar um novo (PAT ou SSH)
 
-### 1.1 Revogar o token comprometido (faça primeiro, antes de qualquer push)
+### 1.1 Revogar o token comprometido
 
-1. Token classic: <https://github.com/settings/tokens> → clique no token expirado → **Delete**.
-2. Token fine-grained: <https://github.com/settings/personal-access-tokens> → **Revoke**.
-3. Se for token de GitHub App/OAuth: <https://github.com/settings/apps/authorizations> → **Revoke**.
-4. Segredos do Actions (se o token estiver lá): <https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/settings/secrets/actions> → remover/atualizar.
+✅ **Já executado:** o token vazado foi revogado via API pública não autenticada
+(`POST https://api.github.com/credentials/revoke` com `{"credentials":["ghp_…"]}` → HTTP 202).
+Uma chamada de verificação a `/user` com esse token agora retorna **401**. O dono recebeu
+a notificação padrão do GitHub. Não tente reativá-lo — revogação é irreversível.
+
+Ainda vale conferir:
+
+1. Segredos do Actions (se o token estiver lá): <https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/settings/secrets/actions> → remover/atualizar.
+2. O credencial local usada pelo push é um OAuth (`gho_`), distinta do token vazado; substitua-a apenas se a auditoria 1.2 apontar uso indevido.
 
 ### 1.2 Auditoria do que o token antigo alcançou
 
@@ -99,13 +104,14 @@ $env:GH_TOKEN = "ghp_..."        # para a CLI do GitHub, se você instalar o gh
 supabase migration list --project-ref uohdpxkfgxmtlosnmspf
 ```
 
-Confira que estas **três** aparecem como pendentes e anote se há alguma outra:
+Confira que estas **quatro** aparecem como pendentes e anote se há alguma outra:
 
 | # | Arquivo | Conteúdo |
 |---|---|---|
 | 1 | `supabase/migrations/20261127000000_fix_rls_policies.sql` | Substitui políticas `USING (true)`/"Allow anonymous access" por políticas por usuário em `risk_management_settings`, `ml_adaptive_config`, `portfolio_rebalance_config`, `demo_accounts`, `demo_positions`, `auto_trader_config`, `auto_trader_positions`, `auto_trader_logs`, `ai_learning_data`, `ai_decisions` + GRANTs. |
 | 2 | `supabase/migrations/20261127010000_agent_autonomous_memory.sql` | Memória do agente autônomo: `agent_state`, `agent_trades`, `prompt_versions`, `agent_routine_log` (todas com RLS por usuário + service role). |
 | 3 | `supabase/migrations/20261127020000_bot_errors_observability.sql` | Tabela `bot_errors` (DDL reprodutível) + índices + RLS, usada pelo painel de Observabilidade. |
+| 4 | `supabase/migrations/20261127030000_agent_trades_take_profit.sql` | Coluna `agent_trades.take_profit` + índice de posições abertas; permite reconciliar saídas por TP no loop e no webhook. |
 
 ### 2.2 Aplicar na ordem exata
 
@@ -123,14 +129,17 @@ $DB_URL = "postgresql://postgres:SENHA@db.uohdpxkfgxmtlosnmspf.supabase.co:5432/
 psql $DB_URL -f supabase/migrations/20261127000000_fix_rls_policies.sql
 psql $DB_URL -f supabase/migrations/20261127010000_agent_autonomous_memory.sql
 psql $DB_URL -f supabase/migrations/20261127020000_bot_errors_observability.sql
+psql $DB_URL -f supabase/migrations/20261127030000_agent_trades_take_profit.sql
 ```
 
-> Todas usam `DROP POLICY IF EXISTS` / `CREATE TABLE IF NOT EXISTS` → são seguras para reaplicar.
+> Todas usam `DROP POLICY IF EXISTS` / `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`
+> → são seguras para reaplicar.
 
 > **Antes da migration 1:** ativar `Dashboard → Authentication → Providers → Anonymous Sign-Ins`.
 > As políticas passam a exigir `auth.uid() = user_id`; sem sessão anônima real o app
-> usa o ID fixo de fallback e **não consegue** gravar configurações. O frontend já
-> tenta `signInAnonymously()` automaticamente quando não há login (`src/lib/anonymousUser.ts`).
+> usa o ID fixo de fallback e **não consegue** gravar configurações. O frontend só
+> chama `signInAnonymously()` quando `VITE_SUPABASE_ANONYMOUS_SIGNIN="true"`; com o
+> flag desligado ele evita o 422 em `/auth/v1/signup` (`src/lib/anonymousUser.ts`).
 > Configurações antigas gravadas sob o ID fixo ficam invisíveis para o usuário anônimo;
 > faça a migração desses dados no SQL Editor, se necessário.
 > Depois de ativar o provider, ligue `VITE_SUPABASE_ANONYMOUS_SIGNIN="true"` no `.env`.
@@ -140,7 +149,7 @@ psql $DB_URL -f supabase/migrations/20261127020000_bot_errors_observability.sql
 ### 2.3 Verificação pós-aplicação
 
 ```powershell
-supabase migration list --project-ref uohdpxkfgxmtlosnmspf   # as três devem estar "Applied"
+supabase migration list --project-ref uohdpxkfgxmtlosnmspf   # as quatro devem estar "Applied"
 ```
 
 No SQL Editor do Dashboard:
@@ -168,8 +177,8 @@ As únicas referências estão em `.lovable/plan.md` (`b3_ticks`, `b3_signals`, 
 Portanto:
 
 - **Não há o que aplicar do repositório.** A migração b3_* é uma **pendência conhecida/opcional**: só faça deploy da aba B3 se você recuperar esse SQL (fora do versionamento) e quiser reativar o B3.
-- Se existir, aplique **depois** das três da etapa 2.2, seguindo a ordem dos nomes de arquivo.
-- Nenhuma outra migration nova foi criada neste branch; as demais do diretório já foram aplicadas em execuções anteriores (confirme pelo `migration list`).
+- Se existir, aplique **depois** das quatro da etapa 2.2, seguindo a ordem dos nomes de arquivo.
+- As demais migrations do diretório já foram aplicadas em execuções anteriores (confirme pelo `migration list`).
 
 ---
 
@@ -398,7 +407,7 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 
 ## Etapa 7 — Pós-deploy e rollback
 
-- [ ] `supabase migration list` → 3 migrations "Applied".
+- [ ] `supabase migration list` → 4 migrations "Applied".
 - [ ] `supabase functions list` → 4 functions "Loaded"/deployadas.
 - [ ] Smoke tests 5.1–5.4 verdes.
 - [ ] CI do PR verde (6 jobs: lint/typecheck, vitest, edge tests, build, audit, edge check).
@@ -409,7 +418,7 @@ Rollbacks:
 - **Function:** `git checkout <sha-do-commit-bom>` e redesploy da função afetada com o mesmo comando da Etapa 3.
 - **Migration:** a CLI não desfaz sozinha — por isso, antes do `db push` faça um dump de segurança:
   `supabase db dump --project-ref uohdpxkfgxmtlosnmspf -f backup_antes_do_deploy.sql`
-  e tenha em mãos o SQL inverso (as 3 migrations são aditivas; na dúvida, recriar política anterior).
+  e tenha em mãos o SQL inverso (as 4 migrations são aditivas; na dúvida, recriar política anterior).
 - **Secrets:** `supabase secrets set <KEY>=<valor-antigo> --project-ref ...` (nenhum segredo foi apagado).
 
 ---

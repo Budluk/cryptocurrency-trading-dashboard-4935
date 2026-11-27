@@ -14,6 +14,147 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_routine_log: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          payload: Json
+          summary: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          payload?: Json
+          summary: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          summary?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      agent_state: {
+        Row: {
+          blacklisted: boolean
+          consecutive_losses: number
+          consecutive_stops: number
+          daily_pnl_pct: number
+          kill_until: string | null
+          last_signal_at: string | null
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          blacklisted?: boolean
+          consecutive_losses?: number
+          consecutive_stops?: number
+          daily_pnl_pct?: number
+          kill_until?: string | null
+          last_signal_at?: string | null
+          symbol: string
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          blacklisted?: boolean
+          consecutive_losses?: number
+          consecutive_stops?: number
+          daily_pnl_pct?: number
+          kill_until?: string | null
+          last_signal_at?: string | null
+          symbol?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      agent_trades: {
+        Row: {
+          closed_at: string | null
+          entry: number
+          id: string
+          opened_at: string
+          pnl_pct: number | null
+          qty: number
+          result: string
+          side: string
+          stop_loss: number
+          symbol: string
+          take_profit: number | null
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          entry: number
+          id?: string
+          opened_at?: string
+          pnl_pct?: number | null
+          qty: number
+          result?: string
+          side: string
+          stop_loss: number
+          symbol: string
+          take_profit?: number | null
+          user_id?: string
+        }
+        Update: {
+          closed_at?: string | null
+          entry?: number
+          id?: string
+          opened_at?: string
+          pnl_pct?: number | null
+          qty?: number
+          result?: string
+          side?: string
+          stop_loss?: number
+          symbol?: string
+          take_profit?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      prompt_versions: {
+        Row: {
+          active: boolean
+          author: string | null
+          body: string
+          created_at: string
+          id: string
+          role: string
+          source_url: string | null
+          version: string
+        }
+        Insert: {
+          active?: boolean
+          author?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          role: string
+          source_url?: string | null
+          version: string
+        }
+        Update: {
+          active?: boolean
+          author?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          role?: string
+          source_url?: string | null
+          version?: string
+        }
+        Relationships: []
+      }
       aggressive_trading_config: {
         Row: {
           allow_hedging: boolean | null

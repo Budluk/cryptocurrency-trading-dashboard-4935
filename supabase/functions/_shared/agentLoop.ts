@@ -9,6 +9,7 @@
 import { aiFetch } from './aiRouter.ts';
 import { AUTONOMOUS_SYSTEM_PROMPT } from './autonomousPrompt.ts';
 import { guardFromState, dailyReview, isDailyWindow, type AgentStateRow, type AgentTradeRow } from './autonomousAgent.ts';
+import { reconcileSymbolExits } from './agentExits.ts';
 import { candlesFromBybitKlines, indicatorSummary, type Candle } from './indicators.ts';
 
 export const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -159,6 +160,9 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
       }
       const ind = indicatorSummary(candles);
       const market = marketFromIndicators(ind, ticker);
+      // Saídas por SL/TP podem acontecer entre execuções do loop: fechamos a
+      // memória antes de avaliar novas entradas para não liberar risco errado.
+      const exits = await reconcileSymbolExits(db, symbol, ticker.price ?? market.price);
       const state = await readState(db, symbol);
       const userId = state?.user_id ?? SYSTEM_USER_ID;
       const trades = await readTrades(db, userId);
@@ -207,6 +211,8 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
         tradable: gate.tradable,
         reasons: gate.reasons,
         logged: !insert.error && !log.error,
+        reconciledExits: exits.exits.map((e) => ({ id: e.id, result: e.result, pnlPct: e.pnlPct, reason: e.reason })),
+        reconciliationErrors: exits.errors,
       });
     } catch (e) {
       results.push({ symbol, status: 'error', error: (e as Error).message });
