@@ -168,6 +168,10 @@ jobs:
 
       # As funções que podem mexer em ordens/pesquisa são bloqueantes. As demais
       # ainda têm erros de tipagem legados e seguem apenas informativas acima.
+      # O checkout limpo não tem node_modules, necessário para o specifier npm:.
+      - name: Install dependencies for strict Deno check
+        run: npm ci --legacy-peer-deps
+
       - name: Strict check for trading and research functions
         run: npx -y deno@latest check supabase/functions/bybit-trading/index.ts supabase/functions/ai-market-analysis/index.ts
 
