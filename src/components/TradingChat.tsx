@@ -5,18 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BookOpen, Bot, FileText, Loader2, MessageSquare, Paperclip, Send, Trash2, X } from "lucide-react";
+import { BookOpen, Bot, FileText, FlaskConical, Loader2, MessageSquare, Paperclip, Send, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { filesToAttachments, isResearchMessage, MAX_CHAT_FILES, type ChatAttachment } from "@/lib/chatAttachments";
 
 type Ficha = Record<string, unknown> & { titulo?: string };
+type Proposal = { summary: string; tool?: string; args?: Record<string, unknown>; token?: string };
 type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  proposal?: { summary: string } | null;
+  proposal?: Proposal | null;
   proposal_status?: string | null;
   research?: boolean;
+  simulated?: boolean;
   ficha?: Ficha | null;
 };
 
@@ -49,6 +51,7 @@ export function TradingChat() {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<ChatAttachment[]>([]);
   const [forceResearch, setForceResearch] = useState(false);
+  const [dryRun, setDryRun] = useState(false);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -74,6 +77,10 @@ export function TradingChat() {
     }
   };
 
+  const clearPending = () => setMsgs((m) => m.map((x) => (
+    x.proposal?.token ? { ...x, proposal: { ...x.proposal, token: undefined } } : x
+  )));
+
   const send = async () => {
     const t = text.trim();
     if ((!t && !files.length) || busy) return;
@@ -84,8 +91,10 @@ export function TradingChat() {
     setText("");
     setFiles([]);
     setForceResearch(false);
+    clearPending();
     setMsgs((m) => [...m, { id: userMsgId, role: "user", content: userContent, research: researching }]);
     setBusy(true);
+    let simulated = false;
     try {
       if (researching) {
         const data = await callResearch({
@@ -103,7 +112,19 @@ export function TradingChat() {
           ficha: data?.ficha ?? null,
         }]);
       } else {
-        await callTrading({ action: "chat_send", message: t });
+        const data = await callTrading({ action: "chat_send", message: t, dry_run: dryRun }) as {
+          reply?: string; simulated?: { summary: string }[];
+        };
+        if (dryRun) {
+          simulated = true;
+          const plans = (data?.simulated ?? []).map((a) => a.summary);
+          setMsgs((m) => [...m, {
+            id: `s-${Date.now()}`,
+            role: "assistant",
+            content: `${String(data?.reply ?? "Sem resposta.")}${plans.length ? `\n\nSimulação: ${plans.join("; ")}` : ""}`,
+            simulated: true,
+          }]);
+        }
       }
     } catch (e) {
       setMsgs((m) => m.filter((msg) => msg.id !== userMsgId));
@@ -111,10 +132,34 @@ export function TradingChat() {
       setFiles(attachments);
       toast.error((e as Error).message);
     } finally {
-      await load();
+      // Na simulação nada foi gravado: manter as mensagens locais e não recarregar.
+      if (!simulated) await load();
       setBusy(false);
       inputRef.current?.focus();
     }
+  };
+
+  const confirmAction = async (p: Proposal) => {
+    if (!p.token || busy) return;
+    setBusy(true);
+    try {
+      await callTrading({ action: "chat_send", message: `Confirmar: ${p.summary}`, confirmation: p.token });
+      await load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const cancelAction = async (p: Proposal) => {
+    if (busy) return;
+    setBusy(true);
+    try { await callTrading({ action: "chat_cancel", token: p.token }); }
+    catch (e) { toast.error((e as Error).message); }
+    await load();
+    setBusy(false);
   };
 
   const [api, setApi] = useState<{ ok: boolean; problem?: string; warning?: string | null; daysLeft?: number | null } | null>(null);
@@ -144,11 +189,12 @@ export function TradingChat() {
             <Button variant="ghost" size="icon" onClick={clear} aria-label="Limpar histórico" className="mr-6"><Trash2 className="h-4 w-4" /></Button>
           </SheetHeader>
           {apiAlert && <div className="mx-4 mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">{apiAlert}</div>}
+          {dryRun && <div className="mx-4 mt-3 rounded-lg border border-primary/50 bg-primary/10 px-3 py-2 text-xs text-primary">Modo simulação: nenhuma ordem será enviada e nada será salvo.</div>}
           <ScrollArea className="flex-1 px-4">
             <div className="py-4 space-y-3">
               {msgs.length === 0 && !busy && (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Pergunte sobre posições ou estratégia. Cole um link do GitHub, um vídeo do YouTube, um artigo ou anexe arquivos de texto/código: eu leio antes de responder e cito as fontes. Nesse modo de pesquisa nenhuma ordem é executada. No chat normal, ordens são executadas com stop obrigatório (máx. 0,5%) e alavancagem até 8x.
+                  Pergunte sobre posições ou estratégia. Cole um link do GitHub, um vídeo do YouTube, um artigo ou anexe arquivos de texto/código: eu leio antes de responder e cito as fontes. Nesse modo de pesquisa nenhuma ordem é executada. No chat normal, toda ordem exige sua confirmação, stop obrigatório (máx. 0,5%) e alavancagem até 8x. Ative o modo simulação para testar sem executar nem salvar.
                 </p>
               )}
               {msgs.map((m) => (
@@ -162,10 +208,17 @@ export function TradingChat() {
                         <Badge variant={m.proposal_status === "executed" ? "default" : "secondary"}>{STATUS[m.proposal_status || "pending"]}</Badge>
                       </div>
                       {m.content && <p className="text-xs text-muted-foreground">{m.content}</p>}
+                      {m.proposal.token && m.proposal_status === "pending" && !dryRun && (
+                        <div className="flex gap-2 pt-1">
+                          <Button size="sm" disabled={busy} onClick={() => confirmAction(m.proposal as Proposal)}>Confirmar</Button>
+                          <Button size="sm" variant="outline" disabled={busy} onClick={() => cancelAction(m.proposal as Proposal)}>Cancelar</Button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="max-w-[95%] space-y-2">
                       {m.research && <Badge variant="secondary" className="gap-1"><BookOpen className="h-3 w-3" /> Pesquisa</Badge>}
+                      {m.simulated && <Badge variant="outline" className="gap-1"><FlaskConical className="h-3 w-3" /> Simulação</Badge>}
                       <div className="text-sm whitespace-pre-wrap text-foreground">{m.content}</div>
                       {m.ficha && (
                         <details className="rounded-lg border border-border/60 bg-card/40 p-2 text-xs">
@@ -179,7 +232,7 @@ export function TradingChat() {
                   )}
                 </div>
               ))}
-              {busy && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Lendo fontes e analisando...</div>}
+              {busy && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {dryRun ? "Simulando e analisando..." : "Lendo fontes e analisando..."}</div>}
               <div ref={endRef} />
             </div>
           </ScrollArea>
@@ -211,6 +264,11 @@ export function TradingChat() {
             <Button variant={forceResearch ? "default" : "ghost"} size="icon" onClick={() => setForceResearch((v) => !v)}
               disabled={busy} aria-label="Alternar modo pesquisa" title="Modo pesquisa: lê fontes sem executar ordens">
               <BookOpen className="h-4 w-4" />
+            </Button>
+            <Button variant={dryRun ? "default" : "ghost"} size="icon"
+              onClick={() => { setDryRun((v) => !v); clearPending(); }}
+              disabled={busy} aria-label="Alternar modo simulação" title="Modo simulação: nada é executado nem salvo">
+              <FlaskConical className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={() => fileRef.current?.click()} disabled={busy}
               aria-label="Anexar arquivos de texto/código" title="Anexar até 5 arquivos de texto/código">

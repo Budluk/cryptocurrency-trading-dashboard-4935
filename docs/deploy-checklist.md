@@ -394,6 +394,28 @@ curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
 > estruturada". A conta temporária e os arquivos de sessão foram removidos
 > logo após o teste.
 
+### 5.1c Chat normal: confirmação e simulação
+
+- **Modo simulação:** botão de béquer no rodapé do chat (ou `dry_run: true` no
+  `chat_send`). As ferramentas `execute_order`/`execute_close`/`execute_set_stop`
+  apenas descrevem o que fariam; nenhuma ordem é enviada e nada é gravado em
+  `trading_chat_messages`, `agent_state`, `agent_trades` ou `agent_routine_log`.
+- **Modo real:** a IA devolve um pedido de confirmação com token HMAC assinado
+  pela service role key (validade 5 min, argumentos exatos, uso único enquanto o
+  histórico for mantido). O cartão "Aguardando" só executa depois de
+  **Confirmar**; **Cancelar** chama `chat_cancel`. Kill switch, blacklist,
+  horários, RVOL, stop e sizing são reaplicados no instante da confirmação.
+  A proposta original muda de status e os botões desaparecem.
+
+```powershell
+# Simulação segura para validar sem ordens nem escritas
+curl.exe -s -X POST "$URL/functions/v1/bybit-trading" `
+  -H "Authorization: Bearer $ANON" -H "apikey: $ANON" -H "Content-Type: application/json" `
+  -d '{\"action\":\"chat_send\",\"message\":\"Abra 0,01 BTCUSDT com stop de 0,4%\",\"dry_run\":true}'
+# esperado: {"ok":true,"dryRun":true,"reply":"...","simulated":[{"summary":"COMPRA ...","simulated":true}]}
+# conferir no SQL: contagens de trading_chat_messages/agent_* inalteradas e nenhuma ordem em get_order_history
+```
+
 ### 5.2 Webhook da TradingView (`tradingview-webhook`)
 
 Sem assinatura → deve dar 401; sem secret → 503:
@@ -519,7 +541,7 @@ Rollbacks:
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
 3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
 4. **`npm audit`** — `npm run audit:ci` bloqueia high/critical; hoje são 0 high/critical e restam 2 `moderate` em `react-router`.
-5. **Chat normal com IA real** — o modo Pesquisa foi validado; o chat comum (que pode executar ordens) segue sem teste de IA real até confirmação explícita/dry-run.
+5. **Chat normal com IA real** — o modo Pesquisa foi validado; o chat comum agora exige confirmação para ordens e tem modo simulação sem escritas, mas segue sem teste de IA real em produção. Comece pelo `dry_run` da seção 5.1c. A `bybit-trading` precisa de redeploy pela aba **Code** após este commit.
 6. **Plano Pro do Supabase** — necessário apenas para os alertas de "senhas vazadas".
 7. **Conta admin permanente e revisão visual** — a validação na UI usou sessão temporária; falta testar com a conta do usuário e conferir celular/desktop.
 8. **Créditos na OpenAI/Lovable** — OpenAI sem quota e Lovable sem créditos; o Groq free tier pode devolver `429` (~60 s). O agente já repete uma vez; créditos eliminam o gargalo.

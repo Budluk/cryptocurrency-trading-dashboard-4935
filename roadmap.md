@@ -7,6 +7,7 @@
 - [x] Bloqueios 401/403 da Pesquisa testados; pesquisa real validada por API e pela interface com sessão admin temporária (removida depois). Nenhuma ordem foi executada.
 - [x] CI com 7 checks bloqueantes, 7/7 verdes; gitleaks com allowlist dos commits antigos já revogados.
 - [x] Chat flutuante validado na UI com URL do repositório: fontes citadas, ficha e persistência no histórico.
+- [x] Chat normal com **confirmação explícita** (token HMAC assinado pelo servidor, 5 min) antes de abrir/fechar/ajustar ordens e **modo simulação** (`dry_run`) sem ordens nem escritas. Gates reaplicados na confirmação.
 
 ## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
@@ -14,7 +15,7 @@
 - [ ] Exclusões definitivas de funções — aguardando indicação do usuário
 
 ## Validações que dependem do usuário
-- [ ] Chat de trading normal (modo que pode operar) com IA real — somente após confirmação explícita, de preferência em dry-run
+- [ ] Chat de trading normal com IA real — começar pelo modo simulação (já disponível) e só autorizar uma ordem real depois de conferir a proposta
 - [ ] Painel de Observabilidade sem erros após acompanhamento pós-deploy
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
 

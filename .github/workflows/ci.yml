@@ -84,6 +84,11 @@ jobs:
           cd supabase/functions/_shared
           bun test autonomousRisk.test.ts autonomousAgent.test.ts indicators.test.ts agentLoop.test.ts researchContext.test.ts
 
+      - name: Run trading chat confirmation tests
+        run: |
+          cd supabase/functions/_shared
+          bun test tradingChat.test.ts
+
       - name: Run HMAC tests
         run: |
           cd supabase/functions/bybit-trading
@@ -160,6 +165,11 @@ jobs:
             echo "Checking $f..."
             npx -y deno@latest check "$f" 2>&1 | head -20 || true
           done
+
+      # As funções que podem mexer em ordens/pesquisa são bloqueantes. As demais
+      # ainda têm erros de tipagem legados e seguem apenas informativas acima.
+      - name: Strict check for trading and research functions
+        run: npx -y deno@latest check supabase/functions/bybit-trading/index.ts supabase/functions/ai-market-analysis/index.ts
 
       - name: Verify config.toml
         run: |

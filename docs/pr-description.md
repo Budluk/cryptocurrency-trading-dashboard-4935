@@ -14,6 +14,8 @@ Este PR leva o dashboard de "protótipo com IA solta" para um fluxo auditável: 
 - Tools de web/GitHub/YouTube/artigos/código via `researchAgent` e `tradingChat`, roteadas por `action: research*` dentro de `ai-market-analysis` (sem nova Edge Function, conforme `AGENTS.md`).
 - Roteador único `aiRouter`: FreeLLMAPI (com tool calling preservado) → Groq → OpenAI → Lovable, com circuit breaker, rate limit e fallback.
 - Novas tools: `get_indicators`, `agent_status`, `agent_record_result`, `daily_review`. `execute_order` passou a gravar trades abertos e a atualizar memória no fechamento.
+- O chat normal agora exige **confirmação explícita** antes de `execute_order`/`execute_close`/`execute_set_stop`: token HMAC assinado pelo servidor (5 min, uso único), argumentos exatos e gates reaplicados na confirmação. O botão **Cancelar** registra a ação como cancelada, sem ordem.
+- Novo **modo simulação** (`dry_run`): nenhuma ordem é enviada e nada é gravado em `trading_chat_messages`, `agent_state`, `agent_trades` ou `agent_routine_log`. Útil para validar o chat sem risco.
 
 ## Agente autônomo
 
@@ -31,9 +33,9 @@ Este PR leva o dashboard de "protótipo com IA solta" para um fluxo auditável: 
 
 ## CI e testes
 
-- 7 checks bloqueantes: typecheck, Vitest, testes Bun das Edge Functions, build, `npm run lint:ci` (orçamento de warnings) e `npm run audit:ci` (high/critical).
+- 7 checks bloqueantes: typecheck, Vitest, testes Bun das Edge Functions, build, `npm run lint:ci` (orçamento de warnings) e `npm run audit:ci` (high/critical). O check do Deno é bloqueante para `bybit-trading` e `ai-market-analysis`; as demais funções com erros legados seguem informativas.
 - Lint: 0 erros, 116 warnings dentro do orçamento. Audit: 0 high/critical, restam 2 `moderate` em `react-router`.
-- Cobertura Vitest ~87%; testes do agente, indicadores, risco, roteador de IA, HMAC e parsing do loop incluídos.
+- Cobertura Vitest ~87%; testes Bun do agente, indicadores, risco, roteador de IA, HMAC, parsing do loop, contexto de pesquisa e confirmação do chat incluídos.
 
 ## Deploy
 
@@ -46,4 +48,4 @@ Ver `docs/deploy-checklist.md`: migrations, deploy de functions, secrets, smoke 
 3. [ ] Reconciliação automática de saídas por stop/TP fora do chat (win rate e blacklist dependem disso).
 4. [ ] B3 (`WINZ25`/`WDOF26`) permanece não operacional; não há migration `b3_*` no repositório.
 5. [x] Tipos do Supabase regenerados com as tabelas `agent_*` e `strategy_leads`.
-6. [ ] Chat normal com IA real depende de confirmação explícita (pode operar); o modo Pesquisa já foi validado por API e UI em 27/11/2026.
+6. [ ] Chat normal com IA real em produção — a confirmação e o modo simulação já existem; o modo Pesquisa foi validado por API e UI em 27/11/2026.
