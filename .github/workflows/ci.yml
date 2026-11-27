@@ -94,6 +94,11 @@ jobs:
           cd supabase/functions/bybit-trading
           bun test hmacSignature.test.ts
 
+      - name: Run multi-exchange and B3 tests
+        run: |
+          cd supabase/functions/_shared
+          bun test exchangeRegistry.test.ts exchangeAdapters.test.ts exchangeGateway.test.ts b3Signals.test.ts
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -172,8 +177,8 @@ jobs:
       - name: Install dependencies for strict Deno check
         run: npm ci --legacy-peer-deps
 
-      - name: Strict check for trading and research functions
-        run: npx -y deno@latest check supabase/functions/bybit-trading/index.ts supabase/functions/ai-market-analysis/index.ts
+      - name: Strict check for trading, webhook and research functions
+        run: npx -y deno@latest check supabase/functions/bybit-trading/index.ts supabase/functions/tradingview-webhook/index.ts supabase/functions/ai-market-analysis/index.ts
 
       - name: Verify config.toml
         run: |

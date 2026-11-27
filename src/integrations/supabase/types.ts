@@ -122,6 +122,156 @@ export type Database = {
         }
         Relationships: []
       }
+      b3_analysis: {
+        Row: {
+          created_at: string
+          id: string
+          payload: Json
+          summary: string
+          symbol: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          payload?: Json
+          summary: string
+          symbol: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          payload?: Json
+          summary?: string
+          symbol?: string
+        }
+        Relationships: []
+      }
+      b3_signals: {
+        Row: {
+          atr: number | null
+          confidence: number
+          created_at: string
+          executed: boolean
+          id: string
+          leverage: number | null
+          mode: string
+          price: number
+          qty: number
+          rsi: number | null
+          side: string
+          source: string
+          stop_loss: number | null
+          symbol: string
+          take_profit: number | null
+        }
+        Insert: {
+          atr?: number | null
+          confidence: number
+          created_at?: string
+          executed?: boolean
+          id?: string
+          leverage?: number | null
+          mode?: string
+          price: number
+          qty?: number
+          rsi?: number | null
+          side: string
+          source?: string
+          stop_loss?: number | null
+          symbol: string
+          take_profit?: number | null
+        }
+        Update: {
+          atr?: number | null
+          confidence?: number
+          created_at?: string
+          executed?: boolean
+          id?: string
+          leverage?: number | null
+          mode?: string
+          price?: number
+          qty?: number
+          rsi?: number | null
+          side?: string
+          source?: string
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+        }
+        Relationships: []
+      }
+      b3_ticks: {
+        Row: {
+          atr: number | null
+          created_at: string
+          id: string
+          price: number
+          rsi: number | null
+          symbol: string
+        }
+        Insert: {
+          atr?: number | null
+          created_at?: string
+          id?: string
+          price: number
+          rsi?: number | null
+          symbol: string
+        }
+        Update: {
+          atr?: number | null
+          created_at?: string
+          id?: string
+          price?: number
+          rsi?: number | null
+          symbol?: string
+        }
+        Relationships: []
+      }
+      exchange_simulations: {
+        Row: {
+          action: string
+          created_at: string
+          exchange: string
+          id: string
+          leverage: number | null
+          payload: Json
+          price: number | null
+          qty: number | null
+          side: string | null
+          simulated: boolean
+          symbol: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          exchange: string
+          id?: string
+          leverage?: number | null
+          payload?: Json
+          price?: number | null
+          qty?: number | null
+          side?: string | null
+          simulated?: boolean
+          symbol?: string | null
+          user_id?: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          exchange?: string
+          id?: string
+          leverage?: number | null
+          payload?: Json
+          price?: number | null
+          qty?: number | null
+          side?: string | null
+          simulated?: boolean
+          symbol?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       prompt_versions: {
         Row: {
           active: boolean

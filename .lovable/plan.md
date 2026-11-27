@@ -1,3 +1,10 @@
+> **Status em 27/11/2026 — plano histórico, parcialmente superado.** O projeto
+> não tem espaço no plano Supabase para uma função nova: o canal B3 usa o
+> `tradingview-webhook` existente com segredo `B3_WEBHOOK_SECRET`. Os contratos
+> WINZ25/WDOF26 venceram; os vigentes são **WINZ26** e **WDOZ26**. A B3 roda
+> **junto** com a Bybit (não a substitui) e nunca envia ordens. Veja
+> `docs/deploy-checklist.md` para o estado atual.
+
 ## Objetivo
 
 Substituir a fonte de dados cripto/Bybit por WINZ25 e WDOF26 (B3), usando **TradingView webhooks** como única fonte de cotação/sinal. Manter intactos: ML, gates de qualidade, auditoria por trade, presets de risco (conservador/equilibrado/agressivo), sistema de notificações.

@@ -7,7 +7,7 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 > ✅ Em 27/11/2026 foram aplicadas as **5 migrations**, publicadas as **4 functions** deste PR,
 > ativados os **Anonymous Sign-Ins** (com correção da trigger de `demo_accounts`) e configurados
 > a variável e o segredo do `agent-loop`. Os comandos abaixo permanecem como registro
-> reprodutível; não precisa repeti-los. O B3 continua sem migration operacional (ver 2.4).
+> reprodutível; não precisa repeti-los. A migration B3/multi-exchange agora está versionada (ver 2.4), mas ainda precisa ser aplicada no projeto.
 >
 > ✅ Em 27/11/2026, após os commits `c757b15` e `785fa65`, a CI tornou-se 7/7 verde e
 > a `bybit-trading` foi redeployada pela aba **Code** do Dashboard (HTTP 201). O smoke
@@ -184,24 +184,54 @@ select policyname from pg_policies where tablename = 'auto_trader_config';
 -- não deve restar nenhuma política "Allow anonymous access"
 ```
 
-### 2.4 Outras migrations pendentes (b3_*)
+### 2.4 Migration B3 + multi-exchange (aplicar)
 
-**Verificado:** não existe **nenhum** arquivo de migration `b3_*` no repositório nem no histórico do Git:
+Em 27/11/2026 foi versionada
+`supabase/migrations/20261127120000_multi_exchange_b3.sql`. Ela cria
+`b3_ticks`, `b3_signals`, `b3_analysis` e `exchange_simulations`, com RLS
+(leitura autenticada; escrita por `service_role`) e índices por símbolo/data.
+Contratos aceitos: **WINZ26** e **WDOZ26** — os antigos WINZ25/WDOF26 venceram
+e são rejeitados por `CHECK`.
 
-```powershell
-Get-ChildItem -Recurse -Filter "*b3*.sql"          # nenhum arquivo de migration (só hashes de nomes antigos)
-git log --all -S "b3_ticks" -- "*.sql"            # vazio
+Aplique **depois** das cinco migrations da etapa 2.2, pela aba **SQL Editor**
+do Dashboard (cole o conteúdo do arquivo e execute) ou por
+`supabase db push --project-ref uohdpxkfgxmtlosnmspf`. Não use PAT; se usar a
+CLI, faça login com `supabase login` antes.
+
+Depois de aplicar, configure o segredo `B3_WEBHOOK_SECRET` no Dashboard
+(Project Settings → Edge Functions → Secrets) e redesploy de
+`tradingview-webhook` pela aba **Code**. As corretoras cripto entram em
+simulação: para habilitar ordens reais é preciso configurar as credenciais e o
+flag `<ID>_ENABLE_LIVE=true`, além do token HMAC de confirmação. Nomes em
+`.env.example`.
+
+### 2.5 Enviar sinal B3 (somente leitura)
+
+`POST https://uohdpxkfgxmtlosnmspf.supabase.co/functions/v1/tradingview-webhook`
+
+- Cabeçalho `X-B3-Signature`: HMAC-SHA256 do corpo em Base64, usando
+  `B3_WEBHOOK_SECRET`. Também é aceito `X-TradingView-Signature` com o mesmo
+  segredo.
+- Corpo (exemplo sem valores reais de segredo):
+
+```json
+{
+  "market": "B3",
+  "symbol": "WINZ26",
+  "action": "buy",
+  "price": 130000,
+  "confidence": 90,
+  "qty": 1,
+  "atr": 300,
+  "rsi": 61,
+  "stop_loss": 129350,
+  "take_profit": 131950
+}
 ```
 
-As únicas referências estão em `.lovable/plan.md` (`b3_ticks`, `b3_signals`, `b3_analysis`) e em `roadmap.md`:
-
-> `- [ ] B3 (WINZ25/WDOF26) não operacional — migração b3_* nunca aplicada`
-
-Portanto:
-
-- **Não há o que aplicar do repositório.** A migração b3_* é uma **pendência conhecida/opcional**: só faça deploy da aba B3 se você recuperar esse SQL (fora do versionamento) e quiser reativar o B3.
-- Se existir, aplique **depois** das cinco da etapa 2.2, seguindo a ordem dos nomes de arquivo.
-- As demais migrations do diretório já foram aplicadas em execuções anteriores (confirme pelo `migration list`).
+O webhook grava `b3_ticks` + `b3_signals`, aplica pregão 09:00–17:50 BRT,
+confiança mínima 80, stop máximo de 0,5% e deduplica em 5 s. Ele **nunca**
+chama `place_order`. Contratos vencidos (WINZ25/WDOF26) são ignorados.
 
 ---
 
@@ -556,7 +586,7 @@ Rollbacks:
 
 ## Pendências conhecidas (não são bloqueadores do deploy)
 
-1. **B3 (WINZ25/WDOF26) não operacional** — migração `b3_*` nunca aplicada e **não existe no repositório** (só em `.lovable/plan.md`/`roadmap.md`). Opcional.
+1. **B3/multi-exchange aguardando deploy** — a migration e o código já estão versionados, mas a migration precisa ser aplicada no projeto e as functions `bybit-trading`/`tradingview-webhook` precisam de redeploy. Até lá, o painel mostra as venues e os sinais ficam indisponíveis. Nenhuma ordem real é enviada.
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
 3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
 4. **`npm audit` — resolvido em 27/11/2026.** `react-router-dom` subiu de `^6.26.2` para `^7.18.7` (com `react-router@7.18.7`), corrigindo os 2 avisos `moderate` (open redirect e desserialização de erro em SSR). `npm run audit:ci` agora usa `--audit-level=moderate` e reporta **0 vulnerabilidades**; typecheck, 20 testes Vitest, lint (0 erros/116 avisos) e build passaram com a v7. O uso de rotas no app é apenas declarativo (`BrowserRouter`/`Routes`/`Route`/`Navigate`/`Outlet`), preservado na v7.

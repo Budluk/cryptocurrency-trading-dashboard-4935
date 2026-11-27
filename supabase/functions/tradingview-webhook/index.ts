@@ -3,6 +3,8 @@ import { checkRateLimit, createRateLimitResponse, getClientIdentifier, rateLimit
 import { RISK, clampLeverage, stopDistancePct } from '../_shared/autonomousRisk.ts';
 import { guardFromState, dailyReview } from '../_shared/autonomousAgent.ts';
 import { reconcileSymbolExits } from '../_shared/agentExits.ts';
+import { b3SignalRow, b3TickRow, describeB3Alert, validateB3Alert } from '../_shared/b3Signals.ts';
+import { isB3Symbol } from '../_shared/exchangeRegistry.ts';
 
 
 const corsHeaders = {
@@ -184,20 +186,27 @@ Deno.serve(async (req) => {
     // ==========================================
     // SECURITY: Webhook signature verification (REQUIRED)
     // ==========================================
-    const webhookSecret = Deno.env.get('TRADINGVIEW_WEBHOOK_SECRET');
-    
+    const body = await req.text();
+    const peek: Record<string, unknown> = JSON.parse(body);
+    // B3 entra no MESMO webhook (o plano não permite nova função), com segredo
+    // próprio e canal somente de sinais — nunca chega ao place_order.
+    const b3Ticker = /^(WIN|WDO)[A-Z0-9]*$/i.test(String(peek?.symbol ?? ''));
+    const isB3 = peek?.market === 'B3' || peek?.exchange === 'B3' || isB3Symbol(peek?.symbol) || b3Ticker;
+    const secretName = isB3 ? 'B3_WEBHOOK_SECRET' : 'TRADINGVIEW_WEBHOOK_SECRET';
+    const webhookSecret = Deno.env.get(secretName);
+
     // CRITICAL: Reject all requests if secret not configured
     if (!webhookSecret) {
-      console.error('❌ TRADINGVIEW_WEBHOOK_SECRET not configured - rejecting request');
+      console.error(`❌ ${secretName} not configured - rejecting request`);
       return new Response(
         JSON.stringify({ error: 'Webhook authentication not configured' }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
-    const signature = req.headers.get('X-TradingView-Signature');
-    const body = await req.text();
-    
+
+    const signature = req.headers.get(isB3 ? 'X-B3-Signature' : 'X-TradingView-Signature')
+      ?? req.headers.get('X-TradingView-Signature');
+
     if (!signature) {
       console.error('❌ Missing webhook signature');
       return new Response(
@@ -205,7 +214,7 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     // Verify HMAC signature
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
@@ -215,19 +224,26 @@ Deno.serve(async (req) => {
       false,
       ['verify']
     );
-    
-    const signatureBuffer = Uint8Array.from(
-      atob(signature),
-      c => c.charCodeAt(0)
-    );
-    
+
+    let signatureBuffer: Uint8Array<ArrayBuffer>;
+    try {
+      const decoded = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
+      signatureBuffer = new Uint8Array(new ArrayBuffer(decoded.byteLength));
+      signatureBuffer.set(decoded);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid signature encoding' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const isValid = await crypto.subtle.verify(
       'HMAC',
       key,
       signatureBuffer,
       encoder.encode(body)
     );
-    
+
     if (!isValid) {
       console.error('❌ Invalid webhook signature');
       return new Response(
@@ -235,9 +251,44 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
-    const data: TradingViewAlert = JSON.parse(body);
-    console.log("✅ TradingView webhook received (verified)");
+
+    const data = peek as unknown as TradingViewAlert & { market?: string; exchange?: string };
+    console.log(`✅ ${isB3 ? 'B3' : 'TradingView'} webhook received (verified)`);
+
+    if (isB3) {
+      const checked = validateB3Alert({
+        action: data.action, symbol: data.symbol, price: Number(data.price),
+        confidence: Number(data.confidence), qty: Number(data.qty),
+        atr: Number(data.atr), rsi: Number(data.rsi),
+        stop_loss: Number(data.stop_loss), take_profit: Number(data.take_profit),
+        leverage: Number(data.leverage), market: 'B3', exchange: 'B3',
+      });
+      if (!checked.ok) {
+        return new Response(
+          JSON.stringify({ status: 'ignored', reason: checked.reason, mode: 'signal_only' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const alert = checked.alert;
+      const signalKey = `B3:${alert.symbol}:${alert.side}`;
+      if (!canExecute(signalKey, 5000)) {
+        return new Response(
+          JSON.stringify({ status: 'ignored', reason: 'duplicate', mode: 'signal_only' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const now = new Date();
+      const { error: tickError } = await supabase.from('b3_ticks').insert(b3TickRow(alert, now));
+      const { error: signalError } = await supabase.from('b3_signals').insert(
+        b3SignalRow(alert, 'tradingview-webhook', now)
+      );
+      if (tickError || signalError) throw tickError ?? signalError;
+      console.log(`✅ B3 signal registrado: ${describeB3Alert(alert)} (sem ordem)`);
+      return new Response(
+        JSON.stringify({ status: 'recorded', mode: 'signal_only', symbol: alert.symbol, side: alert.side }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Validação básica
     if (!data.action || !data.symbol || !data.confidence || !data.price) {

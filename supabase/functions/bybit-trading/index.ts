@@ -10,9 +10,16 @@ const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 import { handleTradingChat } from "../_shared/tradingChat.ts";
 import { RISK } from "../_shared/autonomousRisk.ts";
+import { handleExchangeAction } from "../_shared/exchangeGateway.ts";
 // Correção de SL/TP com lado invertido: usa o teto central de 0,5%, não 2%.
 const STOP_FALLBACK = RISK.maxStopPct / 100;
-console.log('[bybit-trading] build v30-hmac');
+console.log('[bybit-trading] build v31-multi-exchange');
+const ANON_USER_ID = '00000000-0000-0000-0000-000000000001';
+const EXCHANGE_ACTIONS = new Set([
+  'exchange_list', 'exchange_propose', 'exchange_balance', 'exchange_positions',
+  'exchange_ticker', 'exchange_instruments', 'place_order', 'close_position',
+  'set_leverage', 'set_trading_stop',
+]);
 const RECV_WINDOW = "30000";
 const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
 
@@ -71,7 +78,11 @@ Deno.serve(async (req) => {
     
     console.log(`Bybit MAINNET - Action: ${action} - User: ${userId || 'anonymous'}`);
 
-    const result = await runAction(action, params);
+    // Roteamento multi-exchange: o usuário vem do JWT, nunca do corpo da requisição.
+    const routedParams = typeof action === 'string' && action.startsWith('exchange_')
+      ? { ...params, __auth_user_id: userId || ANON_USER_ID }
+      : params;
+    const result = await runAction(action, routedParams);
 
     return new Response(JSON.stringify({ success: true, data: result }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -709,6 +720,15 @@ async function getApiInfo() {
 }
 
 async function runAction(action: string, params: any = {}): Promise<any> {
+  // Somente rotas exchange_* ou uma exchange explícita entram no roteador
+  // multi-exchange. Todo o caminho Bybit existente permanece como era.
+  const explicitExchange = typeof params?.exchange === 'string' && params.exchange !== 'BYBIT';
+  if (EXCHANGE_ACTIONS.has(action) && (action.startsWith('exchange_') || explicitExchange)) {
+    return await handleExchangeAction(action, params, {
+      userId: String(params.__auth_user_id || ANON_USER_ID),
+      confirmationKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+    });
+  }
   switch (action) {
     case 'get_balance':
       return await getBalance();

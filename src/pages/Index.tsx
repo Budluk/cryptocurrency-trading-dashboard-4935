@@ -1,4 +1,5 @@
 import { BybitPositionsPanel } from "@/components/BybitPositionsPanel";
+import { ExchangeOverviewPanel } from "@/components/ExchangeOverviewPanel";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { SystemStatusBar } from "@/components/SystemStatusBar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,6 +49,7 @@ const Index = () => (
         </TabsList>
         <TabsContent value="trading" className="space-y-6">
           <BybitPositionsPanel />
+          <ExchangeOverviewPanel />
           <DailyPnLSummary />
           <details className="workspace-disclosure">
             <summary><Activity className="h-4 w-4 text-primary" />Alertas e acompanhamento<ChevronDown className="disclosure-chevron ml-auto h-4 w-4" /></summary>
