@@ -186,6 +186,7 @@ FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
 -- Service role can insert any logs (for webhooks)
+DROP POLICY IF EXISTS "Service role can insert any logs" ON auto_trader_logs;
 CREATE POLICY "Service role can insert any logs"
 ON auto_trader_logs
 FOR INSERT
@@ -216,6 +217,7 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 -- Service role for webhook logging
+DROP POLICY IF EXISTS "Service role can insert any learning data" ON ai_learning_data;
 CREATE POLICY "Service role can insert any learning data"
 ON ai_learning_data
 FOR INSERT
@@ -243,6 +245,10 @@ CREATE TABLE IF NOT EXISTS ai_decisions (
 );
 
 ALTER TABLE ai_decisions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own AI decisions" ON ai_decisions;
+DROP POLICY IF EXISTS "Users can insert own AI decisions" ON ai_decisions;
+DROP POLICY IF EXISTS "Service role can insert any AI decisions" ON ai_decisions;
 
 CREATE POLICY "Users can view own AI decisions"
 ON ai_decisions

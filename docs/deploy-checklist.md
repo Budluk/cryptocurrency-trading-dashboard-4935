@@ -4,9 +4,10 @@ Repositório: `https://github.com/Budluk/cryptocurrency-trading-dashboard-4935.g
 Branch: `feat/ai-gateway-security-ci` (commit da feature: `dba32ad`; correções seguintes também publicadas)
 Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`)
 
-> ⚠️ O código já foi enviado ao PR #1. **Migrations, deploy de functions e secrets não foram aplicados**
-> porque não há token de acesso ao Supabase nesta máquina.
-> Execute na raiz do repositório e em ordem.
+> ✅ Em 27/11/2026 foram aplicadas as **5 migrations**, publicadas as **4 functions** deste PR,
+> ativados os **Anonymous Sign-Ins** (com correção da trigger de `demo_accounts`) e configurados
+> a variável e o segredo do `agent-loop`. Os comandos abaixo permanecem como registro
+> reprodutível; não precisa repeti-los. O B3 continua sem migration operacional (ver 2.4).
 
 ---
 
@@ -96,7 +97,7 @@ $env:GH_TOKEN = "ghp_..."        # para a CLI do GitHub, se você instalar o gh
 
 ---
 
-## Etapa 2 — Aplicar as migrations pendentes (Supabase CLI)
+## Etapa 2 — Aplicar as migrations pendentes (✅ aplicadas em 27/11/2026)
 
 ### 2.1 Conferir o que está pendente
 
@@ -104,7 +105,8 @@ $env:GH_TOKEN = "ghp_..."        # para a CLI do GitHub, se você instalar o gh
 supabase migration list --project-ref uohdpxkfgxmtlosnmspf
 ```
 
-Confira que estas **quatro** aparecem como pendentes e anote se há alguma outra:
+As cinco abaixo foram aplicadas via Management API (`POST /v1/projects/{ref}/database/migrations`)
+com o nome do arquivo como `name`. O `version` retornado é o timestamp da aplicação, não o prefixo do arquivo:
 
 | # | Arquivo | Conteúdo |
 |---|---|---|
@@ -112,6 +114,7 @@ Confira que estas **quatro** aparecem como pendentes e anote se há alguma outra
 | 2 | `supabase/migrations/20261127010000_agent_autonomous_memory.sql` | Memória do agente autônomo: `agent_state`, `agent_trades`, `prompt_versions`, `agent_routine_log` (todas com RLS por usuário + service role). |
 | 3 | `supabase/migrations/20261127020000_bot_errors_observability.sql` | Tabela `bot_errors` (DDL reprodutível) + índices + RLS, usada pelo painel de Observabilidade. |
 | 4 | `supabase/migrations/20261127030000_agent_trades_take_profit.sql` | Coluna `agent_trades.take_profit` + índice de posições abertas; permite reconciliar saídas por TP no loop e no webhook. |
+| 5 | `supabase/migrations/20261127040000_fix_anonymous_signin_trigger.sql` | Torna `create_demo_account_for_user()` idempotente (`ON CONFLICT DO NOTHING`); sem isso a segunda trigger em `auth.users` estourava `demo_accounts_user_id_unique` e o `/auth/v1/signup` anônimo respondia 500. |
 
 ### 2.2 Aplicar na ordem exata
 
@@ -130,27 +133,34 @@ psql $DB_URL -f supabase/migrations/20261127000000_fix_rls_policies.sql
 psql $DB_URL -f supabase/migrations/20261127010000_agent_autonomous_memory.sql
 psql $DB_URL -f supabase/migrations/20261127020000_bot_errors_observability.sql
 psql $DB_URL -f supabase/migrations/20261127030000_agent_trades_take_profit.sql
+psql $DB_URL -f supabase/migrations/20261127040000_fix_anonymous_signin_trigger.sql
 ```
 
 > Todas usam `DROP POLICY IF EXISTS` / `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`
 > → são seguras para reaplicar.
 
-> **Antes da migration 1:** ativar `Dashboard → Authentication → Providers → Anonymous Sign-Ins`.
-> As políticas passam a exigir `auth.uid() = user_id`; sem sessão anônima real o app
-> usa o ID fixo de fallback e **não consegue** gravar configurações. O frontend só
-> chama `signInAnonymously()` quando `VITE_SUPABASE_ANONYMOUS_SIGNIN="true"`; com o
-> flag desligado ele evita o 422 em `/auth/v1/signup` (`src/lib/anonymousUser.ts`).
-> Configurações antigas gravadas sob o ID fixo ficam invisíveis para o usuário anônimo;
-> faça a migração desses dados no SQL Editor, se necessário.
-> Depois de ativar o provider, ligue `VITE_SUPABASE_ANONYMOUS_SIGNIN="true"` no `.env`.
-> Com o flag desligado (padrão), o app não tenta `/auth/v1/signup` e grava configurações
-> apenas localmente, sem produzir 401/422 no console.
+> ✅ `Dashboard → Authentication → Providers → Anonymous Sign-Ins` já está **ativado** e
+> `VITE_SUPABASE_ANONYMOUS_SIGNIN="true"` está no `.env`. As políticas passam a exigir
+> `auth.uid() = user_id`; sem sessão anônima real o app usaria o ID fixo de fallback e
+> **não conseguiria** gravar configurações. O frontend só chama `signInAnonymously()`
+> quando o flag está ligado (`src/lib/anonymousUser.ts`). Configurações antigas gravadas
+> sob o ID fixo ficam invisíveis para o usuário anônimo; faça a migração desses dados no
+> SQL Editor, se necessário. Com o flag desligado, o app não tenta `/auth/v1/signup` e
+> grava apenas localmente, sem 401/422 no console.
 
 ### 2.3 Verificação pós-aplicação
 
 ```powershell
-supabase migration list --project-ref uohdpxkfgxmtlosnmspf   # as quatro devem estar "Applied"
+supabase migration list --project-ref uohdpxkfgxmtlosnmspf   # conferir os 5 nomes abaixo no histórico
 ```
+
+Nomes confirmados no remoto: `20261127000000_fix_rls_policies`,
+`20261127010000_agent_autonomous_memory`, `20261127020000_bot_errors_observability`,
+`20261127030000_agent_trades_take_profit` e `20261127040000_fix_anonymous_signin_trigger`.
+
+Validação realizada em 27/11/2026: `POST /auth/v1/signup` (anon key) retornou **200** com
+`is_anonymous: true`; o token resultante leu `ai_decisions` com **200**; as seis tabelas
+do agente/observabilidade retornaram **200** via service role.
 
 No SQL Editor do Dashboard:
 
@@ -177,14 +187,16 @@ As únicas referências estão em `.lovable/plan.md` (`b3_ticks`, `b3_signals`, 
 Portanto:
 
 - **Não há o que aplicar do repositório.** A migração b3_* é uma **pendência conhecida/opcional**: só faça deploy da aba B3 se você recuperar esse SQL (fora do versionamento) e quiser reativar o B3.
-- Se existir, aplique **depois** das quatro da etapa 2.2, seguindo a ordem dos nomes de arquivo.
+- Se existir, aplique **depois** das cinco da etapa 2.2, seguindo a ordem dos nomes de arquivo.
 - As demais migrations do diretório já foram aplicadas em execuções anteriores (confirme pelo `migration list`).
 
 ---
 
-## Etapa 3 — Deploy das Edge Functions
+## Etapa 3 — Deploy das Edge Functions (✅ aplicadas em 27/11/2026)
 
 > Execute **na raiz do repositório** para que a CLI use o `supabase/config.toml` (que define `verify_jwt` por função).
+> Versões ativas confirmadas: `ai-market-analysis` v138, `ai-signal-gateway` v1,
+> `bybit-trading` v164 e `tradingview-webhook` v124.
 
 ```powershell
 supabase functions deploy bybit-trading       --project-ref uohdpxkfgxmtlosnmspf
@@ -259,14 +271,19 @@ supabase secrets set `
 
 ---
 
-## Etapa 4b — Agendador do agente (GitHub Actions)
+## Etapa 4b — Agendador do agente (✅ configurado em 27/11/2026)
 
-O workflow `.github/workflows/agent-loop.yml` roda `agent_loop` a cada 5 min e `agent_daily` às 00:00 UTC. Configure no repositório:
+O workflow `.github/workflows/agent-loop.yml` roda `agent_loop` a cada 5 min e `agent_daily` às 00:00 UTC. Configuração confirmada no repositório:
 
-- `Settings → Secrets and variables → Actions → Variables`: `SUPABASE_URL = https://uohdpxkfgxmtlosnmspf.supabase.co`
-- `Settings → Secrets and variables → Actions → Secrets`: `SUPABASE_SERVICE_ROLE_KEY = <service_role do Dashboard → Settings → API>`
+- `Settings → Secrets and variables → Actions → Variables`: `SUPABASE_URL = https://uohdpxkfgxmtlosnmspf.supabase.co` ✅
+- `Settings → Secrets and variables → Actions → Secrets`: `SUPABASE_SERVICE_ROLE_KEY` ✅ (valor não exibido aqui)
 
-Depois, dispare manualmente em `Actions → Agent Loop → Run workflow` com `agent_loop` e confirme em `ai_decisions`/`agent_routine_log`. Use `agent_daily` com `force: true` apenas para teste fora da janela.
+> O workflow lê `vars.SUPABASE_URL` (variável) e `secrets.SUPABASE_SERVICE_ROLE_KEY`.
+> Também existe um secret `SUPABASE_URL` com o mesmo valor; ele é inofensivo e não é usado.
+
+Não disparei `agent_loop`/`agent_daily` manualmente para não criar ordens sem sua confirmação.
+Quando quiser testar: `Actions → Agent Loop → Run workflow` com `agent_loop` e confirme em
+`ai_decisions`/`agent_routine_log`. Use `agent_daily` com `force: true` apenas fora da janela.
 
 O gateway pode ser desligado no frontend com `VITE_USE_SIGNAL_GATEWAY=false` (padrão: ligado, usado como veto).
 
