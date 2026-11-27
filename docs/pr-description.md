@@ -33,8 +33,8 @@ Este PR leva o dashboard de "protótipo com IA solta" para um fluxo auditável: 
 
 ## CI e testes
 
-- 7 checks bloqueantes: typecheck, Vitest, testes Bun das Edge Functions, build, `npm run lint:ci` (orçamento de warnings) e `npm run audit:ci` (high/critical). O check do Deno é bloqueante para `bybit-trading` e `ai-market-analysis`; as demais funções com erros legados seguem informativas.
-- Lint: 0 erros, 116 warnings dentro do orçamento. Audit: 0 high/critical, restam 2 `moderate` em `react-router`.
+- 8 checks bloqueantes: typecheck, Vitest, testes Bun das Edge Functions, build, `npm run lint:ci` (orçamento de warnings), `npm run audit:ci` (moderate/high/critical), E2E/acessibilidade e Deno. O check do Deno é bloqueante para `bybit-trading` e `ai-market-analysis`; as demais funções com erros legados seguem informativas.
+- Lint: 0 erros, 105 warnings dentro do orçamento. Audit: 0 vulnerabilidades (react-router atualizado para v7).
 - Cobertura Vitest ~87%; testes Bun do agente, indicadores, risco, roteador de IA, HMAC, parsing do loop, contexto de pesquisa e confirmação do chat incluídos.
 
 ## Deploy

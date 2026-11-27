@@ -41,13 +41,29 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 > `docs/edge-functions-inventory.md` — nenhuma função foi excluída. Validação
 > local verde: typecheck, lint (116 avisos/0 erros), 20 Vitest, 90 Bun no
 > conjunto de risco/exchange + 3 Bun de HMAC, build, `deno check` de
-> `bybit-trading` e YAML dos workflows. Push/CI/deploy deste lote ainda não
-> foram concluídos neste ponto.
+> `bybit-trading` e YAML dos workflows. Push/CI/deploy deste lote foram
+> concluídos em 27/11/2026 (ver registro abaixo).
 >
 > ⚠️ O primeiro `Daily Smoke` falhou no passo `ai_status` porque um deploy feito
 > apenas clicando em **Deploy updates** republicou o código antigo que já estava
 > no editor do Dashboard. É obrigatório colar/carregar o conteúdo local dos
 > arquivos alterados (inclusive os `_shared`) antes de confirmar o deploy.
+>
+> ✅ Em 27/11/2026, a limpeza final dos avisos do CI trocou
+> `supabase/setup-cli@v3`, `codecov/codecov-action@v7` e
+> `actions/upload-artifact@v7` (com `if-no-files-found: ignore`), passou a
+> gerar `playwright-report/` com o reporter HTML (`open: "never"`) e removeu
+> os `any`/dependências de hook em `BybitPositionsPanel`,
+> `LargeOrdersHistory` e `AntiLossMonitor`. Lint local: 0 erros/105 avisos
+> (o GitHub anotou 10 deles). Commit `ee60e10`, CI 8/8 no run `46081037315` e
+> `Daily Smoke #4` verde no run `46081494408` com 9 venues,
+> `exchange_risk_status`, `place_order` em `dry_run` e 0 erros em 24 h. A
+> `bybit-trading` foi redeployada novamente pela aba **Code**
+> (`POST /functions/deploy?slug=bybit-trading` → HTTP 201) porque o smoke #3
+> ainda via 7 venues em produção. A issue de alerta #2 foi comentada e fechada.
+> A UI de produção (preview Lovable) também foi conferida: 9 venues com badges
+> Testnet/Sinais/Simulação, contratos B3 vigentes e aba **Risco** com limites
+> lidos do servidor, sem chaves, flags de live ou URLs.
 
 ---
 
@@ -596,7 +612,7 @@ curl.exe -s -X POST "$URL/functions/v1/ai-signal-gateway" `
 
 ```powershell
 npm ci --legacy-peer-deps
-npm run lint:ci              # 0 erros e no máximo 116 avisos (orçamento atual)
+npm run lint:ci              # 0 erros e no máximo 105 avisos (orçamento atual)
 npm run audit:ci             # bloqueia vulnerabilidades de produção moderate/high/critical (hoje: 0)
 npm run typecheck            # tsc --noEmit -p tsconfig.app.json  (deve passar)
 npm run test                 # Vitest (20 testes)
@@ -715,8 +731,8 @@ Rollbacks:
 
 1. **B3/multi-exchange em produção, mas somente sinais/simulação** — migration aplicada, segredo configurado e functions redeployadas. Não há ordens reais para B3 (corretoras brasileiras não expõem API pública de ordens para pessoa física neste projeto); as demais venues exigem opt-in + credenciais + token HMAC.
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
-3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
-4. **`npm audit` — resolvido em 27/11/2026.** `react-router-dom` subiu de `^6.26.2` para `^7.18.7` (com `react-router@7.18.7`), corrigindo os 2 avisos `moderate` (open redirect e desserialização de erro em SSR). `npm run audit:ci` agora usa `--audit-level=moderate` e reporta **0 vulnerabilidades**; typecheck, 20 testes Vitest, lint (0 erros/116 avisos) e build passaram com a v7. O uso de rotas no app é apenas declarativo (`BrowserRouter`/`Routes`/`Route`/`Navigate`/`Outlet`), preservado na v7.
+3. **Dívida de lint** — 105 warnings distribuídos em componentes/hooks, 0 erros (após a limpeza de 27/11). O CI roda `npm run lint:ci` com teto de 105 avisos; não é mais `continue-on-error`.
+4. **`npm audit` — resolvido em 27/11/2026.** `react-router-dom` subiu de `^6.26.2` para `^7.18.7` (com `react-router@7.18.7`), corrigindo os 2 avisos `moderate` (open redirect e desserialização de erro em SSR). `npm run audit:ci` agora usa `--audit-level=moderate` e reporta **0 vulnerabilidades**; typecheck, 20 testes Vitest, lint (0 erros/105 avisos após a limpeza) e build passaram com a v7. O uso de rotas no app é apenas declarativo (`BrowserRouter`/`Routes`/`Route`/`Navigate`/`Outlet`), preservado na v7.
 5. **Chat normal com IA real** — o modo Pesquisa foi validado e o `dry_run` do chat comum passou em produção (seção 5.1c), sem ordens nem escritas. A confirmação de ordens reais segue sem teste em produção: só execute com sua autorização explícita, conferindo a proposta assinada antes de Confirmar. A `bybit-trading` já foi redeployada pela aba **Code**.
 6. **Plano Pro do Supabase** — necessário apenas para os alertas de "senhas vazadas".
 7. **Conta admin permanente** — a validação na UI usou sessão temporária; a revisão visual em desktop e no viewport de 390 px foi concluída em 28/11 (Playwright/axe sem violações críticas/graves), mas a conta do usuário ainda não foi usada.

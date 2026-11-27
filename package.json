@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:ci": "eslint . --max-warnings=116",
+    "lint:ci": "eslint . --max-warnings=105",
     "audit:ci": "npm audit --omit=dev --audit-level=moderate",
     "preview": "vite preview",
     "test": "vitest run",
