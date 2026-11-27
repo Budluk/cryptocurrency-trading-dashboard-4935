@@ -381,6 +381,14 @@ curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
 > créditos e a OpenAI sem quota; se o Groq devolver 429 por limite de
 > tokens/minuto do plano free, aguarde ~60 s (circuit breaker) e repita —
 > nenhuma ordem é enviada em nenhum caso.
+>
+> O fluxo também foi validado na **interface** (Chrome headless apontando para o
+> `npm run dev` local, com sessão admin temporária injetada): abrir o chat
+> flutuante, ativar o botão de Pesquisa, enviar a URL do repositório e conferir
+> o badge "Pesquisa", a resposta com `Fontes: [1] ...`, o aviso
+> `Modo pesquisa: nenhuma ordem foi executada.` e o resumo "Ver ficha
+> estruturada". A conta temporária e os arquivos de sessão foram removidos
+> logo após o teste.
 
 ### 5.2 Webhook da TradingView (`tradingview-webhook`)
 
