@@ -583,6 +583,7 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 - [x] Build de produção corrigido: `manualChunks` agora isola os helpers CJS do Rollup em `vendor-helpers` e mantém `decimal.js` fora de `charts`, removendo o ciclo que causava `Cannot access 'P' before initialization` no preview. Validado com `vite preview` (sem erros no console e painel B3/corretores renderizado). O preview gerenciado pelo Lovable atualizou-se sozinho após o push (`8853184`) e passou a servir os novos chunks sem erros no console.
 - [x] Observabilidade (24 h): único `ERROR` no Postgres veio do comando manual de registro da migration (`column "applied_at" does not exist`), corrigido em seguida; não há erros de aplicação. API Gateway 0,02%, Auth 0,04%.
 - [x] Release `v1.0.3` publicada no GitHub com aprovação explícita, apontando para `89839e2`: https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/releases/tag/v1.0.3
+- [x] Revisão responsiva: preview em desktop e em iframe com viewport de 390 px — sem rolagem horizontal, navegação e painel B3/corretores renderizados, nenhum erro no console.
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:

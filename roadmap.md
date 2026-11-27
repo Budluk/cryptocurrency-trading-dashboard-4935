@@ -17,7 +17,7 @@
 
 ## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
-- [ ] Conferir navegação e aparência no celular e computador
+- [x] Conferir navegação e aparência no celular e computador: preview em largura desktop e em iframe de 390 px (sem overflow horizontal, abas e painel B3/corretores visíveis, zero erros no console)
 - [ ] Exclusões definitivas de funções — aguardando indicação do usuário
 
 ## Validações que dependem do usuário
