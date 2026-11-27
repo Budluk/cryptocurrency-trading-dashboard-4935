@@ -194,6 +194,40 @@ describe('aiRouter', () => {
     expect(response.ok).toBe(true);
   });
 
+  test('exposeRetryable429 devolve o 429 quando todos os provedores e o fallback falham', async () => {
+    mockFetch
+      .mockResolvedValueOnce(new Response('rate', { status: 429, headers: { 'Retry-After': '2' } }))
+      .mockResolvedValueOnce(new Response('rate', { status: 429 }))
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce({ ok: false, status: 401 });
+
+    const response = await aiFetch(
+      {
+        method: 'POST',
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
+      },
+      { exposeRetryable429: true },
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('2');
+  });
+
+  test('sem exposeRetryable429 o fallback Lovable continua sendo o resultado final', async () => {
+    mockFetch
+      .mockResolvedValueOnce(new Response('rate', { status: 429, headers: { 'Retry-After': '2' } }))
+      .mockResolvedValueOnce(new Response('rate', { status: 429 }))
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce({ ok: false, status: 401 });
+
+    const response = await request();
+
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    expect(response.status).toBe(401);
+    expect(response.headers).toBeUndefined();
+  });
+
   test('webSearchFetch is centralized in aiRouter and includes citations', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

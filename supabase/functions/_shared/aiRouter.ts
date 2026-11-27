@@ -96,11 +96,19 @@ export function __resetRouterState() {
   rateLimits.clear();
 }
 
-export async function aiFetch(init: RequestInit): Promise<Response> {
+// `exposeRetryable429` é usado apenas pela pesquisa: quando todos os provedores
+// falham e o Groq devolveu 429, devolvemos esse sinal em vez do 401 do fallback
+// sem créditos. O chamador pode então repetir uma vez após o `retry-after`.
+// O comportamento padrão (trading, gateway, etc.) continua igual: fallback final.
+export async function aiFetch(
+  init: RequestInit,
+  options: { exposeRetryable429?: boolean } = {},
+): Promise<Response> {
   let body: Record<string, unknown> = {};
   try { body = JSON.parse(String(init.body ?? '{}')); } catch { /* keep empty */ }
   
   const availableProviders = providers();
+  let lastRetryable429: { retryAfter: string | null } | null = null;
   
   if (availableProviders.length === 0) {
     console.log('[aiRouter] No providers configured, falling back to Lovable');
@@ -138,6 +146,11 @@ export async function aiFetch(init: RequestInit): Promise<Response> {
       }
       
       const errText = await res.text().catch(() => '');
+      if (res.status === 429) {
+        const retryAfter = res.headers?.get('retry-after') ?? null;
+        // Prefere o cabeçalho quando algum provedor o enviou; nunca perde o sinal.
+        if (!lastRetryable429 || retryAfter) lastRetryable429 = { retryAfter };
+      }
       console.warn(`[aiRouter] ${p.name} failed`, res.status, errText);
       recordFailure(p.name);
     } catch (e) {
@@ -147,7 +160,16 @@ export async function aiFetch(init: RequestInit): Promise<Response> {
   }
   
   console.log('[aiRouter] all providers exhausted, falling back to Lovable');
-  return fetch(LOVABLE_URL, init);
+  const fallback = await fetch(LOVABLE_URL, init);
+  if (options.exposeRetryable429 && lastRetryable429 && !fallback.ok) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (lastRetryable429.retryAfter) headers['Retry-After'] = lastRetryable429.retryAfter;
+    return new Response(
+      JSON.stringify({ error: 'Limite temporário de tokens da IA atingido. Tente novamente em instantes.' }),
+      { status: 429, headers },
+    );
+  }
+  return fallback;
 }
 
 // Web search with citations. Kept here (not in each caller) so every AI call
