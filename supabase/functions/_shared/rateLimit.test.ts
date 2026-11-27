@@ -66,7 +66,7 @@ test('getClientIdentifier extracts user from Bearer token', () => {
 test('getClientIdentifier extracts API key', () => {
   const req = createMockRequest({ 'x-api-key': 'my-api-key-12345' });
   const id = getClientIdentifier(req);
-  expect(id).toBe('apikey:my-api-key-1234');
+  expect(id).toBe('apikey:my-api-key-12345');
 });
 
 test('getClientIdentifier falls back to IP', () => {

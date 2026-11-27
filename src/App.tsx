@@ -11,8 +11,8 @@ import Auth from "./pages/Auth";
 
 // Lazy load heavy components for code splitting
 const MultiAssetTrader = React.lazy(() => import("./components/MultiAssetTrader"));
-const OrderFlowDashboard = React.lazy(() => import("./components/OrderFlowDashboard"));
-const AdvancedAnalytics = React.lazy(() => import("./components/AdvancedAnalytics"));
+const OrderFlowDashboard = React.lazy(() => import("./components/OrderFlowDashboard").then((m) => ({ default: m.OrderFlowDashboard })));
+const AdvancedAnalytics = React.lazy(() => import("./components/AdvancedAnalytics").then((m) => ({ default: m.AdvancedAnalytics })));
 const PerformanceDashboard = React.lazy(() => import("./components/PerformanceDashboard"));
 const MLAdaptiveSettings = React.lazy(() => import("./components/MLAdaptiveSettings"));
 

@@ -1,4 +1,4 @@
-// Hybrid AI router: FreeLLMAPI -> Groq -> OpenAI -> Lovable AI Gateway (last-resort fallback).
+﻿// Hybrid AI router: FreeLLMAPI -> Groq -> OpenAI -> Lovable AI Gateway (last-resort fallback).
 // Per AGENTS.md: FreeLLMAPI first, then fallbacks. Circuit breaker + rate limiting per provider.
 const LOVABLE_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
@@ -13,7 +13,7 @@ const MAX_REQUESTS_PER_MINUTE = 30;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_RESET_MS = 60_000;
 
-function providers(): Provider[] {
+export function providers(): Provider[] {
   const list: Provider[] = [];
   
   // 1. FreeLLMAPI FIRST (per AGENTS.md)
@@ -52,7 +52,7 @@ function providers(): Provider[] {
   return list;
 }
 
-function checkRateLimit(name: string): boolean {
+export function checkRateLimit(name: string): boolean {
   const now = Date.now();
   const windowStart = now - 60_000;
   const requests = rateLimits.get(name) || [];
@@ -63,7 +63,7 @@ function checkRateLimit(name: string): boolean {
   return true;
 }
 
-function checkCircuitBreaker(name: string): boolean {
+export function checkCircuitBreaker(name: string): boolean {
   const cb = circuitBreakers.get(name);
   if (!cb || !cb.open) return true;
   if (Date.now() - cb.lastFailure > CIRCUIT_RESET_MS) {
@@ -74,7 +74,7 @@ function checkCircuitBreaker(name: string): boolean {
   return false;
 }
 
-function recordFailure(name: string) {
+export function recordFailure(name: string) {
   const cb = circuitBreakers.get(name) || { failures: 0, lastFailure: 0, open: false };
   cb.failures++;
   cb.lastFailure = Date.now();
@@ -82,12 +82,18 @@ function recordFailure(name: string) {
   circuitBreakers.set(name, cb);
 }
 
-function recordSuccess(name: string) {
+export function recordSuccess(name: string) {
   const cb = circuitBreakers.get(name);
   if (cb) {
     cb.failures = 0;
     cb.open = false;
   }
+}
+
+// Test helper: clears in-memory rate limit / circuit breaker state between tests.
+export function __resetRouterState() {
+  circuitBreakers.clear();
+  rateLimits.clear();
 }
 
 export async function aiFetch(init: RequestInit): Promise<Response> {

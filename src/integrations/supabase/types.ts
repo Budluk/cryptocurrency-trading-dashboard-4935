@@ -107,6 +107,57 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_decisions: {
+        Row: {
+          consensus: boolean
+          created_at: string
+          final_action: 'BUY' | 'SELL' | 'WAIT'
+          final_confidence: number
+          gate_blocked_by: string[] | null
+          gate_pass: boolean
+          id: string
+          leverage: number | null
+          raw_sources: Json
+          sources: string[]
+          stop_loss: number | null
+          symbol: string
+          target_price: number | null
+          user_id: string | null
+        }
+        Insert: {
+          consensus?: boolean
+          created_at?: string
+          final_action: 'BUY' | 'SELL' | 'WAIT'
+          final_confidence: number
+          gate_blocked_by?: string[] | null
+          gate_pass?: boolean
+          id?: string
+          leverage?: number | null
+          raw_sources?: Json
+          sources?: string[]
+          stop_loss?: number | null
+          symbol: string
+          target_price?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          consensus?: boolean
+          created_at?: string
+          final_action?: 'BUY' | 'SELL' | 'WAIT'
+          final_confidence?: number
+          gate_blocked_by?: string[] | null
+          gate_pass?: boolean
+          id?: string
+          leverage?: number | null
+          raw_sources?: Json
+          sources?: string[]
+          stop_loss?: number | null
+          symbol?: string
+          target_price?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       ai_learning_data: {
         Row: {
           confidence_adjustment: number | null

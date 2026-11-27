@@ -1,4 +1,5 @@
 // Vitest setup file
+import type { SVGProps } from 'react';
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
 
@@ -28,7 +29,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 // Mock react-router-dom
 vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual('react-router-dom');
+  const actual = await vi.importActual<Record<string, unknown>>('react-router-dom');
   return {
     ...actual,
     useNavigate: () => vi.fn(),
@@ -37,19 +38,17 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-// Mock lucide-react icons
+// Mock lucide-react icons (only the ones used by the components under test)
 vi.mock('lucide-react', () => {
   const icons = [
     'Zap', 'TrendingUp', 'Clock', 'Search', 'Activity', 'BarChart3', 'Settings',
     'BrainIcon', 'TrendingUpIcon', 'TrendingDownIcon', 'AlertTriangleIcon',
     'RefreshCwIcon', 'NewspaperIcon', 'BarChartIcon', 'Shield', 'ShieldAlert',
-    'ShieldCheck', 'TrendingDown', 'ChevronDown', 'ChevronUp', 'XCircle'
+    'ShieldCheck', 'TrendingDown', 'ChevronDown', 'ChevronUp', 'XCircle',
   ];
-  const mockComponents = {};
+  const mockComponents: Record<string, (props: SVGProps<SVGSVGElement>) => JSX.Element> = {};
   for (const icon of icons) {
-    mockComponents[icon] = ({ ...props }: React.SVGProps<SVGSVGElement>) => (
-      <svg data-testid={icon} {...props} />
-    );
+    mockComponents[icon] = (props: SVGProps<SVGSVGElement>) => <svg data-testid={icon} {...props} />;
   }
   return mockComponents;
 });
@@ -62,23 +61,17 @@ vi.mock('sonner', () => ({
   dismiss: vi.fn(),
 }));
 
-// Global test utilities
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
+// Browser APIs missing in jsdom
+globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
 }));
 
-// Mock IntersectionObserver
-global.IntersectionObserver = vi.fn().mockImplementation(() => ({
+globalThis.IntersectionObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
 }));
-
-// Console suppression for cleaner test output (optional)
-// vi.spyOn(console, 'log').mockImplementation(() => {});
-// vi.spyOn(console, 'warn').mockImplementation(() => {});
-// vi.spyOn(console, 'error').mockImplementation(() => {});
 
 export {};

@@ -212,10 +212,10 @@ export const AdvancedAnalytics = () => {
             <h3 className="font-semibold">Melhor Horário</h3>
           </div>
           <div className="text-2xl font-bold">
-            {hourlyData.toSorted((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0]?.hour || 0}h
+            {hourlyData.slice().sort((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0]?.hour || 0}h
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {hourlyData.toSorted((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0]?.winRate ? hourlyData.toSorted((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0].winRate.toFixed(0) : '0'}% win rate
+            {hourlyData.slice().sort((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0]?.winRate ? hourlyData.slice().sort((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0].winRate.toFixed(0) : '0'}% win rate
           </p>
         </Card>
       </div>

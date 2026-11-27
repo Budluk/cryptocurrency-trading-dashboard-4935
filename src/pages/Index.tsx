@@ -2,7 +2,8 @@ import { BybitPositionsPanel } from "@/components/BybitPositionsPanel";
 import { DailyPnLSummary } from "@/components/DailyPnLSummary";
 import { SystemStatusBar } from "@/components/SystemStatusBar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Clock, Search, Settings, LayoutDashboard, ChevronDown, BarChart3 } from "lucide-react";
+import { Activity, Clock, Search, Settings, LayoutDashboard, ChevronDown, BarChart3, Gauge } from "lucide-react";
+import { ObservabilityPanel } from "@/components/ObservabilityPanel";
 import {
   LazyAdvancedAISignals, LazyPerformanceDashboard, LazyMultiAssetTrader,
   LazyAdvancedAnalytics, LazySentimentDashboard, LazyPortfolioRebalancer,
@@ -18,6 +19,7 @@ const navigation = [
   { value: "robot", label: "Robô", icon: Activity },
   { value: "history", label: "Histórico", icon: Clock },
   { value: "research", label: "Pesquisa", icon: Search },
+  { value: "observability", label: "Observar", icon: Gauge },
   { value: "settings", label: "Ajustes", icon: Settings },
 ];
 
@@ -36,7 +38,7 @@ const Index = () => (
     </header>
     <main className="mx-auto max-w-[1440px] px-4 pb-24 pt-5 sm:px-8 sm:pt-7">
       <Tabs defaultValue="trading" className="w-full">
-        <TabsList aria-label="Navegação principal" className="workspace-navigation mb-6 grid h-auto w-full grid-cols-5 gap-1 rounded-none border-b border-border bg-transparent p-0 pb-2 sm:w-fit sm:gap-2">
+        <TabsList aria-label="Navegação principal" className="workspace-navigation mb-6 grid h-auto w-full grid-cols-6 gap-1 rounded-none border-b border-border bg-transparent p-0 pb-2 sm:w-fit sm:gap-2">
           {navigation.map(({ value, label, icon: Icon }) => (
             <TabsTrigger key={value} value={value} className="min-h-12 min-w-0 flex-col gap-1 rounded-md px-1 py-2 text-xs data-[state=active]:bg-secondary data-[state=active]:text-primary data-[state=active]:shadow-none sm:min-h-10 sm:flex-row sm:gap-2 sm:px-4 sm:text-sm">
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -71,6 +73,9 @@ const Index = () => (
           </details>
         </TabsContent>
         <TabsContent value="research"><LazyResearchTab /></TabsContent>
+        <TabsContent value="observability" className="space-y-6">
+          <ObservabilityPanel />
+        </TabsContent>
         <TabsContent value="settings" className="space-y-6">
           <h2 className="text-xl font-semibold">Ajustes</h2>
           <LazyAutoTraderSettings />

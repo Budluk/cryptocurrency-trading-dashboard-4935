@@ -82,7 +82,7 @@ export function TradingChat() {
             <div className="py-4 space-y-3">
               {msgs.length === 0 && !busy && (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Pergunte sobre suas posições, a estratégia, ou peça para abrir, fechar ou ajustar uma ordem. Ordens pedidas aqui são executadas na hora, com stop obrigatório (máx 0,5%) e alavancagem até 8x.
+                  Pergunte sobre posições, estratégia ou código. Cole um link do GitHub, um vídeo do YouTube ou um artigo: eu pesquiso antes de responder. Também posso ler o código do nosso projeto. Ordens pedidas aqui são executadas na hora, com stop obrigatório (máx 0,5%) e alavancagem até 8x.
                 </p>
               )}
               {msgs.map((m) => (
@@ -106,9 +106,23 @@ export function TradingChat() {
               <div ref={endRef} />
             </div>
           </ScrollArea>
+          <div className="flex gap-2 overflow-x-auto px-3 py-2 border-t border-border/50">
+            {[
+              "Analise o repositório Budluk/cryptocurrency-trading-dashboard-4935 e sugira melhorias no robô",
+              "Leia este vídeo e extraia a estratégia: ",
+              "Pesquise estratégias de scalping para BTC com fontes recentes",
+              "Explique o código de src/components/MultiAssetTrader.tsx do nosso projeto",
+            ].map((s) => (
+              <button key={s} type="button" disabled={busy}
+                onClick={() => { setText(s); inputRef.current?.focus(); }}
+                className="shrink-0 rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50">
+                {s.length > 42 ? s.slice(0, 42) + "…" : s}
+              </button>
+            ))}
+          </div>
           <div className="border-t border-border/50 p-3 flex gap-2 items-end">
             <Textarea ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} rows={2}
-              placeholder="Ex: como estão minhas posições?" className="resize-none min-h-[44px]"
+              placeholder="Pergunte, cole um link do GitHub/YouTube ou um trecho de código..." className="resize-none min-h-[44px]"
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
             <Button size="icon" onClick={send} disabled={busy || !text.trim()} aria-label="Enviar" className="h-11 w-11 shrink-0">
               <Send className="h-4 w-4" />

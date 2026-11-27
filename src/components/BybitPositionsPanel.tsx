@@ -33,8 +33,11 @@ interface BybitPosition {
 }
 
 interface ConfirmCloseState {
-  symbol: string;
-  side: string;
+  symbol?: string;
+  side?: string;
+  all?: boolean;
+  size?: string;
+  unrealisedPnl?: string;
 }
 
 export const BybitPositionsPanel = () => {
@@ -499,7 +502,7 @@ export const BybitPositionsPanel = () => {
                       <p className="text-sm">Quantidade: <span className="font-bold">{confirmClose.size}</span></p>
                       <p className="text-sm">
                         P&L Atual: <span className={`font-bold ${
-                          parseFloat(confirmClose.unrealisedPnl) > 0 ? 'text-success' : 'text-destructive'
+                          parseFloat(confirmClose.unrealisedPnl ?? '0') > 0 ? 'text-success' : 'text-destructive'
                         }`}>
                           ${(parseFloat(confirmClose.unrealisedPnl) || 0).toFixed(2)}
                         </span>

@@ -116,7 +116,7 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
       })));
 
       let syncedCount = 0;
-      const updatePromises: Promise<{ error: Error | null }>[] = [];
+      const updatePromises: Promise<void>[] = [];
 
       for (const pos of pendingPositions) {
         // Encontrar PnL correspondente - primeiro por símbolo
