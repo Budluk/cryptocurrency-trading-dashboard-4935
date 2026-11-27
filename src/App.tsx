@@ -1,3 +1,4 @@
+import React, { Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -7,6 +8,20 @@ import { PositionsProvider } from "@/contexts/PositionsContext";
 import { supabase } from "@/integrations/supabase/client";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+
+// Lazy load heavy components for code splitting
+const MultiAssetTrader = React.lazy(() => import("./components/MultiAssetTrader"));
+const OrderFlowDashboard = React.lazy(() => import("./components/OrderFlowDashboard"));
+const AdvancedAnalytics = React.lazy(() => import("./components/AdvancedAnalytics"));
+const PerformanceDashboard = React.lazy(() => import("./components/PerformanceDashboard"));
+const MLAdaptiveSettings = React.lazy(() => import("./components/MLAdaptiveSettings"));
+
+// Suspense fallback for lazy components
+const LazyFallback = () => (
+  <div className="flex items-center justify-center h-64">
+    <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
+  </div>
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {

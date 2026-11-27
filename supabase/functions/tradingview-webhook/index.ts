@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { checkRateLimit, createRateLimitResponse, getClientIdentifier, rateLimitHeaders } from '../_shared/rateLimit.ts';
 
 
 const corsHeaders = {
@@ -164,6 +165,12 @@ function scoreSignal(data: TradingViewAlert, minConfidence: number = 80): {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting: 30 req/min per client (IP/API key/user)
+  const rateLimitResult = await checkRateLimit(getClientIdentifier(req), { maxRequests: 30, windowMs: 60_000 });
+  if (!rateLimitResult.allowed) {
+    return createRateLimitResponse(rateLimitResult, corsHeaders);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

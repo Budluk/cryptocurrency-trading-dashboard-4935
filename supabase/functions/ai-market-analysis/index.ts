@@ -1,6 +1,7 @@
 import { aiFetch } from '../_shared/aiRouter.ts';
 import { handleResearch } from '../_shared/researchAgent.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { checkRateLimit, createRateLimitResponse, getClientIdentifier } from '../_shared/rateLimit.ts';
 
 
 const corsHeaders = {
@@ -40,6 +41,12 @@ function calculateEMA(data: number[], period: number): number {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting: 30 req/min per client (public endpoint)
+  const rateLimitResult = await checkRateLimit(getClientIdentifier(req), { maxRequests: 30, windowMs: 60_000 });
+  if (!rateLimitResult.allowed) {
+    return createRateLimitResponse(rateLimitResult, corsHeaders);
   }
 
   try {

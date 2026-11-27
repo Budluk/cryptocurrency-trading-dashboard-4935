@@ -1,5 +1,6 @@
 import { aiFetch } from '../_shared/aiRouter.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { checkRateLimit, createRateLimitResponse, getClientIdentifier } from '../_shared/rateLimit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -94,6 +95,12 @@ async function callWithTimeout<T>(promise: Promise<T>, ms: number, name: string)
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting: 60 req/min per client (higher for gateway since it's internal)
+  const rateLimitResult = await checkRateLimit(getClientIdentifier(req), { maxRequests: 60, windowMs: 60_000 });
+  if (!rateLimitResult.allowed) {
+    return createRateLimitResponse(rateLimitResult, corsHeaders);
   }
 
   try {
