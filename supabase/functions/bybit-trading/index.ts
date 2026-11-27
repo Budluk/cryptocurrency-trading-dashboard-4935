@@ -9,7 +9,7 @@ const corsHeaders = {
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 import { handleTradingChat } from "../_shared/tradingChat.ts";
-import { RISK, checkRiskBudget, type RiskBudgetState } from "../_shared/autonomousRisk.ts";
+import { RISK, BUDGET, checkRiskBudget, riskStatusSnapshot, type RiskBudgetLimits, type RiskBudgetState } from "../_shared/autonomousRisk.ts";
 import { handleExchangeAction } from "../_shared/exchangeGateway.ts";
 // Correção de SL/TP com lado invertido: usa o teto central de 0,5%, não 2%.
 const STOP_FALLBACK = RISK.maxStopPct / 100;
@@ -63,9 +63,11 @@ Deno.serve(async (req) => {
     );
 
     let userId: string | null = null;
+    let jwtUserId: string | null = null;
     if (authHeader?.startsWith('Bearer ')) {
       const { data: userData } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
-      userId = userData?.user?.id || null;
+      jwtUserId = userData?.user?.id || null;
+      userId = jwtUserId;
     }
 
     console.log(`Bybit MAINNET request - user: ${userId || 'anonymous'}`);
@@ -78,9 +80,11 @@ Deno.serve(async (req) => {
     
     console.log(`Bybit MAINNET - Action: ${action} - User: ${userId || 'anonymous'}`);
 
-    // Roteamento multi-exchange: o usuário vem do JWT, nunca do corpo da requisição.
+    // Roteamento multi-exchange: a identidade vem somente do JWT. O `userId`
+    // aceito no corpo para compatibilidade com ações legadas NÃO pode ser usado
+    // para ler risco ou enviar ordem em nome de outro usuário.
     const routedParams = typeof action === 'string' && action.startsWith('exchange_')
-      ? { ...params, __auth_user_id: userId || ANON_USER_ID }
+      ? { ...params, __auth_user_id: jwtUserId || ANON_USER_ID }
       : params;
     const result = await runAction(action, routedParams);
 
@@ -746,7 +750,60 @@ async function loadRiskState(userId: string): Promise<RiskBudgetState> {
   };
 }
 
+const missingTable = (error: { code?: string; message?: string } | null) =>
+  !!error && (
+    error.code === 'PGRST205' || error.code === '42P01' ||
+    /Could not find the table|schema cache|relation .+ does not exist/i.test(error.message ?? '')
+  );
+
+/** Leitura somente: limites do banco + estado atual, sem segredos nem ordens. */
+async function loadRiskStatus(userId: string) {
+  const db = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  const [states, open, todayTrades, budgetRow] = await Promise.all([
+    db.from('agent_state').select('daily_pnl_pct, consecutive_losses, kill_until').eq('user_id', userId),
+    db.from('agent_trades').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('result', 'open'),
+    db.from('agent_trades').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('opened_at', `${today}T00:00:00Z`),
+    db.from('risk_budgets').select('max_daily_loss_pct, max_open_positions, max_daily_trades').eq('user_id', userId).maybeSingle(),
+  ]);
+  const blocking = states.error || open.error || todayTrades.error ||
+    (budgetRow.error && !missingTable(budgetRow.error) ? budgetRow.error : null);
+  if (blocking) throw new Error(`Não foi possível ler o estado de risco: ${blocking.message}`);
+
+  const rows = (states.data ?? []) as any[];
+  const daily = rows.map((r) => Number(r.daily_pnl_pct) || 0);
+  const losses = rows.map((r) => Number(r.consecutive_losses) || 0);
+  const killUntil = rows
+    .map((r) => (typeof r.kill_until === 'string' ? r.kill_until : null))
+    .filter((v): v is string => !!v && Date.parse(v) > Date.now())
+    .sort()
+    .pop() ?? null;
+  const limits: RiskBudgetLimits = {
+    maxDailyLossPct: Number((budgetRow.data as any)?.max_daily_loss_pct ?? BUDGET.maxDailyLossPct),
+    maxOpenPositions: Number((budgetRow.data as any)?.max_open_positions ?? BUDGET.maxOpenPositions),
+    maxDailyTrades: Number((budgetRow.data as any)?.max_daily_trades ?? BUDGET.maxDailyTrades),
+  };
+  return riskStatusSnapshot({
+    state: {
+      dailyPnlPct: daily.length ? Math.min(...daily) : 0,
+      openPositions: open.count ?? 0,
+      dailyTrades: todayTrades.count ?? 0,
+    },
+    limits,
+    consecutiveLosses: losses.length ? Math.max(...losses) : 0,
+    killUntil,
+  });
+}
+
 async function runAction(action: string, params: any = {}): Promise<any> {
+  // Leitura pública do orçamento: ação exchange_* para herdar o usuário do JWT,
+  // mas respondida aqui (sem gateway e sem qualquer chamada de ordem).
+  if (action === 'exchange_risk_status') {
+    return await loadRiskStatus(String(params.__auth_user_id || ANON_USER_ID));
+  }
   // Somente rotas exchange_* ou uma exchange explícita entram no roteador
   // multi-exchange. Todo o caminho Bybit existente permanece como era.
   const explicitExchange = typeof params?.exchange === 'string' && params.exchange !== 'BYBIT';

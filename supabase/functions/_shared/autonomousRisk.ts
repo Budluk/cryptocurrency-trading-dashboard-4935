@@ -134,6 +134,43 @@ export function checkRiskBudget(
   return { allowed: true };
 }
 
+/** Snapshot público do orçamento/kill switch (sem chaves, flags ou segredos). */
+export function riskStatusSnapshot(input: {
+  state: RiskBudgetState;
+  limits?: RiskBudgetLimits;
+  consecutiveLosses?: number;
+  killUntil?: string | null;
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  const limits = input.limits ?? BUDGET;
+  const budget = checkRiskBudget(input.state, limits);
+  const kill = checkKillSwitch({
+    consecutiveLosses: input.consecutiveLosses,
+    dailyPnlPct: input.state.dailyPnlPct,
+  });
+  const persistedUntil = input.killUntil && Date.parse(input.killUntil) > now.getTime()
+    ? input.killUntil
+    : null;
+  return {
+    generatedAt: now.toISOString(),
+    limits,
+    usage: {
+      dailyPnlPct: Number(input.state.dailyPnlPct ?? 0),
+      openPositions: Number(input.state.openPositions ?? 0),
+      dailyTrades: Number(input.state.dailyTrades ?? 0),
+    },
+    budget: { allowed: budget.allowed, reason: budget.reason ?? null },
+    kill: {
+      active: kill.active || !!persistedUntil,
+      reason: persistedUntil ? `pausa ativa até ${persistedUntil}` : kill.reason ?? null,
+      until: persistedUntil,
+      pauseHours: kill.pauseHours,
+    },
+    blockedUtcHour: isBlockedHour(now.getUTCHours()),
+  };
+}
+
 /** Alavancagem sempre dentro da faixa 3x-6x, com teto duro de 8x. */
 export function clampLeverage(requested: number): number {
   if (!Number.isFinite(requested)) return RISK.minLeverage;

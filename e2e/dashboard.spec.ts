@@ -72,7 +72,7 @@ test("carrega o dashboard sem erros de console não-TradingView", async ({ page 
   expect(errors.join("\n"), errors.join("\n")).toBe("");
 });
 
-test("Visão geral mostra B3 + corretoras, as 7 venues e os contratos vigentes", async ({
+test("Visão geral mostra B3 + corretoras, as 9 venues e os contratos vigentes", async ({
   page,
 }) => {
   await page.goto("/");
@@ -92,6 +92,8 @@ test("Visão geral mostra B3 + corretoras, as 7 venues e os contratos vigentes",
     "KuCoin Futures",
     "Gate.io Futures",
     "B3 (WIN/WDO)",
+    "Bybit Testnet",
+    "Binance Testnet",
   ];
   for (const venue of venues) {
     await expect(page.getByText(venue, { exact: true }).first()).toBeVisible();

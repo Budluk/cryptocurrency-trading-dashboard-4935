@@ -133,10 +133,14 @@ export async function handleExchangeAction(
   const dryRun = params.dry_run !== false;
 
   if (isWrite) {
-    if (spec.id === 'B3' || !spec.supportsOrders) {
+    if (spec.id === 'B3') {
       throw new Error('B3 é somente sinais/simulação; nenhuma ordem é enviada');
     }
-    if (dryRun) return simulatedWrite(spec, action, params, 'dry_run');
+    // Testnet aceita simulação (dry_run), mas nunca o caminho real.
+    if (!spec.supportsOrders && !(spec.paper && dryRun)) {
+      throw new Error('Venue somente simulação; nenhuma ordem real é enviada');
+    }
+    if (dryRun) return simulatedWrite(spec, action, params, spec.paper ? 'paper_testnet' : 'dry_run');
     const creds = exchangeCredentials(spec, readEnv);
     if (!isExchangeLiveEnabled(spec, readEnv) || !creds.key || !creds.secret) {
       return simulatedWrite(spec, action, params, 'live_not_enabled');

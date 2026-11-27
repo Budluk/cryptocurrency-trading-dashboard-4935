@@ -12,6 +12,7 @@ import {
   stopDistancePct,
   decisionGuard,
   checkRiskBudget,
+  riskStatusSnapshot,
 } from './autonomousRisk.ts';
 
 describe('autonomousRisk', () => {
@@ -99,6 +100,28 @@ describe('autonomousRisk', () => {
       { maxDailyLossPct: -3, maxOpenPositions: 3, maxDailyTrades: 5 },
     );
     expect(custom.allowed).toBe(true);
+  });
+
+  test('snapshot de risco é público, sem segredos, e reflete killswitch/budget', () => {
+    const now = new Date('2026-11-28T12:00:00Z');
+    const ok = riskStatusSnapshot({
+      state: { dailyPnlPct: -0.4, openPositions: 1, dailyTrades: 2 }, now,
+    });
+    expect(ok.limits).toEqual({ maxDailyLossPct: -2, maxOpenPositions: 5, maxDailyTrades: 20 });
+    expect(ok.budget.allowed).toBe(true);
+    expect(ok.kill.active).toBe(false);
+    expect(JSON.stringify(ok)).not.toMatch(/api[_-]?key|secret|https?:\/\//i);
+
+    const blocked = riskStatusSnapshot({
+      state: { dailyPnlPct: -2.1, openPositions: 5, dailyTrades: 20 },
+      limits: { maxDailyLossPct: -2, maxOpenPositions: 5, maxDailyTrades: 20 },
+      consecutiveLosses: 3,
+      killUntil: '2026-11-28T14:00:00Z',
+      now,
+    });
+    expect(blocked.budget.allowed).toBe(false);
+    expect(blocked.kill.active).toBe(true);
+    expect(blocked.kill.until).toBe('2026-11-28T14:00:00Z');
   });
 
   test('system prompt usa os mesmos limites do código', () => {

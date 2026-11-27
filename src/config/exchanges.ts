@@ -3,7 +3,7 @@
  * Mantido em src/ para que a UI não importe código de edge functions.
  */
 
-export type ExchangeId = 'BYBIT' | 'BINANCE' | 'OKX' | 'BITGET' | 'KUCOIN' | 'GATEIO' | 'B3';
+export type ExchangeId = 'BYBIT' | 'BINANCE' | 'OKX' | 'BITGET' | 'KUCOIN' | 'GATEIO' | 'B3' | 'BYBIT_TESTNET' | 'BINANCE_TESTNET';
 
 export interface ExchangeInfo {
   id: ExchangeId;
@@ -12,6 +12,8 @@ export interface ExchangeInfo {
   symbols: string[];
   quoteCurrency: string;
   supportsOrders: boolean;
+  /** Testnet/paper: nunca envia ordem real. */
+  paper?: boolean;
   brokers: string[];
   credentialNames: string[];
   enableFlag: string;
@@ -60,6 +62,18 @@ export const EXCHANGES: readonly ExchangeInfo[] = [
     supportsOrders: false, brokers: ['XP', 'Inter', 'Rico', 'Genial'],
     credentialNames: [], enableFlag: 'B3_ENABLE_LIVE',
   },
+  {
+    id: 'BYBIT_TESTNET', name: 'Bybit Testnet', kind: 'crypto-perp',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'], quoteCurrency: 'USDT',
+    supportsOrders: false, paper: true, brokers: [],
+    credentialNames: [], enableFlag: 'BYBIT_TESTNET_ENABLE_LIVE',
+  },
+  {
+    id: 'BINANCE_TESTNET', name: 'Binance Testnet', kind: 'crypto-perp',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'], quoteCurrency: 'USDT',
+    supportsOrders: false, paper: true, brokers: [],
+    credentialNames: [], enableFlag: 'BINANCE_TESTNET_ENABLE_LIVE',
+  },
 ];
 
 /** Contratos vigentes e agendados; a vigência é validada no backend. */
@@ -70,5 +84,6 @@ export function getExchangeInfo(id: string): ExchangeInfo | undefined {
 }
 
 export function isSimulationOnly(id: string): boolean {
-  return id === 'B3';
+  const info = getExchangeInfo(id);
+  return !!info && (info.id === 'B3' || !!info.paper);
 }

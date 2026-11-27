@@ -9,7 +9,7 @@
  *   pública de ordens para pessoa física neste projeto.
  */
 
-export type ExchangeId = 'BYBIT' | 'BINANCE' | 'OKX' | 'BITGET' | 'KUCOIN' | 'GATEIO' | 'B3';
+export type ExchangeId = 'BYBIT' | 'BINANCE' | 'OKX' | 'BITGET' | 'KUCOIN' | 'GATEIO' | 'B3' | 'BYBIT_TESTNET' | 'BINANCE_TESTNET';
 
 export type ExchangeKind = 'crypto-perp' | 'b3-futures';
 
@@ -26,6 +26,8 @@ export interface ExchangeSpec {
   /** true somente para a Bybit, que já opera com credenciais configuradas. */
   liveByDefault: boolean;
   supportsOrders: boolean;
+  /** Venue de testnet/paper: nunca envia ordem real, mesmo com dry_run=false. */
+  paper?: boolean;
   baseUrl?: string;
   quoteCurrency: string;
   /** Corretoras B3 que podem ser exibidas como destino dos sinais. */
@@ -121,10 +123,31 @@ export const SUPPORTED_EXCHANGES: readonly ExchangeSpec[] = [
     supportsOrders: false, quoteCurrency: 'BRL',
     brokers: ['XP', 'Inter', 'Rico', 'Genial'],
   },
+  {
+    id: 'BYBIT_TESTNET', name: 'Bybit Testnet', kind: 'crypto-perp',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
+    keyEnv: 'BYBIT_TESTNET_API_KEY', secretEnv: 'BYBIT_TESTNET_API_SECRET',
+    liveFlagEnv: 'BYBIT_TESTNET_ENABLE_LIVE', liveByDefault: false,
+    supportsOrders: false, paper: true,
+    baseUrl: 'https://api-testnet.bybit.com', quoteCurrency: 'USDT',
+  },
+  {
+    id: 'BINANCE_TESTNET', name: 'Binance Testnet', kind: 'crypto-perp',
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
+    keyEnv: 'BINANCE_TESTNET_API_KEY', secretEnv: 'BINANCE_TESTNET_API_SECRET',
+    liveFlagEnv: 'BINANCE_TESTNET_ENABLE_LIVE', liveByDefault: false,
+    supportsOrders: false, paper: true,
+    baseUrl: 'https://testnet.binancefuture.com', quoteCurrency: 'USDT',
+  },
 ];
 
 export function isExchangeId(value: unknown): value is ExchangeId {
   return typeof value === 'string' && SUPPORTED_EXCHANGES.some((s) => s.id === value);
+}
+
+export function isPaperExchange(value: unknown): boolean {
+  const spec = getExchangeSpec(value);
+  return !!spec?.paper;
 }
 
 export function getExchangeSpec(value: unknown): ExchangeSpec | null {
@@ -179,7 +202,7 @@ export function isExchangeLiveEnabled(
   spec: ExchangeSpec,
   readEnv: EnvReader = defaultEnvReader,
 ): boolean {
-  if (!spec.supportsOrders || spec.id === 'B3') return false;
+  if (!spec.supportsOrders || spec.paper || spec.id === 'B3') return false;
   const creds = exchangeCredentials(spec, readEnv);
   if (!creds.key || !creds.secret) return false;
   if (spec.passphraseEnv && !creds.passphrase) return false;
@@ -195,6 +218,8 @@ export function exchangeSummary() {
     symbols: s.symbols,
     quoteCurrency: s.quoteCurrency,
     supportsOrders: s.supportsOrders,
+    simulationOnly: !s.supportsOrders || !!s.paper,
+    paper: !!s.paper,
     brokers: s.brokers ?? [],
     credentialNames: [s.keyEnv, s.secretEnv, ...(s.passphraseEnv ? [s.passphraseEnv] : [])],
     enableFlag: s.liveFlagEnv,

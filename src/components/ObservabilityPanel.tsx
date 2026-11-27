@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeExchange } from "@/lib/invokeExchange";
 import type { Database as SupabaseDatabase } from "@/integrations/supabase/types";
 import {
   Activity, AlertTriangle, CheckCircle2, Database, RefreshCw, Server, ShieldCheck,
@@ -19,6 +20,16 @@ type AgentTrade = SupabaseDatabase["public"]["Tables"]["agent_trades"]["Row"];
 type ProviderHealth = {
   name: string; model: string; configured: boolean;
   circuitOpen: boolean; failures: number; rateLimited: boolean;
+};
+
+/** Snapshot lido no servidor; nunca contém chaves, flags de live ou URLs. */
+type RiskStatus = {
+  generatedAt: string;
+  limits: { maxDailyLossPct: number; maxOpenPositions: number; maxDailyTrades: number };
+  usage: { dailyPnlPct: number; openPositions: number; dailyTrades: number };
+  budget: { allowed: boolean; reason: string | null };
+  kill: { active: boolean; reason: string | null; until: string | null; pauseHours: number };
+  blockedUtcHour: boolean;
 };
 
 const dayAgo = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -157,6 +168,17 @@ export function ObservabilityPanel() {
     refetchInterval: 60000,
   });
 
+  const riskStatus = useQuery({
+    queryKey: ["obs-risk-status"],
+    queryFn: async () => {
+      const response = await invokeExchange<RiskStatus>("exchange_risk_status");
+      if (!response.ok || !response.data) throw new Error(response.error ?? "Falha ao ler o risco");
+      return response.data;
+    },
+    refetchInterval: 30000,
+    retry: 1,
+  });
+
   const resolveError = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("bot_errors").update({ resolved: true }).eq("id", id);
@@ -167,7 +189,7 @@ export function ObservabilityPanel() {
   });
 
   const refreshAll = () => {
-    ["obs-errors", "obs-logs", "obs-decisions", "obs-audit", "obs-agent-state", "obs-agent-routine", "obs-agent-trades", "obs-ai-status"]
+    ["obs-errors", "obs-logs", "obs-decisions", "obs-audit", "obs-agent-state", "obs-agent-routine", "obs-agent-trades", "obs-ai-status", "obs-risk-status"]
       .forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
   };
 
@@ -211,7 +233,7 @@ export function ObservabilityPanel() {
   }, [aiStatus.data]);
 
   const failing = errors.isError || logs.isError || decisions.isError
-    || agentState.isError || agentRoutine.isError || agentTrades.isError;
+    || agentState.isError || agentRoutine.isError || agentTrades.isError || riskStatus.isError;
 
   return (
     <Card className="bg-card/60 border-border/50">
@@ -257,11 +279,12 @@ export function ObservabilityPanel() {
         </div>
 
         <Tabs defaultValue="events">
-          <TabsList className="grid grid-cols-5">
+          <TabsList className="grid grid-cols-6">
             <TabsTrigger value="events">Eventos</TabsTrigger>
             <TabsTrigger value="errors">Erros</TabsTrigger>
             <TabsTrigger value="decisions">Decisões IA</TabsTrigger>
             <TabsTrigger value="agent">Agente</TabsTrigger>
+            <TabsTrigger value="risk">Risco</TabsTrigger>
             <TabsTrigger value="audit">Auditoria</TabsTrigger>
           </TabsList>
 
@@ -353,6 +376,66 @@ export function ObservabilityPanel() {
                 </div>
               ))}
             </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="risk">
+            <div className="space-y-3">
+              {riskStatus.isError && (
+                <p className="text-xs text-destructive p-2">Não foi possível ler o estado de risco no servidor: {riskStatus.error?.message}</p>
+              )}
+              {!riskStatus.data && !riskStatus.isError && (
+                <p className="text-xs text-muted-foreground p-2">Carregando limite de risco…</p>
+              )}
+              {riskStatus.data && (
+                <>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Metric
+                      label="P&L diário"
+                      value={`${riskStatus.data.usage.dailyPnlPct.toFixed(2)}%`}
+                      tone={riskStatus.data.usage.dailyPnlPct <= riskStatus.data.limits.maxDailyLossPct ? "bad" : "default"}
+                      hint={`limite ${riskStatus.data.limits.maxDailyLossPct}%`}
+                    />
+                    <Metric
+                      label="Posições abertas"
+                      value={riskStatus.data.usage.openPositions}
+                      tone={riskStatus.data.usage.openPositions >= riskStatus.data.limits.maxOpenPositions ? "bad" : "default"}
+                      hint={`limite ${riskStatus.data.limits.maxOpenPositions}`}
+                    />
+                    <Metric
+                      label="Operações hoje"
+                      value={riskStatus.data.usage.dailyTrades}
+                      tone={riskStatus.data.usage.dailyTrades >= riskStatus.data.limits.maxDailyTrades ? "bad" : "default"}
+                      hint={`limite ${riskStatus.data.limits.maxDailyTrades}`}
+                    />
+                    <Metric
+                      label="Orçamento"
+                      value={riskStatus.data.budget.allowed ? "Livre" : "Bloqueado"}
+                      tone={riskStatus.data.budget.allowed ? "good" : "bad"}
+                      hint={riskStatus.data.budget.reason ?? "dentro dos limites"}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <Badge variant={riskStatus.data.kill.active ? "destructive" : "secondary"}>
+                      <ShieldCheck className="h-3 w-3 mr-1" />
+                      Kill switch {riskStatus.data.kill.active ? "ativo" : "inativo"}
+                    </Badge>
+                    <Badge variant={riskStatus.data.blockedUtcHour ? "destructive" : "outline"}>
+                      Janela UTC {riskStatus.data.blockedUtcHour ? "bloqueada" : "livre"}
+                    </Badge>
+                    {riskStatus.data.kill.until && (
+                      <span>Pausa até {time(riskStatus.data.kill.until)}</span>
+                    )}
+                    <span className="text-muted-foreground ml-auto">atualizado {time(riskStatus.data.generatedAt)}</span>
+                  </div>
+                  {riskStatus.data.kill.reason && (
+                    <p className="text-xs text-muted-foreground">Motivo: {riskStatus.data.kill.reason}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Limites lidos de <code>risk_budgets</code> no servidor. Kill switch, janela UTC e orçamento também são validados antes de qualquer ordem real. Nenhuma chave ou flag de live é exibida.
+                  </p>
+                </>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="audit">

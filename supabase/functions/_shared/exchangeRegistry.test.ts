@@ -10,11 +10,22 @@ const dia03 = new Date('2026-12-03T14:00:00Z');
 const dia18 = new Date('2026-12-18T14:00:00Z');
 
 describe('exchange registry', () => {
-  it('registra Bybit, cinco exchanges e B3', () => {
+  it('registra Bybit, cinco exchanges, B3 e duas testnets', () => {
     expect(SUPPORTED_EXCHANGES.map((s) => s.id)).toEqual([
       'BYBIT', 'BINANCE', 'OKX', 'BITGET', 'KUCOIN', 'GATEIO', 'B3',
+      'BYBIT_TESTNET', 'BINANCE_TESTNET',
     ]);
-    expect(exchangeSummary()).toHaveLength(7);
+    expect(exchangeSummary()).toHaveLength(9);
+  });
+
+  it('testnets são paper: nunca habilitam ordem real', () => {
+    for (const id of ['BYBIT_TESTNET', 'BINANCE_TESTNET'] as const) {
+      const spec = getExchangeSpec(id)!;
+      expect(spec.paper).toBe(true);
+      expect(spec.supportsOrders).toBe(false);
+      expect(isExchangeLiveEnabled(spec, () => 'true')).toBe(false);
+      expect(exchangeSummary().find((s) => s.id === id)?.simulationOnly).toBe(true);
+    }
   });
 
   it('registra os quatro contratos vigentes/agendados sem habilitar ordens na B3', () => {

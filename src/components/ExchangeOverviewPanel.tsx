@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { EXCHANGES, getExchangeInfo, isSimulationOnly } from '@/config/exchanges';
+import { EXCHANGES, getExchangeInfo } from '@/config/exchanges';
 import { invokeExchange } from '@/lib/invokeExchange';
 import { toast } from 'sonner';
 
@@ -81,9 +81,10 @@ export const ExchangeOverviewPanel = () => {
       <CardHeader className="gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="text-lg">B3 + corretoras</CardTitle>
-          <p className="text-sm text-muted-foreground">Sinais B3 ao lado da Bybit, com todas as venues em simulação.</p>
+          <p className="text-sm text-muted-foreground">Simulação unificada: B3, exchanges e testnets sem ordens reais neste painel.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Badge variant="outline">Simulação unificada</Badge>
           <Badge variant="outline">Sinais B3</Badge>
           <Badge variant="secondary">Sem ordens reais neste painel</Badge>
         </div>
@@ -94,12 +95,15 @@ export const ExchangeOverviewPanel = () => {
             <div key={item.id} className="rounded-md border border-border p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">{item.name}</span>
-                <Badge variant={item.id === 'BYBIT' ? 'default' : item.id === 'B3' ? 'outline' : 'secondary'}>
-                  {item.id === 'BYBIT' ? 'Real' : item.id === 'B3' ? 'Sinais' : 'Simulação'}
+                <Badge variant={item.id === 'BYBIT' ? 'default' : item.paper || item.id === 'B3' ? 'outline' : 'secondary'}>
+                  {item.id === 'BYBIT' ? 'Real' : item.paper ? 'Testnet' : item.id === 'B3' ? 'Sinais' : 'Simulação'}
                 </Badge>
               </div>
               <p className="mt-1 truncate text-xs text-muted-foreground">{item.symbols.join(' · ')}</p>
-              {isSimulationOnly(item.id) && (
+              {item.paper && (
+                <p className="mt-1 text-xs text-muted-foreground">Paper trading: nunca envia ordem real.</p>
+              )}
+              {item.id === 'B3' && (
                 <p className="mt-1 text-xs text-muted-foreground">Corretoras: {item.brokers.join(', ')}</p>
               )}
             </div>

@@ -25,6 +25,8 @@ describe('exchange gateway', () => {
     const list = result.exchanges as Array<{ id: string }>;
     expect(list.map((item) => item.id)).toContain('BINANCE');
     expect(list.map((item) => item.id)).toContain('B3');
+    expect(list.map((item) => item.id)).toContain('BYBIT_TESTNET');
+    expect(list.map((item) => item.id)).toContain('BINANCE_TESTNET');
     expect(JSON.stringify(result)).not.toContain('secret');
   });
 
@@ -49,6 +51,21 @@ describe('exchange gateway', () => {
     await expect(handleExchangeAction('place_order', {
       exchange: 'B3', symbol: 'WINZ26', side: 'Buy', qty: '1', dry_run: false,
     }, ctx)).rejects.toThrow('B3');
+  });
+
+  it('testnet simula em dry_run e nunca aceita ordem real', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => { calls += 1; return new Response('{}'); }) as typeof fetch;
+    const result = await handleExchangeAction('place_order', {
+      exchange: 'BYBIT_TESTNET', symbol: 'BTCUSDT', side: 'Buy', qty: '0.01',
+    }, ctx);
+    expect(result.simulated).toBe(true);
+    expect(result.reason).toBe('paper_testnet');
+    expect(calls).toBe(0);
+    await expect(handleExchangeAction('place_order', {
+      exchange: 'BINANCE_TESTNET', symbol: 'BTCUSDT', side: 'Buy', qty: '0.01', dry_run: false,
+    }, liveCtx)).rejects.toThrow('somente simulação');
+    expect(calls).toBe(0);
   });
 
   it('sem opt-in, mantém simulação mesmo com dry_run=false', async () => {

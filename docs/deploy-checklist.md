@@ -32,6 +32,18 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 > `46076354002` e `Daily Smoke` verde no run `46077182693`. Nenhuma ordem real
 > foi executada, nenhum segredo foi impresso e nenhum PAT foi criado.
 >
+> 🔄 Em 27/11/2026, o lote seguinte preparou: alertas de falha por issue no GitHub
+> (`ci.yml` e `smoke.yml`), upgrade de `actions/checkout@v6`,
+> `actions/setup-node@v5`, `oven-sh/setup-bun@v2` e `actions/github-script@v8`,
+> duas venues paper (`BYBIT_TESTNET`/`BINANCE_TESTNET`), o painel de simulação
+> unificada, a action somente leitura `exchange_risk_status` e a aba **Risco** na
+> Observabilidade. O inventário completo das 12 funções está em
+> `docs/edge-functions-inventory.md` — nenhuma função foi excluída. Validação
+> local verde: typecheck, lint (116 avisos/0 erros), 20 Vitest, 90 Bun no
+> conjunto de risco/exchange + 3 Bun de HMAC, build, `deno check` de
+> `bybit-trading` e YAML dos workflows. Push/CI/deploy deste lote ainda não
+> foram concluídos neste ponto.
+>
 > ⚠️ O primeiro `Daily Smoke` falhou no passo `ai_status` porque um deploy feito
 > apenas clicando em **Deploy updates** republicou o código antigo que já estava
 > no editor do Dashboard. É obrigatório colar/carregar o conteúdo local dos
@@ -617,7 +629,10 @@ Playwright como artifact.
 Usa `vars.SUPABASE_URL` e `secrets.SUPABASE_SERVICE_ROLE_KEY`; nunca imprime
 valores de segredo e **não** executa ordens reais:
 
-- `exchange_list`: espera 7 venues.
+- `exchange_list`: espera 9 venues (7 anteriores + `BYBIT_TESTNET` e
+  `BINANCE_TESTNET`, ambas `paper:true`/`simulationOnly:true`).
+- `exchange_risk_status`: snapshot somente leitura (`limits`, `usage`, `budget`,
+  `kill`, `blockedUtcHour`), sem chaves, flags de live ou URLs.
 - `place_order`: `dry_run:true` → `simulated:true`, `reason:"dry_run"`.
 - `ai_status`: lista configurada de provedores, sem chaves/URLs.
 - Webhook B3 sem assinatura → 401; com `B3_WEBHOOK_SECRET` configurado no
@@ -631,6 +646,11 @@ valores de segredo e **não** executa ordens reais:
 > resumo, webhook B3 sem assinatura respondendo 401, `bot_errors` 0 em 24 h e
 > limpeza com 0 linhas removidas. O passo assinado foi pulado porque
 > `B3_WEBHOOK_SECRET` não está configurado no Actions (opcional).
+>
+> **Atualização em 27/11/2026:** o smoke passou a exigir 9 venues e a validar
+> `exchange_risk_status` sem segredos; o próximo `Run workflow` confirmará o
+> novo contrato em produção. Além disso, falhas de `CI` e `Daily Smoke` abrem ou
+> comentam uma issue `[Alerta] …` via `GITHUB_TOKEN` (sem webhook externo).
 
 ---
 
@@ -679,6 +699,7 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 - [x] `Daily Smoke` de produção verde no run `46077182693` (detalhes em 5.6). Nenhuma ordem real foi enviada.
 - [x] Release `v1.0.4` publicada em 28/11/2026 com aprovação explícita, apontando para `aaa87f9`: https://github.com/Budluk/cryptocurrency-trading-dashboard-4935/releases/tag/v1.0.4
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
+- [ ] Lote de 27/11: commit/push dos workflows (alertas + upgrades), das testnets paper, do `exchange_risk_status`, do painel **Risco** e da documentação; deploys pela aba **Code**; CI 8/8 e `Daily Smoke` com 9 venues/risk_status verde; `B3_WEBHOOK_SECRET` digitado pelo usuário no form do Actions. Nenhuma release nova sem aprovação explícita.
 
 Rollbacks:
 

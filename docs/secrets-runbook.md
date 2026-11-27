@@ -30,6 +30,9 @@ do navegador.
 - Atualizar o segredo opcional `B3_WEBHOOK_SECRET` em GitHub Actions
   (`Settings → Secrets and variables → Actions`) para o smoke diário continuar
   cobrindo a assinatura válida. Se ele não existir, o job apenas pula esse passo.
+- Digite o valor **diretamente no formulário do navegador**, sem colar no chat,
+  sem salvar em arquivo e sem pedir ao agente para ler o campo. A presença pode
+  ser confirmada depois apenas pelo nome do segredo.
 
 ## 2. Rotacionar credenciais de exchange (Bybit/Binance/OKX/Bitget/KuCoin/Gate.io)
 

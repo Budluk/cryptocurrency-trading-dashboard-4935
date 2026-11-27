@@ -26,6 +26,17 @@
 - [x] Migrations aplicadas pelo SQL Editor com versões registradas e functions `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` redeployadas pela aba **Code** com o conteúdo local colado no editor (HTTP 201). Nenhum segredo foi impresso, nenhum PAT foi criado e nenhuma ordem real foi executada.
 - [x] CI 8/8 verde no run `46076354002` (`98ef4fa`); `Daily Smoke` verde no run `46077182693`: 7 venues, `dry_run`, `ai_status` sem segredos, webhook B3 sem assinatura 401, 0 erros em 24 h e limpeza com 0 linhas. O primeiro disparo do smoke falhou porque um deploy anterior da aba **Code** ainda continha o código antigo; após colar os arquivos locais no editor e publicar novamente, o smoke passou.
 
+## Próximo lote — 27/11/2026 (implementado; publicação pendente)
+- [x] Inventário das Edge Functions registrado em `docs/edge-functions-inventory.md`: 12 funções com chamador ativo, nenhuma exclusão. Pontos de atenção: `ml-auto-corrector` fora do `config.toml`, contrato `predict` divergente e HMAC Bybit duplicado.
+- [x] Alertas de falha por issue do GitHub em `ci.yml` e `smoke.yml` (`GITHUB_TOKEN`, `actions/github-script@v8`), sem webhook externo novo.
+- [x] Avisos do CI tratados com `actions/checkout@v6`, `actions/setup-node@v5`, `oven-sh/setup-bun@v2` e `actions/github-script@v8`; YAML revalidado.
+- [x] Testnets paper `BYBIT_TESTNET` e `BINANCE_TESTNET` no registry/UI: `dry_run` permitido, ordem real bloqueada mesmo com `dry_run:false`, sem credenciais obrigatórias e sem dinheiro real.
+- [x] Painel de simulação unificado: 9 venues, badges de Testnet/Sinais/Simulação e botão que sempre força `dry_run:true`.
+- [x] `exchange_risk_status` somente leitura (limites de `risk_budgets`, P&L, posições, trades, kill switch e janela UTC) e nova aba **Risco** na Observabilidade, sem chaves/flags/URLs.
+- [x] Validação local verde: typecheck, lint (116 avisos/0 erros), 20 Vitest, 90 Bun de risco/exchange + 3 de HMAC, build, `deno check` de `bybit-trading` e YAML dos workflows.
+- [ ] Commit/push, CI 8/8, deploy das functions pela aba **Code** e `Daily Smoke` com 9 venues + `risk_status`.
+- [ ] Usuário digitar `B3_WEBHOOK_SECRET` no form já aberto do GitHub Actions (valor nunca lido pelo agente); depois confirmar presença apenas pelo nome e reexecutar o smoke.
+
 ## Simplificação visual (concluída em 28/11/2026)
 - [x] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
 - [x] Conferir navegação e aparência no celular e computador: preview em largura desktop e em iframe de 390 px (sem overflow horizontal, abas e painel B3/corretores visíveis, zero erros no console)
