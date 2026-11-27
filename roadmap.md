@@ -12,6 +12,7 @@
 - [x] `npm audit` sem vulnerabilidades de produção: `react-router-dom` atualizado para `^7.18.7` e `audit:ci` endurecido para `--audit-level=moderate`; typecheck, testes, lint e build verdes.
 - [x] Multi-exchange no mesmo `bybit-trading` (sem nova função): Binance, OKX, Bitget, KuCoin e Gate.io em simulação por padrão, com assinantes REST, roteador, token HMAC para ordens reais e opt-in por exchange.
 - [x] B3 rodando junto com a Bybit como canal somente de sinais: contratos vigentes `WINZ26`/`WDOZ26`, webhook existente com segredo `B3_WEBHOOK_SECRET`, migration versionada e painel read-only. Nenhuma ordem B3 é enviada.
+- [x] Deploy da fase B3/multi-exchange em 27/11/2026: migration aplicada, segredo configurado, `bybit-trading`/`tradingview-webhook` redeployadas pela aba **Code** e CI 7/7 verde em `d40417e`. Smoke tests: 7 venues, `dry_run` sem ordem e webhook com 401 para assinatura inválida/ausente.
 
 ## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
@@ -20,11 +21,10 @@
 
 ## Validações que dependem do usuário
 - [ ] Chat de trading normal com ordem real — o `dry_run` já foi validado; autorizar uma ordem real só depois de conferir a proposta assinada e dar confirmação explícita
-- [ ] Release `v1.0.3` para `c757b15`/`785fa65` — criar somente com sua aprovação
+- [ ] Release `v1.0.3` para `c757b15`/`785fa65`/`a471a5d`/`2564baf`/`d40417e` — criar somente com sua aprovação
 - [ ] Painel de Observabilidade sem erros após acompanhamento pós-deploy
 - [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
 
 ## Pendências externas/opcionais
-- [ ] Aplicar `20261127120000_multi_exchange_b3.sql` no Supabase, configurar `B3_WEBHOOK_SECRET` e redesploy de `bybit-trading`/`tradingview-webhook` pela aba **Code**; sinais B3 e painel passam a operar após esse passo
 - [ ] FreeLLMAPI sem endereço público (Cloudflare Tunnel pendente); o roteador já usa Groq/OpenAI/Lovable
 - [ ] Créditos na OpenAI/Lovable para reduzir a dependência do free tier do Groq

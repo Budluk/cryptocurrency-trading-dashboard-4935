@@ -7,12 +7,19 @@ Projeto Supabase: **`uohdpxkfgxmtlosnmspf`** (definido em `supabase/config.toml`
 > ✅ Em 27/11/2026 foram aplicadas as **5 migrations**, publicadas as **4 functions** deste PR,
 > ativados os **Anonymous Sign-Ins** (com correção da trigger de `demo_accounts`) e configurados
 > a variável e o segredo do `agent-loop`. Os comandos abaixo permanecem como registro
-> reprodutível; não precisa repeti-los. A migration B3/multi-exchange agora está versionada (ver 2.4), mas ainda precisa ser aplicada no projeto.
+> reprodutível; não precisa repeti-los. A migration B3/multi-exchange foi aplicada em 27/11/2026 (ver 2.4).
 >
 > ✅ Em 27/11/2026, após os commits `c757b15` e `785fa65`, a CI tornou-se 7/7 verde e
 > a `bybit-trading` foi redeployada pela aba **Code** do Dashboard (HTTP 201). O smoke
 > teste de `chat_send` com `dry_run: true` retornou HTTP 200 sem ordens nem escritas
 > (detalhes em 5.1c). Nenhum PAT foi criado e nenhum segredo foi impresso.
+>
+> ✅ Em 27/11/2026, após o commit `d40417e`, a CI tornou-se 7/7 verde; a migration
+> B3/multi-exchange foi aplicada, `B3_WEBHOOK_SECRET` configurado e as functions
+> `bybit-trading` e `tradingview-webhook` redeployadas pela aba **Code**. Smoke tests:
+> `exchange_list` (7 venues), `place_order` com `dry_run:true` (`simulated:true`,
+> `reason:"dry_run"`, nenhuma ordem) e webhook B3 sem/ com assinatura inválida (401).
+> Nenhuma ordem real foi disparada e nenhum segredo foi impresso.
 
 ---
 
@@ -184,7 +191,7 @@ select policyname from pg_policies where tablename = 'auto_trader_config';
 -- não deve restar nenhuma política "Allow anonymous access"
 ```
 
-### 2.4 Migration B3 + multi-exchange (aplicar)
+### 2.4 Migration B3 + multi-exchange (✅ aplicada em 27/11/2026)
 
 Em 27/11/2026 foi versionada
 `supabase/migrations/20261127120000_multi_exchange_b3.sql`. Ela cria
@@ -193,14 +200,14 @@ Em 27/11/2026 foi versionada
 Contratos aceitos: **WINZ26** e **WDOZ26** — os antigos WINZ25/WDOF26 venceram
 e são rejeitados por `CHECK`.
 
-Aplique **depois** das cinco migrations da etapa 2.2, pela aba **SQL Editor**
-do Dashboard (cole o conteúdo do arquivo e execute) ou por
-`supabase db push --project-ref uohdpxkfgxmtlosnmspf`. Não use PAT; se usar a
-CLI, faça login com `supabase login` antes.
+Foi aplicada **depois** das cinco migrations da etapa 2.2, pela aba **SQL Editor**
+do Dashboard (sem PAT). Verificação: `b3_analysis`, `b3_signals`, `b3_ticks` e
+`exchange_simulations` presentes em `public`, e a versão registrada em
+`supabase_migrations.schema_migrations` (`20261127120000`).
 
-Depois de aplicar, configure o segredo `B3_WEBHOOK_SECRET` no Dashboard
-(Project Settings → Edge Functions → Secrets) e redesploy de
-`tradingview-webhook` pela aba **Code**. As corretoras cripto entram em
+O segredo `B3_WEBHOOK_SECRET` foi configurado em Edge Functions → Secrets e as
+functions `bybit-trading`/`tradingview-webhook` foram redeployadas pela aba
+**Code** (incluindo os arquivos `_shared` novos). As corretoras cripto entram em
 simulação: para habilitar ordens reais é preciso configurar as credenciais e o
 flag `<ID>_ENABLE_LIVE=true`, além do token HMAC de confirmação. Nomes em
 `.env.example`.
@@ -568,10 +575,11 @@ gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file doc
 
 ## Etapa 7 — Pós-deploy e rollback
 
-- [x] `supabase migration list` → 5 migrations "Applied" (registradas via Management API; nomes em 2.3).
-- [x] Edge Functions deployadas: `bybit-trading`, `tradingview-webhook`, `ai-market-analysis` e `ai-signal-gateway`. A `bybit-trading` e a `ai-market-analysis` foram redeployadas pela aba **Code** do Dashboard.
+- [x] `supabase migration list` → 5 migrations "Applied" (registradas via Management API; nomes em 2.3) + `20261127120000` (B3/multi-exchange, registrada manualmente após aplicação pelo SQL Editor).
+- [x] Edge Functions deployadas: `bybit-trading`, `tradingview-webhook`, `ai-market-analysis` e `ai-signal-gateway`. `bybit-trading`, `tradingview-webhook` e `ai-market-analysis` foram redeployadas pela aba **Code** do Dashboard.
 - [x] Smoke tests 5.1b (Pesquisa, por API e interface) e 5.1c (chat normal em `dry_run`, sem escritas nem ordens). Itens 5.1a, 5.2–5.4 seguem disponíveis para conferência futura.
-- [x] CI verde em `785fa65` — 7 checks bloqueantes (Build, Vitest, Bun, Lint/Typecheck, Audit, Edge Functions, gitleaks). O `c757b15` falhou apenas no check estrito do Deno por falta de `node_modules`; corrigido com `npm ci` no workflow.
+- [x] CI verde em `785fa65` e novamente em `d40417e` — 7 checks bloqueantes (Build, Vitest, Bun, Lint/Typecheck, Audit, Edge Functions, gitleaks). O `c757b15` falhou apenas no check estrito do Deno por falta de `node_modules`; corrigido com `npm ci` no workflow.
+- [x] Smoke tests multi-exchange/B3: `exchange_list` com 7 venues, `place_order` em `dry_run` sem ordem real e webhook B3 com 401 para assinatura ausente/inválida (segredo configurado). Nenhuma escrita de auditoria em modo simulação.
 - [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:
@@ -586,7 +594,7 @@ Rollbacks:
 
 ## Pendências conhecidas (não são bloqueadores do deploy)
 
-1. **B3/multi-exchange aguardando deploy** — a migration e o código já estão versionados, mas a migration precisa ser aplicada no projeto e as functions `bybit-trading`/`tradingview-webhook` precisam de redeploy. Até lá, o painel mostra as venues e os sinais ficam indisponíveis. Nenhuma ordem real é enviada.
+1. **B3/multi-exchange em produção, mas somente sinais/simulação** — migration aplicada, segredo configurado e functions redeployadas. Não há ordens reais para B3 (corretoras brasileiras não expõem API pública de ordens para pessoa física neste projeto); as demais venues exigem opt-in + credenciais + token HMAC.
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
 3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
 4. **`npm audit` — resolvido em 27/11/2026.** `react-router-dom` subiu de `^6.26.2` para `^7.18.7` (com `react-router@7.18.7`), corrigindo os 2 avisos `moderate` (open redirect e desserialização de erro em SSR). `npm run audit:ci` agora usa `--audit-level=moderate` e reporta **0 vulnerabilidades**; typecheck, 20 testes Vitest, lint (0 erros/116 avisos) e build passaram com a v7. O uso de rotas no app é apenas declarativo (`BrowserRouter`/`Routes`/`Route`/`Navigate`/`Outlet`), preservado na v7.
