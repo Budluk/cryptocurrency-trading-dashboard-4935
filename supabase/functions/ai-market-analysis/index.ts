@@ -63,9 +63,17 @@ Deno.serve(async (req) => {
       const loopUrl = Deno.env.get('SUPABASE_URL')!;
       const loopKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const loopDb = createClient(loopUrl, loopKey);
+      // O workflow envia force/dry_run no topo do payload; chamadas internas
+      // podem usar `options`. Normalizar aqui evita que o input do Actions seja
+      // silenciosamente ignorado.
+      const loopOptions = {
+        ...(reqBody.options ?? {}),
+        force: reqBody.force ?? reqBody.options?.force,
+        dryRun: reqBody.dry_run ?? reqBody.options?.dry_run ?? reqBody.options?.dryRun,
+      };
       const result = reqBody.action === 'agent_daily'
-        ? await runAgentDaily(loopDb, reqBody.options ?? {})
-        : await runAgentLoop(loopDb, reqBody.options ?? {});
+        ? await runAgentDaily(loopDb, loopOptions)
+        : await runAgentLoop(loopDb, loopOptions);
       console.log(`[${reqBody.action}]`, JSON.stringify(result).slice(0, 2000));
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

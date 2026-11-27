@@ -61,12 +61,15 @@ Ainda vale conferir:
 ### 1.3 Verificação local (já executada neste repo — refaça quando quiser)
 
 ```powershell
-git log --all -S "ghp_"      --oneline   # deve retornar vazio
-git log --all -S "github_pat_" --oneline  # deve retornar vazio
+git log --all -S "ghp_"      --oneline
+git log --all -S "github_pat_" --oneline
 Select-String -Path .env -Pattern "ghp_|github_pat_"
 ```
 
-> Confirmado neste repositório: **não há token no histórico do git nem no `.env`** (o `.env` só tem chaves `VITE_*` públicas). Mesmo assim, rotacione o token — ele foi exposto fora do repositório.
+> O `.env` só tem chaves `VITE_*` públicas. O histórico antigo ainda contém o PAT
+> revogado em `c4f9bea` e `dba32ad`; como o git é imutável, esses dois commits
+> estão na allowlist do `.gitleaks.toml` (credencial confirmada como **401**).
+> Qualquer **novo** secret continua bloqueando o CI.
 
 ### 1.4 Criar o novo PAT (recomendado: fine-grained, escopo mínimo)
 
@@ -281,9 +284,20 @@ O workflow `.github/workflows/agent-loop.yml` roda `agent_loop` a cada 5 min e `
 > O workflow lê `vars.SUPABASE_URL` (variável) e `secrets.SUPABASE_SERVICE_ROLE_KEY`.
 > Também existe um secret `SUPABASE_URL` com o mesmo valor; ele é inofensivo e não é usado.
 
-Não disparei `agent_loop`/`agent_daily` manualmente para não criar ordens sem sua confirmação.
-Quando quiser testar: `Actions → Agent Loop → Run workflow` com `agent_loop` e confirme em
-`ai_decisions`/`agent_routine_log`. Use `agent_daily` com `force: true` apenas fora da janela.
+Não disparei `agent_loop`/`agent_daily` manualmente em modo real sem sua confirmação.
+Quando quiser validar, use **dry-run**: `Actions → Agent Loop → Run workflow` com
+`agent_loop`, `force = true` e **`dry_run = true`**. O payload enviado é
+`{"action":"agent_loop","force":true,"dry_run":true}`; a resposta traz
+`"dryRun": true` e `"writesSkipped": true`, e **não** cria linhas em
+`ai_decisions`, `agent_routine_log`, `agent_state` ou `agent_trades`.
+
+> O `dry_run` do workflow depende do `ai-market-analysis` publicado com o código
+> mais recente. Se a resposta não trouxer `dryRun`, faça o redeploy da função
+> antes de testar (o segredo temporário de deploy deve ser revogado logo após).
+>
+> Somente após o dry-run verde e com sua autorização explícita, dispare sem
+> `dry_run` para produzir auditoria real. Use `agent_daily` com `force: true`
+> apenas fora da janela 00:00–00:05 UTC.
 
 O gateway pode ser desligado no frontend com `VITE_USE_SIGNAL_GATEWAY=false` (padrão: ligado, usado como veto).
 
@@ -320,7 +334,30 @@ curl.exe -s -X POST "$URL/functions/v1/bybit-trading" `
   -d '{\"action\":\"chat_history\"}'
 ```
 
-Na aplicação: abrir a aba de chat, mandar uma pergunta que force `web_search`/`github_repo`/`youtube_transcript` e confirmar a resposta.
+### 5.1b Chat com leitura de links, vídeos, repositório e arquivos
+
+No chat flutuante:
+
+1. Clique no ícone 📖 (modo pesquisa) ou cole uma URL — o chat passa a chamar
+   `ai-market-analysis` com `action: "research"` e `persist_chat: true`.
+2. Clique no clipe 📎 e anexe até 5 arquivos de texto/código (`.md`, `.ts`, `.py`,
+   `.sql`, `.json`, `.csv`, etc.). Binários são recusados no navegador.
+3. Confira que a resposta termina com `Modo pesquisa: nenhuma ordem foi executada.`
+   e com as fontes numeradas; a ficha JSON aparece em "Ver ficha estruturada".
+
+```powershell
+# Pesquisa direta (equivale ao modo pesquisa do chat; exige sessão com role admin)
+curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
+  -H "Authorization: Bearer <TOKEN_DA_SESSAO>" -H "apikey: $ANON" -H "Content-Type: application/json" `
+  -d '{\"action\":\"research\",\"message\":\"Resuma a estratégia deste repo\",\"urls\":[\"https://github.com/Budluk/cryptocurrency-trading-dashboard-4935\"],\"persist_chat\":true}'
+# esperado: {"reply":"...Fontes: [1] ...","ficha":{...},"research":true}
+# 403 = usuário sem role admin; 429 = limite de 20 pesquisas/hora
+```
+
+> O agente de pesquisa **não importa Bybit, não lê chaves de exchange e não
+> executa ordens**. Conteúdo externo (inclusive anexos) é tratado como dado.
+> Sem `PERPLEXITY_API_KEY` a busca web fica indisponível; sem `GITHUB_TOKEN`
+> a API do GitHub limita a 60 requisições/hora.
 
 ### 5.2 Webhook da TradingView (`tradingview-webhook`)
 
@@ -381,12 +418,13 @@ curl.exe -s -X POST "$URL/functions/v1/ai-signal-gateway" `
 
 ```powershell
 npm ci --legacy-peer-deps
-npm run lint                 # pode reportar dívida pré-existente (não bloqueia a CI)
+npm run lint:ci              # 0 erros e no máximo 116 avisos (orçamento atual)
+npm run audit:ci             # bloqueia vulnerabilidades de produção high/critical
 npm run typecheck            # tsc --noEmit -p tsconfig.app.json  (deve passar)
-npm run test:coverage        # Vitest (setup em src/test/setup.tsx)
+npm run test:coverage        # Vitest (inclui src/lib/chatAttachments.test.ts)
 
 cd supabase\functions\_shared
-bun test rateLimit.test.ts aiRouter.test.ts autonomousRisk.test.ts autonomousAgent.test.ts indicators.test.ts agentLoop.test.ts
+bun test rateLimit.test.ts aiRouter.test.ts autonomousRisk.test.ts autonomousAgent.test.ts indicators.test.ts agentLoop.test.ts researchContext.test.ts
 cd ..\bybit-trading
 bun test hmacSignature.test.ts
 cd ..\..\..

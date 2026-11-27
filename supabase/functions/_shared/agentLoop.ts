@@ -21,7 +21,11 @@ export interface LoopOptions {
   interval?: string;
   limit?: number;
   force?: boolean; // ignora janela 00:00-00:05 (uso em testes/manutenção)
+  dryRun?: boolean; // valida o loop sem gravar decisões, logs, memória ou saídas
+  dry_run?: boolean; // alias do payload JSON enviado pelo workflow
 }
+
+const isDryRun = (opts: LoopOptions): boolean => opts.dryRun === true || opts.dry_run === true;
 
 // Tipagem deliberadamente solta: o schema gerado ainda não conhece as tabelas
 // agent_* e as versões de supabase-js diferem entre functions. O runtime é o
@@ -145,6 +149,7 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
   const interval = opts.interval || '5';
   const limit = Math.min(Math.max(Number(opts.limit) || 200, 30), 1000);
   const now = new Date();
+  const dryRun = isDryRun(opts);
   const utcHour = now.getUTCHours();
   const results: any[] = [];
 
@@ -162,7 +167,10 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
       const market = marketFromIndicators(ind, ticker);
       // Saídas por SL/TP podem acontecer entre execuções do loop: fechamos a
       // memória antes de avaliar novas entradas para não liberar risco errado.
-      const exits = await reconcileSymbolExits(db, symbol, ticker.price ?? market.price);
+      // No dry-run nada é persistido, nem a reconciliação de saídas.
+      const exits = dryRun
+        ? { symbol, price: ticker.price ?? market.price, exits: [], errors: [] }
+        : await reconcileSymbolExits(db, symbol, ticker.price ?? market.price);
       const state = await readState(db, symbol);
       const userId = state?.user_id ?? SYSTEM_USER_ID;
       const trades = await readTrades(db, userId);
@@ -172,6 +180,9 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
       let decision = gate.tradable ? await askAiDecision(symbol, market, gate) : null;
       if (!gate.tradable) {
         decision = { action: 'WAIT', confidence: 0, reasoning: `BLOQUEADO: ${gate.reasons.join('; ')}` };
+      }
+      if (dryRun && decision) {
+        decision = { ...decision, reasoning: `[DRY-RUN] ${String(decision.reasoning ?? '')}` };
       }
       const action = normalizeAction(decision?.action);
       const confidence = gate.tradable ? clampConf(decision?.confidence) : 0;
@@ -192,15 +203,19 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
         raw_sources: [{ source: 'agent_loop', action, confidence, regime: gate.regime, reasoning: decision?.reasoning ?? '', indicators: ind }],
         created_at: now.toISOString(),
       };
-      const insert = await db.from('ai_decisions').insert(row);
       const logKind = gate.reasons.some((r) => r.includes('kill')) ? 'kill_switch'
         : gate.blacklisted ? 'blacklist' : 'loop';
-      const log = await db.from('agent_routine_log').insert({
-        user_id: userId,
-        kind: logKind,
-        summary: `${symbol} ${action} ${confidence}% (${gate.regime}${gate.reasons.length ? '; ' + gate.reasons.join('; ') : ''})`,
-        payload: { gate, indicators: ind, decision, review: { winRate: review.winRate, dailyPnlPct: review.dailyPnlPct } },
-      });
+      let insert: { error?: unknown } = {};
+      let log: { error?: unknown } = {};
+      if (!dryRun) {
+        insert = await db.from('ai_decisions').insert(row);
+        log = await db.from('agent_routine_log').insert({
+          user_id: userId,
+          kind: logKind,
+          summary: `${symbol} ${action} ${confidence}% (${gate.regime}${gate.reasons.length ? '; ' + gate.reasons.join('; ') : ''})`,
+          payload: { gate, indicators: ind, decision, review: { winRate: review.winRate, dailyPnlPct: review.dailyPnlPct } },
+        });
+      }
 
       results.push({
         symbol,
@@ -210,7 +225,9 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
         regime: gate.regime,
         tradable: gate.tradable,
         reasons: gate.reasons,
-        logged: !insert.error && !log.error,
+        dryRun,
+        logged: dryRun ? false : !insert.error && !log.error,
+        writesSkipped: dryRun,
         reconciledExits: exits.exits.map((e) => ({ id: e.id, result: e.result, pnlPct: e.pnlPct, reason: e.reason })),
         reconciliationErrors: exits.errors,
       });
@@ -219,13 +236,14 @@ export async function runAgentLoop(db: Db, opts: LoopOptions = {}) {
     }
   }
 
-  return { action: 'agent_loop', at: now.toISOString(), results };
+  return { action: 'agent_loop', at: now.toISOString(), dryRun, writesSkipped: dryRun, results };
 }
 
 export async function runAgentDaily(db: Db, opts: LoopOptions = {}) {
   const now = new Date();
+  const dryRun = isDryRun(opts);
   if (!opts.force && !isDailyWindow(now)) {
-    return { action: 'agent_daily', skipped: true, reason: 'fora da janela 00:00-00:05 UTC', at: now.toISOString() };
+    return { action: 'agent_daily', skipped: true, reason: 'fora da janela 00:00-00:05 UTC', at: now.toISOString(), dryRun };
   }
 
   try {
@@ -249,31 +267,33 @@ export async function runAgentDaily(db: Db, opts: LoopOptions = {}) {
       const nextKillUntil = review.killActive
         ? new Date(now.getTime() + 3 * 3600_000).toISOString()
         : null;
-      for (const st of states) {
-        const keepKill = st.kill_until && new Date(st.kill_until) > now ? st.kill_until : nextKillUntil;
-        await db.from('agent_state').upsert({
+      if (!dryRun) {
+        for (const st of states) {
+          const keepKill = st.kill_until && new Date(st.kill_until) > now ? st.kill_until : nextKillUntil;
+          await db.from('agent_state').upsert({
+            user_id: userId,
+            symbol: st.symbol,
+            consecutive_losses: st.consecutive_losses,
+            consecutive_stops: st.consecutive_stops,
+            daily_pnl_pct: 0,
+            kill_until: keepKill,
+            blacklisted: st.blacklisted,
+            last_signal_at: st.last_signal_at,
+            updated_at: now.toISOString(),
+          }, { onConflict: 'user_id,symbol' });
+        }
+        await db.from('agent_routine_log').insert({
           user_id: userId,
-          symbol: st.symbol,
-          consecutive_losses: st.consecutive_losses,
-          consecutive_stops: st.consecutive_stops,
-          daily_pnl_pct: 0,
-          kill_until: keepKill,
-          blacklisted: st.blacklisted,
-          last_signal_at: st.last_signal_at,
-          updated_at: now.toISOString(),
-        }, { onConflict: 'user_id,symbol' });
+          kind: review.killActive ? 'kill_switch' : 'daily',
+          summary: `${review.trades} trades 24h, win rate ${review.winRate.toFixed(1)}%, P&L ${review.dailyPnlPct.toFixed(2)}%, PF ${review.profitFactor}`,
+          payload: review,
+        });
       }
-      await db.from('agent_routine_log').insert({
-        user_id: userId,
-        kind: review.killActive ? 'kill_switch' : 'daily',
-        summary: `${review.trades} trades 24h, win rate ${review.winRate.toFixed(1)}%, P&L ${review.dailyPnlPct.toFixed(2)}%, PF ${review.profitFactor}`,
-        payload: review,
-      });
       reviews.push({ userId, ...review });
     }
 
-    return { action: 'agent_daily', at: now.toISOString(), reviews };
+    return { action: 'agent_daily', at: now.toISOString(), dryRun, writesSkipped: dryRun, reviews };
   } catch (e) {
-    return { action: 'agent_daily', error: (e as Error).message, at: now.toISOString() };
+    return { action: 'agent_daily', error: (e as Error).message, at: now.toISOString(), dryRun };
   }
 }

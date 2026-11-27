@@ -1,0 +1,14 @@
+title = "gitleaks do trading dashboard"
+
+[extend]
+useDefault = true
+
+# Dois commits antigos continham um PAT do GitHub que já foi revogado e
+# confirmado como 401. A credencial não é mais válida, mas o histórico é
+# imutável; por isso esses commits são ignorados pelo scanner.
+[[allowlists]]
+description = "Tokens GitHub revogados em 27/11/2026 (histórico imutável)"
+commits = [
+  "c4f9bea9489af18c215cc38aa31ea748736ce1b8",
+  "dba32ad85ff95509caff4b8082ba4a6d1e756b5a",
+]

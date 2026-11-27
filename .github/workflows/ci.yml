@@ -26,11 +26,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Run ESLint
-        # Pre-existing lint debt (~150 errors in MultiAssetTrader/hooks) is being
-        # paid down incrementally; keep it visible without blocking PRs.
-        continue-on-error: true
-        run: npm run lint
+      - name: Run ESLint (warning budget)
+        run: npm run lint:ci
 
       - name: Run TypeScript type check
         run: npx tsc --noEmit -p tsconfig.app.json
@@ -85,7 +82,7 @@ jobs:
       - name: Run autonomous agent tests
         run: |
           cd supabase/functions/_shared
-          bun test autonomousRisk.test.ts autonomousAgent.test.ts indicators.test.ts agentLoop.test.ts
+          bun test autonomousRisk.test.ts autonomousAgent.test.ts indicators.test.ts agentLoop.test.ts researchContext.test.ts
 
       - name: Run HMAC tests
         run: |
@@ -129,10 +126,21 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Run npm audit (production only, high+)
-        # Dependency upgrades are tracked separately; report findings without
-        # blocking merges until the upgrade PR lands.
-        continue-on-error: true
-        run: npm audit --omit=dev --audit-level=high
+        run: npm run audit:ci
+
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan commits for secrets
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   edge-functions:
     name: Edge Functions Check

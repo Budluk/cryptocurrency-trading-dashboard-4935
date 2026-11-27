@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      dry_run:
+        description: 'Valida o loop sem gravar decisões, logs, memória ou saídas'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   run:
@@ -58,8 +63,9 @@ jobs:
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ACTION: ${{ inputs.action }}
           FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           curl -fsS -X POST "$SUPABASE_URL/functions/v1/ai-market-analysis" \
             -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"action\":\"$ACTION\",\"force\":$FORCE}"
+            -d "{\"action\":\"$ACTION\",\"force\":$FORCE,\"dry_run\":$DRY_RUN}"
