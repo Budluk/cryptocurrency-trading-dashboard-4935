@@ -69,7 +69,12 @@ Select-String -Path .env -Pattern "ghp_|github_pat_"
 > O `.env` só tem chaves `VITE_*` públicas. O histórico antigo ainda contém o PAT
 > revogado em `c4f9bea` e `dba32ad`; como o git é imutável, esses dois commits
 > estão na allowlist do `.gitleaks.toml` (credencial confirmada como **401**).
-> Qualquer **novo** secret continua bloqueando o CI.
+>
+> Falsos positivos conhecidos — chave **publishable/anon** do Supabase (pública
+> por design) e fixtures de `x-api-key` em `rateLimit.test.ts` — estão listados
+> por fingerprint em `.gitleaksignore`. O formato por fingerprint funciona até
+> na versão 8.24.3 usada pelo Action; qualquer **novo** secret continua
+> bloqueando o CI.
 
 ### 1.4 Criar o novo PAT (recomendado: fine-grained, escopo mínimo)
 
@@ -295,6 +300,12 @@ Quando quiser validar, use **dry-run**: `Actions → Agent Loop → Run workflow
 > mais recente. Se a resposta não trouxer `dryRun`, faça o redeploy da função
 > antes de testar (o segredo temporário de deploy deve ser revogado logo após).
 >
+> **Validação em 27/11/2026:** após o redeploy da função v139, dois disparos com
+> `dry_run=true` retornaram `dryRun/writesSkipped = true` para 3 símbolos e as
+> contagens de `ai_decisions`, `agent_routine_log`, `agent_state` e
+> `agent_trades` permaneceram em **0** (consultadas via SQL Editor antes e
+> depois). O PAT temporário de deploy foi revogado no mesmo dia.
+>
 > Somente após o dry-run verde e com sua autorização explícita, dispare sem
 > `dry_run` para produzir auditoria real. Use `agent_daily` com `force: true`
 > apenas fora da janela 00:00–00:05 UTC.
@@ -358,6 +369,13 @@ curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
 > executa ordens**. Conteúdo externo (inclusive anexos) é tratado como dado.
 > Sem `PERPLEXITY_API_KEY` a busca web fica indisponível; sem `GITHUB_TOKEN`
 > a API do GitHub limita a 60 requisições/hora.
+>
+> **Estado observado em 27/11/2026:** autenticação/autorização, leitura de URLs e
+> o bloqueio a usuários sem `admin` foram validados em runtime. A geração final
+> da resposta estava indisponível porque os provedores de `aiRouter.ts` falharam:
+> Groq devolveu `model_not_found` para `llama-3.3-70b-versatile`, OpenAI devolveu
+> `insufficient_quota` e o fallback Lovable está sem créditos no projeto. Ajuste
+> `GROQ_MODEL`/créditos antes de esperar uma resposta 200 com ficha estruturada.
 
 ### 5.2 Webhook da TradingView (`tradingview-webhook`)
 
