@@ -1,4 +1,6 @@
 import { useCallback } from 'react';
+import { RISK_LIMITS, clampLeverage, clampStopFraction } from '@/config/riskLimits';
+import { ROBOT_RISK } from '@/config/robotRiskParams';
 
 export interface SymbolRiskProfile {
   isOptimalForHour: boolean;
@@ -10,14 +12,14 @@ export interface SymbolRiskProfile {
 // 🎯 v12: Scalper pro — SL/TP adaptativo por volatilidade, R:R mínimo 1:2
 export const useTradingCalculations = () => {
   
-  // v25: Leverage conservadora — stops precisam de espaço
+  // Alavancagem dentro da faixa central 3x–6x.
   const getLeverageForScalping = useCallback((volatility: number): number => {
-    if (volatility > 8) return 3;
-    if (volatility > 5) return 4;
-    if (volatility > 3) return 5;
-    if (volatility > 2) return 5;
-    if (volatility > 1) return 6;
-    return 6;
+    if (volatility > 8) return clampLeverage(3);
+    if (volatility > 5) return clampLeverage(4);
+    if (volatility > 3) return clampLeverage(5);
+    if (volatility > 2) return clampLeverage(5);
+    if (volatility > 1) return clampLeverage(6);
+    return clampLeverage(6);
   }, []);
 
   // v25: Leverage conservadora por saldo — max 5x
@@ -29,9 +31,9 @@ export const useTradingCalculations = () => {
     else baseLeverage = 3;
 
     if (winRate >= 65) baseLeverage = Math.min(baseLeverage + 1, 6);
-    else if (winRate < 35) baseLeverage = Math.max(baseLeverage - 1, 2);
+    else if (winRate < 35) baseLeverage = Math.max(baseLeverage - 1, RISK_LIMITS.minLeverage);
 
-    return Math.max(2, Math.min(6, baseLeverage));
+    return clampLeverage(baseLeverage);
   }, []);
 
   // 💼 v20: Position sizing — score-weighted risk (1-2% per trade)
@@ -45,14 +47,8 @@ export const useTradingCalculations = () => {
     signalScore?: number,
     signalQuality?: string
   ) => {
-    // v20: Risk scales with signal quality
-    let RISK_PER_TRADE = 0.01; // base 1%
-    if (signalQuality === 'premium') RISK_PER_TRADE = 0.02;      // 2% for premium
-    else if (signalQuality === 'high') RISK_PER_TRADE = 0.015;    // 1.5% for high
-    // medium stays at 1%
-    
-    // Bonus for high win rate
-    if (winRate >= 60) RISK_PER_TRADE *= 1.15;
+    // Risco fixo de 0.5% da banca, igual ao RISK do backend (sem bônus por qualidade/win rate).
+    const RISK_PER_TRADE = ROBOT_RISK.riskPerTrade;
     
     const stopLossPct = getAdaptiveStopLoss(volatility);
     
@@ -84,13 +80,13 @@ export const useTradingCalculations = () => {
     };
   }, []);
 
-  // v25: SL adaptativo ALARGADO — stops apertados causavam 63% stop-out
+  // Stop adaptativo, sempre dentro do limite central (máx. 0.5% do preço).
   const getAdaptiveStopLoss = (volatility: number): number => {
-    if (volatility > 8) return 0.020;  // 2.0% — mercado muito volátil
-    if (volatility > 5) return 0.015;  // 1.5%
-    if (volatility > 3) return 0.012;  // 1.2% — padrão
-    if (volatility > 1) return 0.010;  // 1.0% — baixa vol
-    return 0.008;                       // 0.8% — vol muito baixa
+    if (volatility > 8) return clampStopFraction(0.020);
+    if (volatility > 5) return clampStopFraction(0.015);
+    if (volatility > 3) return clampStopFraction(0.012);
+    if (volatility > 1) return clampStopFraction(0.010);
+    return clampStopFraction(0.008);
   };
 
   const calculateDynamicTrailingStop = useCallback((volatility: number): number => {
@@ -149,7 +145,7 @@ export const useTradingCalculations = () => {
     action: 'BUY' | 'SELL',
     atrPercent: number,
     _isScalpAsset: boolean,
-    _mlConfig: any,
+    _mlConfig: unknown,
     highPrice?: number,
     lowPrice?: number,
     symbolProfile?: SymbolRiskProfile,
@@ -194,9 +190,9 @@ export const useTradingCalculations = () => {
     const slValues = [slATR, slStructure, slSR].sort((a, b) => a - b);
     const slDistance = slValues[1]; // mediana
     
-    // v25: Bounds ALARGADOS: 0.6% min, 2.0% max (era 0.15%-0.50%)
-    const slPctMin = 0.006;
-    const slPctMax = 0.020;
+    // Limites do RISK central: stop nunca passa de 0.5%.
+    const slPctMin = RISK_LIMITS.minStopPct / 100;
+    const slPctMax = RISK_LIMITS.maxStopPct / 100;
     let stopLossPct = slDistance / currentPrice;
     stopLossPct = Math.max(slPctMin, Math.min(slPctMax, stopLossPct));
     

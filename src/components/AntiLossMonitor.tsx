@@ -6,6 +6,17 @@ import { Shield, ShieldAlert, ShieldCheck, TrendingDown, Clock, Activity, Refres
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+interface BybitClosedPnl {
+  symbol: string;
+  closedPnl: string;
+  updatedTime: string;
+  side: string;
+  avgEntryPrice: string;
+  avgExitPrice: string;
+  qty: string;
+  leverage: string;
+}
+
 interface AntiLossStats {
   blockedPatterns: Array<{
     key: string;
@@ -89,7 +100,7 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
         return 0;
       }
 
-      const pnlList = bybitData.data?.list || [];
+      const pnlList: BybitClosedPnl[] = bybitData.data?.list || [];
       console.log(`📊 Bybit retornou ${pnlList.length} registros de PnL`);
       
       if (pnlList.length === 0) {
@@ -98,18 +109,18 @@ export const AntiLossMonitor = ({ getBlockedStats, blockedCount, forceUnblock }:
       }
 
       // Log dos primeiros registros para debug
-      console.log('📋 Primeiros 3 PnLs do Bybit:', pnlList.slice(0, 3).map((p: any) => ({
+      console.log('📋 Primeiros 3 PnLs do Bybit:', pnlList.slice(0, 3).map((p: BybitClosedPnl) => ({
         symbol: p.symbol,
         pnl: p.closedPnl,
         time: new Date(parseInt(p.updatedTime)).toISOString()
       })));
 
       let syncedCount = 0;
-      const updatePromises: Promise<any>[] = [];
+      const updatePromises: Promise<void>[] = [];
 
       for (const pos of pendingPositions) {
         // Encontrar PnL correspondente - primeiro por símbolo
-        const symbolMatches = pnlList.filter((p: any) => p.symbol === pos.symbol);
+        const symbolMatches = pnlList.filter((p: BybitClosedPnl) => p.symbol === pos.symbol);
         
         if (symbolMatches.length === 0) {
           console.log(`⚠️ ${pos.symbol}: Nenhum match no Bybit`);

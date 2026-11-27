@@ -55,7 +55,9 @@ const persist = () => {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
       window.dispatchEvent(new CustomEvent(EVENT_NAME));
     }
-  } catch {}
+  } catch {
+    // localStorage indisponível (modo privado/quota): auditoria permanece só em memória.
+  }
 };
 
 export const recordGateAudit = (

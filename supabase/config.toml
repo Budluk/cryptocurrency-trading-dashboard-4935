@@ -12,8 +12,8 @@ verify_jwt = false
 [functions.ml-adaptive-learning]
 verify_jwt = false
 
-[functions.copy-trading-sync]
-verify_jwt = true
+[functions.ai-signal-gateway]
+verify_jwt = false
 
 [functions.sentiment-analysis]
 verify_jwt = true

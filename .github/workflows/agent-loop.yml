@@ -1,0 +1,71 @@
+# Agendador do agente autônomo (server-side).
+# O robô não pode depender de uma aba aberta: aqui o loop roda a cada 5 min e a
+# rotina diária roda às 00:00 UTC, sempre chamando a action já existente
+# ai-market-analysis (AGENTS.md: sem Edge Functions novas).
+name: Agent Loop
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action a executar'
+        required: true
+        default: 'agent_loop'
+        type: choice
+        options:
+          - agent_loop
+          - agent_daily
+      force:
+        description: 'Ignora a janela 00:00-00:05 UTC (apenas em teste)'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Valida o loop sem gravar decisões, logs, memória ou saídas'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Loop (a cada 5 min)
+        if: github.event.schedule != '0 0 * * *'
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -fsS -X POST "$SUPABASE_URL/functions/v1/ai-market-analysis" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"agent_loop"}'
+
+      - name: Rotina diária (00:00 UTC)
+        if: github.event.schedule == '0 0 * * *'
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -fsS -X POST "$SUPABASE_URL/functions/v1/ai-market-analysis" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"agent_daily"}'
+
+      - name: Disparo manual
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ACTION: ${{ inputs.action }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          curl -fsS -X POST "$SUPABASE_URL/functions/v1/ai-market-analysis" \
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"action\":\"$ACTION\",\"force\":$FORCE,\"dry_run\":$DRY_RUN}"

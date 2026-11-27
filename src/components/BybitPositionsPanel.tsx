@@ -19,11 +19,32 @@ import {
 
 const MiniChart = lazy(() => import("./MiniChart"));
 
+interface BybitPosition {
+  symbol: string;
+  size: string;
+  side: string;
+  leverage: string;
+  entryPrice: string;
+  markPrice: string;
+  unrealisedPnl: string;
+  liqPrice: string;
+  positionValue: string;
+  [key: string]: unknown;
+}
+
+interface ConfirmCloseState {
+  symbol?: string;
+  side?: string;
+  all?: boolean;
+  size?: string;
+  unrealisedPnl?: string;
+}
+
 export const BybitPositionsPanel = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [closingPosition, setClosingPosition] = useState<string | null>(null);
-  const [confirmClose, setConfirmClose] = useState<any>(null);
+  const [confirmClose, setConfirmClose] = useState<ConfirmCloseState | null>(null);
   const [expandedCharts, setExpandedCharts] = useState<Record<string, boolean>>({});
 
   const toggleChart = (symbol: string) => {
@@ -58,17 +79,17 @@ export const BybitPositionsPanel = () => {
 
       setBybitUnstable(false);
       const positions = Array.isArray(data.data) ? data.data : (data.data?.list || []);
-      return positions.filter((p: any) => parseFloat(p.size || 0) > 0);
+      return positions.filter((p: BybitPosition) => parseFloat(p.size || '0') > 0);
     },
     refetchInterval: 15000,
     staleTime: 12000,
     gcTime: 300000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
-    placeholderData: (prev: any) => prev, // keep previous data on error
-    retry: (failureCount, error: any) => {
+    placeholderData: (prev: BybitPosition[] | undefined) => prev, // keep previous data on error
+    retry: (failureCount, error: Error) => {
       // Don't retry transient errors (already handled with cooldown)
-      if (error?.transient) return false;
+      if ((error as any)?.transient) return false;
       return failureCount < 2;
     },
   });
@@ -481,7 +502,7 @@ export const BybitPositionsPanel = () => {
                       <p className="text-sm">Quantidade: <span className="font-bold">{confirmClose.size}</span></p>
                       <p className="text-sm">
                         P&L Atual: <span className={`font-bold ${
-                          parseFloat(confirmClose.unrealisedPnl) > 0 ? 'text-success' : 'text-destructive'
+                          parseFloat(confirmClose.unrealisedPnl ?? '0') > 0 ? 'text-success' : 'text-destructive'
                         }`}>
                           ${(parseFloat(confirmClose.unrealisedPnl) || 0).toFixed(2)}
                         </span>

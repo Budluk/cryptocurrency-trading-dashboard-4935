@@ -7,6 +7,42 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { usePositions } from "@/contexts/PositionsContext";
 
 const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
+const WEEKDAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+interface TradeRecord {
+  symbol: string;
+  closed_at: string | null;
+  opened_at: string;
+  realized_pnl?: number;
+  leverage?: number;
+}
+
+interface SymbolPerformance {
+  symbol: string;
+  trades: number;
+  wins: number;
+  totalPnl: number;
+  winRate: number;
+}
+
+interface HourlyPerformance {
+  hour: number;
+  trades: number;
+  wins: number;
+  winRate: number;
+}
+
+interface LeverageDistribution {
+  leverage: string;
+  count: number;
+  totalPnl: number;
+}
+
+interface WeekdayPerformance {
+  day: string;
+  trades: number;
+  totalPnl: number;
+}
 
 export const AdvancedAnalytics = () => {
   const [period, setPeriod] = useState('30d');
@@ -37,49 +73,49 @@ export const AdvancedAnalytics = () => {
 
   // 1. Performance por Símbolo - memoizado
   const symbolPerformance = useMemo(() => {
-    return trades?.reduce((acc, trade) => {
+    return trades?.reduce((acc: Record<string, SymbolPerformance>, trade: TradeRecord) => {
       const symbol = trade.symbol;
       if (!acc[symbol]) {
         acc[symbol] = { symbol, trades: 0, wins: 0, totalPnl: 0, winRate: 0 };
       }
       acc[symbol].trades += 1;
-      const realizedPnl = (trade as any).realized_pnl || 0;
+      const realizedPnl = trade.realized_pnl || 0;
       acc[symbol].wins += realizedPnl > 0 ? 1 : 0;
       acc[symbol].totalPnl += realizedPnl;
       acc[symbol].winRate = (acc[symbol].wins / acc[symbol].trades) * 100;
       return acc;
-    }, {} as Record<string, any>);
+    }, {});
   }, [trades]);
 
   const symbolData = useMemo(() => {
-    return Object.values(symbolPerformance || {}).sort((a: any, b: any) => b.totalPnl - a.totalPnl);
+    return Object.values(symbolPerformance || {}).sort((a: SymbolPerformance, b: SymbolPerformance) => b.totalPnl - a.totalPnl);
   }, [symbolPerformance]);
 
   // 2. Win Rate por Horário - memoizado
   const hourlyPerformance = useMemo(() => {
-    return trades?.reduce((acc, trade) => {
+    return trades?.reduce((acc: Record<number, HourlyPerformance>, trade: TradeRecord) => {
       const hour = new Date(trade.opened_at).getHours();
       if (!acc[hour]) {
         acc[hour] = { hour, trades: 0, wins: 0, winRate: 0 };
       }
       acc[hour].trades += 1;
-      const realizedPnl = (trade as any).realized_pnl || 0;
+      const realizedPnl = trade.realized_pnl || 0;
       acc[hour].wins += realizedPnl > 0 ? 1 : 0;
       acc[hour].winRate = (acc[hour].wins / acc[hour].trades) * 100;
       return acc;
-    }, {} as Record<number, any>);
+    }, {});
   }, [trades]);
 
   const hourlyData = useMemo(() => {
-    return Object.values(hourlyPerformance || {}).sort((a: any, b: any) => a.hour - b.hour);
+    return Object.values(hourlyPerformance || {}).sort((a: HourlyPerformance, b: HourlyPerformance) => a.hour - b.hour);
   }, [hourlyPerformance]);
 
   // 3. Distribuição de Leverage - memoizado
   const leverageDistribution = useMemo(() => {
-    return trades?.reduce((acc, trade) => {
-      const lev = (trade as any).leverage || 1;
-      const existing = acc.find(item => item.leverage === lev);
-      const realizedPnl = (trade as any).realized_pnl || 0;
+    return trades?.reduce((acc: LeverageDistribution[], trade: TradeRecord) => {
+      const lev = trade.leverage || 1;
+      const existing = acc.find(item => item.leverage === `${lev}x`);
+      const realizedPnl = trade.realized_pnl || 0;
       if (existing) {
         existing.count += 1;
         existing.totalPnl += realizedPnl;
@@ -87,7 +123,7 @@ export const AdvancedAnalytics = () => {
         acc.push({ leverage: `${lev}x`, count: 1, totalPnl: realizedPnl });
       }
       return acc;
-    }, [] as any[]) || [];
+    }, []) || [];
   }, [trades]);
 
   // 4. Análise de Perdas Consecutivas - memoizado
@@ -95,8 +131,8 @@ export const AdvancedAnalytics = () => {
     let maxConsecutiveLosses = 0;
     let currentStreak = 0;
 
-    trades?.forEach(trade => {
-      const realizedPnl = (trade as any).realized_pnl || 0;
+    trades?.forEach((trade: TradeRecord) => {
+      const realizedPnl = trade.realized_pnl || 0;
       if (realizedPnl < 0) {
         currentStreak += 1;
         maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentStreak);
@@ -109,18 +145,17 @@ export const AdvancedAnalytics = () => {
   }, [trades]);
 
   // 5. Performance por Dia da Semana - memoizado
-  const weekdayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const weekdayPerformance = useMemo(() => {
-    return trades?.reduce((acc, trade) => {
+    return trades?.reduce((acc: Record<number, WeekdayPerformance>, trade: TradeRecord) => {
       const day = new Date(trade.opened_at).getDay();
       if (!acc[day]) {
-        acc[day] = { day: weekdayNames[day], trades: 0, totalPnl: 0 };
+        acc[day] = { day: WEEKDAY_NAMES[day], trades: 0, totalPnl: 0 };
       }
       acc[day].trades += 1;
-      const realizedPnl = (trade as any).realized_pnl || 0;
+      const realizedPnl = trade.realized_pnl || 0;
       acc[day].totalPnl += realizedPnl;
       return acc;
-    }, {} as Record<number, any>);
+    }, {});
   }, [trades]);
 
   const weekdayData = useMemo(() => {
@@ -177,10 +212,10 @@ export const AdvancedAnalytics = () => {
             <h3 className="font-semibold">Melhor Horário</h3>
           </div>
           <div className="text-2xl font-bold">
-            {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.hour || 0}h
+            {hourlyData.slice().sort((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0]?.hour || 0}h
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            {hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0]?.winRate ? hourlyData.sort((a: any, b: any) => b.winRate - a.winRate)[0].winRate.toFixed(0) : '0'}% win rate
+            {hourlyData.slice().sort((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0]?.winRate ? hourlyData.slice().sort((a: HourlyPerformance, b: HourlyPerformance) => b.winRate - a.winRate)[0].winRate.toFixed(0) : '0'}% win rate
           </p>
         </Card>
       </div>
@@ -196,7 +231,7 @@ export const AdvancedAnalytics = () => {
               <XAxis dataKey="symbol" />
               <YAxis />
               <Tooltip 
-                formatter={(value: any, name: string) => [
+                formatter={(value: number, name: string) => [
                   name === 'totalPnl' ? `$${(value || 0).toFixed(2)}` : `${(value || 0).toFixed(1)}%`,
                   name === 'totalPnl' ? 'P&L Total' : 'Win Rate'
                 ]}
@@ -214,7 +249,7 @@ export const AdvancedAnalytics = () => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="hour" label={{ value: 'Hora', position: 'insideBottom', offset: -5 }} />
               <YAxis label={{ value: 'Win Rate %', angle: -90, position: 'insideLeft' }} />
-              <Tooltip formatter={(value: any) => `${(value || 0).toFixed(1)}%`} />
+              <Tooltip formatter={(value: number) => `${(value || 0).toFixed(1)}%`} />
               <Line type="monotone" dataKey="winRate" stroke="hsl(var(--primary))" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
@@ -252,9 +287,9 @@ export const AdvancedAnalytics = () => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" />
               <YAxis />
-              <Tooltip formatter={(value: any) => `$${(value || 0).toFixed(2)}`} />
+              <Tooltip formatter={(value: number) => `$${(value || 0).toFixed(2)}`} />
               <Bar dataKey="totalPnl" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]}>
-                {weekdayData.map((entry: any, index) => (
+                {weekdayData.map((entry: WeekdayPerformance, index) => (
                   <Cell key={`cell-${index}`} fill={entry.totalPnl > 0 ? '#10b981' : '#ef4444'} />
                 ))}
               </Bar>
@@ -278,7 +313,7 @@ export const AdvancedAnalytics = () => {
               </tr>
             </thead>
             <tbody>
-              {symbolData.slice(0, 10).map((item: any) => (
+              {symbolData.slice(0, 10).map((item: SymbolPerformance) => (
                 <tr key={item.symbol} className="border-b hover:bg-muted/30 transition-colors">
                   <td className="py-3 px-4 font-semibold">{item.symbol}</td>
                   <td className="py-3 px-4 text-right">{item.trades}</td>

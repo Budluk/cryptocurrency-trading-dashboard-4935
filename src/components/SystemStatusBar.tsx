@@ -36,7 +36,7 @@ export const SystemStatusBar = memo(() => {
         .from('ml_adaptive_config')
         .select('is_enabled, confidence_score, trades_analyzed, last_analysis_at')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       return data;
     },
     staleTime: 30000,
@@ -52,7 +52,7 @@ export const SystemStatusBar = memo(() => {
         .from('auto_trader_config')
         .select('is_active, trader_is_running, last_activity_at')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       return data;
     },
     staleTime: 30000,

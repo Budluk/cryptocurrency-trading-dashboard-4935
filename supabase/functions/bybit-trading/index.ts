@@ -9,6 +9,9 @@ const corsHeaders = {
 const BYBIT_API_KEY = Deno.env.get('BYBIT_API_KEY') || '';
 const BYBIT_API_SECRET = Deno.env.get('BYBIT_API_SECRET') || '';
 import { handleTradingChat } from "../_shared/tradingChat.ts";
+import { RISK } from "../_shared/autonomousRisk.ts";
+// Correção de SL/TP com lado invertido: usa o teto central de 0,5%, não 2%.
+const STOP_FALLBACK = RISK.maxStopPct / 100;
 console.log('[bybit-trading] build v30-hmac');
 const RECV_WINDOW = "30000";
 const BYBIT_BASE_URLS = ["https://api.bybit.com", "https://api.bytick.com"];
@@ -380,7 +383,7 @@ async function getLotSizeMeta(symbol: string): Promise<LotSizeMeta | null> {
       maxOrderQtyRaw,
     };
   } catch (e) {
-    console.log('Lot size fetch warning:', e?.message ?? String(e));
+    console.log('Lot size fetch warning:', (e as Error)?.message ?? String(e));
     return null;
   }
 }
@@ -439,7 +442,7 @@ async function placeOrder(params: any) {
     try {
       await setLeverage({ symbol, leverage });
     } catch (e) {
-      console.log('Leverage warning:', e.message);
+      console.log('Leverage warning:', (e as Error)?.message ?? String(e));
     }
   }
 
@@ -511,7 +514,7 @@ async function placeOrder(params: any) {
       return { ...orderResult, stopResult };
     } catch (e) {
       console.error('Trading stop error:', e);
-      return { ...orderResult, stopResult: { error: e?.message ?? String(e) } };
+      return { ...orderResult, stopResult: { error: (e as Error)?.message ?? String(e) } };
     }
   }
 
@@ -545,11 +548,11 @@ function correctStopsAgainstPrice({
     const slVal = Number(stopLoss);
     if (Number.isFinite(slVal)) {
       if (side === 'Buy' && slVal >= refPrice) {
-        const correctedSL = refPrice * 0.98;
+        const correctedSL = refPrice * (1 - STOP_FALLBACK);
         console.log(`⚠️ SL corrigido para Buy: ${slVal} → ${correctedSL.toFixed(4)} (ref=${refPrice})`);
         result.stopLoss = formatPriceForBybit(correctedSL, refPrice);
       } else if (side === 'Sell' && slVal <= refPrice) {
-        const correctedSL = refPrice * 1.02;
+        const correctedSL = refPrice * (1 + STOP_FALLBACK);
         console.log(`⚠️ SL corrigido para Sell: ${slVal} → ${correctedSL.toFixed(4)} (ref=${refPrice})`);
         result.stopLoss = formatPriceForBybit(correctedSL, refPrice);
       } else {
@@ -562,11 +565,11 @@ function correctStopsAgainstPrice({
     const tpVal = Number(takeProfit);
     if (Number.isFinite(tpVal)) {
       if (side === 'Buy' && tpVal <= refPrice) {
-        const correctedTP = refPrice * 1.02;
+        const correctedTP = refPrice * (1 + STOP_FALLBACK);
         console.log(`⚠️ TP corrigido para Buy: ${tpVal} → ${correctedTP.toFixed(4)} (ref=${refPrice})`);
         result.takeProfit = formatPriceForBybit(correctedTP, refPrice);
       } else if (side === 'Sell' && tpVal >= refPrice) {
-        const correctedTP = refPrice * 0.98;
+        const correctedTP = refPrice * (1 - STOP_FALLBACK);
         console.log(`⚠️ TP corrigido para Sell: ${tpVal} → ${correctedTP.toFixed(4)} (ref=${refPrice})`);
         result.takeProfit = formatPriceForBybit(correctedTP, refPrice);
       } else {
@@ -645,7 +648,7 @@ async function setLeverage(params: any) {
       leverage = maxLev;
     }
   } catch (e) {
-    console.log('Leverage filter fetch warning:', e?.message ?? String(e));
+    console.log('Leverage filter fetch warning:', (e as Error)?.message ?? String(e));
   }
 
   if (!Number.isFinite(leverage) || leverage < 1) leverage = 1;

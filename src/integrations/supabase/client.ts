@@ -3,8 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 
-const SUPABASE_URL = "https://uohdpxkfgxmtlosnmspf.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvaGRweGtmZ3htdGxvc25tc3BmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMxODc2NTAsImV4cCI6MjA2ODc2MzY1MH0.O9x62mblqBVl9DUa28S5gHe9QEjbcKeyc4sCWScBIsk";
+// Use environment variables for Supabase config (fallback to hardcoded for backward compatibility)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "https://uohdpxkfgxmtlosnmspf.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvaGRweGtmZ3htdGxvc25tc3BmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMxODc2NTAsImV4cCI6MjA2ODc2MzY1MH0.O9x62mblqBVl9DUa28S5gHe9QEjbcKeyc4sCWScBIsk";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

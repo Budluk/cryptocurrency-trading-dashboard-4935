@@ -40,12 +40,14 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     console.log(`🎮 [DEMO] Carregando conta demo para user: ${userId}`);
     
     // Buscar conta demo existente ou criar nova
-    let { data: account, error } = await supabase
+    const { data: foundAccount, error } = await supabase
       .from('demo_accounts')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
-    
+
+    let account = foundAccount;
+
     if (error) {
       console.log(`⚠️ [DEMO] Erro ao buscar conta: ${error.message}`);
     }

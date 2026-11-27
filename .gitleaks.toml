@@ -1,0 +1,18 @@
+title = "gitleaks do trading dashboard"
+
+[extend]
+useDefault = true
+
+# Dois commits antigos continham um PAT do GitHub já revogado (401) em
+# 27/11/2026. O histórico é imutável, então eles ficam fora do scan.
+# Sintaxe singular ([allowlist]) é compatível com o gitleaks 8.24.3 do Action.
+[allowlist]
+description = "Tokens GitHub revogados em 27/11/2026 (histórico imutável)"
+commits = [
+  "c4f9bea9489af18c215cc38aa31ea748736ce1b8",
+  "dba32ad85ff95509caff4b8082ba4a6d1e756b5a",
+]
+
+# Falsos positivos pontuais (chave publishable/anon do Supabase e fixtures de
+# teste) são tratados por fingerprint em `.gitleaksignore`, que funciona em
+# todas as versões 8.x — incluindo a 8.24.3 usada na CI.

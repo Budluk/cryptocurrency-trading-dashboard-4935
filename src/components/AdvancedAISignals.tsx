@@ -48,7 +48,7 @@ interface AIAnalysisResult {
     };
     recommendation: string;
   };
-  signal: any;
+  signal: unknown;
   analysis_quality: {
     news_available: boolean;
     ai_prediction_available: boolean;

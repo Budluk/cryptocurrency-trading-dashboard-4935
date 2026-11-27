@@ -1,6 +1,9 @@
 import { aiFetch } from '../_shared/aiRouter.ts';
 import { handleResearch } from '../_shared/researchAgent.ts';
+import { runAgentLoop, runAgentDaily } from '../_shared/agentLoop.ts';
+import { RISK } from '../_shared/autonomousRisk.ts';
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { checkRateLimit, createRateLimitResponse, getClientIdentifier } from '../_shared/rateLimit.ts';
 
 
 const corsHeaders = {
@@ -42,10 +45,39 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Rate limiting: 30 req/min per client (public endpoint)
+  const rateLimitResult = await checkRateLimit(getClientIdentifier(req), { maxRequests: 30, windowMs: 60_000 });
+  if (!rateLimitResult.allowed) {
+    return createRateLimitResponse(rateLimitResult, corsHeaders);
+  }
+
   try {
     const reqBody = await req.json();
     if (typeof reqBody?.action === 'string' && reqBody.action.startsWith('research')) {
       return await handleResearch(reqBody, req.headers.get('Authorization'));
+    }
+
+    // Loop autônomo do agente (chamado pelo agendador, ex.: GitHub Actions).
+    // Não executa ordens: só observa, decide e grava auditoria.
+    if (reqBody?.action === 'agent_loop' || reqBody?.action === 'agent_daily') {
+      const loopUrl = Deno.env.get('SUPABASE_URL')!;
+      const loopKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const loopDb = createClient(loopUrl, loopKey);
+      // O workflow envia force/dry_run no topo do payload; chamadas internas
+      // podem usar `options`. Normalizar aqui evita que o input do Actions seja
+      // silenciosamente ignorado.
+      const loopOptions = {
+        ...(reqBody.options ?? {}),
+        force: reqBody.force ?? reqBody.options?.force,
+        dryRun: reqBody.dry_run ?? reqBody.options?.dry_run ?? reqBody.options?.dryRun,
+      };
+      const result = reqBody.action === 'agent_daily'
+        ? await runAgentDaily(loopDb, loopOptions)
+        : await runAgentLoop(loopDb, loopOptions);
+      console.log(`[${reqBody.action}]`, JSON.stringify(result).slice(0, 2000));
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
     const { timeframe = '1h', symbol = 'BTC/USD', analysis_type = 'comprehensive' } = reqBody;
     
@@ -379,9 +411,14 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
       1.012 + (confidence / 1500) + (volatilityFactor * 0.4) :
       0.988 - (confidence / 1500) - (volatilityFactor * 0.4);
     
-    const stopMultiplier = action === 'BUY' ? 
-      0.982 - (volatilityFactor * 0.25) :
-      1.018 + (volatilityFactor * 0.25);
+    // Stop dentro do limite central (máx. 0,5% da entrada), inclusive quando vem da IA.
+    const maxStop = RISK.maxStopPct / 100;
+    const stopDistance = Math.min(maxStop, Math.max(0.0025, 0.018 + (volatilityFactor * 0.25)));
+    const stopMultiplier = action === 'BUY' ? 1 - stopDistance : 1 + stopDistance;
+    const rawStop = Number(aiPrediction?.stop) || currentPrice * stopMultiplier;
+    const stopLoss = action === 'BUY'
+      ? Math.max(rawStop, currentPrice * (1 - maxStop))
+      : Math.min(rawStop, currentPrice * (1 + maxStop));
     
     const signalData = {
       signal_type: 'AI_ADVANCED',
@@ -389,7 +426,7 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
       symbol,
       entry_price: currentPrice,
       target_price: aiPrediction?.target || currentPrice * targetMultiplier,
-      stop_loss: aiPrediction?.stop || currentPrice * stopMultiplier,
+      stop_loss: stopLoss,
       confidence,
       timeframe: aiPrediction?.timeframe || timeframe,
       reasoning: aiPrediction?.reasoning || 
@@ -429,7 +466,7 @@ Responda APENAS em JSON válido: {"action": "", "confidence": 0, "target": 0, "s
     console.error('Error in AI analysis:', error);
     return new Response(JSON.stringify({ 
       error: 'Erro na análise de IA', 
-      details: error.message,
+      details: (error as Error)?.message ?? String(error),
       fallback_data: {
         signal: {
           action: 'HOLD',
