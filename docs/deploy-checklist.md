@@ -490,25 +490,25 @@ git push --force-with-lease origin feat/ai-gateway-security-ci
 gh pr edit 1 --repo Budluk/cryptocurrency-trading-dashboard-4935 --body-file docs/pr-description.md
 #    Opção B: colar o conteúdo de docs/pr-description.md na descrição na UI do GitHub.
 
-# 4) acompanhar a CI do PR (6 jobs) até ficar verde
+# 4) acompanhar a CI do PR (7 checks) até ficar verde
 ```
 
 ---
 
 ## Etapa 7 — Pós-deploy e rollback
 
-- [ ] `supabase migration list` → 4 migrations "Applied".
-- [ ] `supabase functions list` → 4 functions "Loaded"/deployadas.
-- [ ] Smoke tests 5.1–5.4 verdes.
-- [ ] CI do PR verde (6 jobs: lint/typecheck, vitest, edge tests, build, audit, edge check).
-- [ ] Painel Observabilidade sem erros.
+- [x] `supabase migration list` → 5 migrations "Applied" (registradas via Management API; nomes em 2.3).
+- [x] Edge Functions deployadas: `bybit-trading`, `tradingview-webhook`, `ai-market-analysis` e `ai-signal-gateway` (a última redeployada pela aba **Code**).
+- [ ] Smoke tests 5.1–5.4: item 5.1b (Pesquisa) validado por API e interface; conferir os demais se ainda não foram executados.
+- [x] CI verde em `20085fb` — 7 checks bloqueantes (Build, Vitest, Bun, Lint/Typecheck, Audit, Edge Functions, gitleaks).
+- [ ] Painel Observabilidade sem erros (acompanhar nas próximas horas após o deploy).
 
 Rollbacks:
 
 - **Function:** `git checkout <sha-do-commit-bom>` e redesploy da função afetada com o mesmo comando da Etapa 3.
 - **Migration:** a CLI não desfaz sozinha — por isso, antes do `db push` faça um dump de segurança:
   `supabase db dump --project-ref uohdpxkfgxmtlosnmspf -f backup_antes_do_deploy.sql`
-  e tenha em mãos o SQL inverso (as 4 migrations são aditivas; na dúvida, recriar política anterior).
+  e tenha em mãos o SQL inverso (as 5 migrations são aditivas; na dúvida, recriar política anterior).
 - **Secrets:** `supabase secrets set <KEY>=<valor-antigo> --project-ref ...` (nenhum segredo foi apagado).
 
 ---
@@ -517,7 +517,9 @@ Rollbacks:
 
 1. **B3 (WINZ25/WDOF26) não operacional** — migração `b3_*` nunca aplicada e **não existe no repositório** (só em `.lovable/plan.md`/`roadmap.md`). Opcional.
 2. **FreeLLMAPI sem endereço público** — pendente Cloudflare Tunnel (`FREELLMAPI_URL`); sem ela o roteador cai para Groq/OpenAI/Lovable.
-3. **Dívida de lint** (~150 erros em `MultiAssetTrader`/hooks) — CI roda ESLint com `continue-on-error` para não bloquear o PR.
-4. **`npm audit`** roda com `continue-on-error` até o PR de upgrade de dependências.
-5. **Chat com IA real (Groq)** ainda precisa de teste em produção com as chaves novas.
-6. **Plano Pro do Supabase** segue pendente (itens de "senhas vazadas" já corrigidos).
+3. **Dívida de lint** — 116 warnings em `MultiAssetTrader`/hooks, 0 erros. O CI roda `npm run lint:ci` com orçamento de warnings; não é mais `continue-on-error`.
+4. **`npm audit`** — `npm run audit:ci` bloqueia high/critical; hoje são 0 high/critical e restam 2 `moderate` em `react-router`.
+5. **Chat normal com IA real** — o modo Pesquisa foi validado; o chat comum (que pode executar ordens) segue sem teste de IA real até confirmação explícita/dry-run.
+6. **Plano Pro do Supabase** — necessário apenas para os alertas de "senhas vazadas".
+7. **Conta admin permanente e revisão visual** — a validação na UI usou sessão temporária; falta testar com a conta do usuário e conferir celular/desktop.
+8. **Créditos na OpenAI/Lovable** — OpenAI sem quota e Lovable sem créditos; o Groq free tier pode devolver `429` (~60 s). O agente já repete uma vez; créditos eliminam o gargalo.

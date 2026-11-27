@@ -31,18 +31,19 @@ Este PR leva o dashboard de "protótipo com IA solta" para um fluxo auditável: 
 
 ## CI e testes
 
-- Jobs bloqueantes: typecheck, Vitest, testes Bun das Edge Functions, build.
-- Lint e `npm audit` continuam não bloqueantes (dívida pré-existente).
+- 7 checks bloqueantes: typecheck, Vitest, testes Bun das Edge Functions, build, `npm run lint:ci` (orçamento de warnings) e `npm run audit:ci` (high/critical).
+- Lint: 0 erros, 116 warnings dentro do orçamento. Audit: 0 high/critical, restam 2 `moderate` em `react-router`.
 - Cobertura Vitest ~87%; testes do agente, indicadores, risco, roteador de IA, HMAC e parsing do loop incluídos.
 
 ## Deploy
 
 Ver `docs/deploy-checklist.md`: migrations, deploy de functions, secrets, smoke tests e agendamento.
 
-## Pendências conhecidas
+## Estado das pendências antigas
 
-1. Revogar o token GitHub vazado e configurar `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` no Actions do workflow do loop.
-2. Aplicar as 3 migrations e publicar as Edge Functions no projeto `uohdpxkfgxmtlosnmspf`.
-3. Reconciliação automática de saídas por stop/TP fora do chat (win rate e blacklist dependem disso).
-4. B3 (`WINZ25`/`WDOF26`) permanece não operacional; não há migration `b3_*` no repositório.
-5. Tipos do Supabase regenerados para incluir as tabelas `agent_*`.
+1. [x] Token GitHub vazado e PATs temporários revogados; nenhum segredo impresso.
+2. [x] 5 migrations aplicadas e 4 Edge Functions publicadas no projeto `uohdpxkfgxmtlosnmspf`.
+3. [ ] Reconciliação automática de saídas por stop/TP fora do chat (win rate e blacklist dependem disso).
+4. [ ] B3 (`WINZ25`/`WDOF26`) permanece não operacional; não há migration `b3_*` no repositório.
+5. [x] Tipos do Supabase regenerados com as tabelas `agent_*` e `strategy_leads`.
+6. [ ] Chat normal com IA real depende de confirmação explícita (pode operar); o modo Pesquisa já foi validado por API e UI em 27/11/2026.

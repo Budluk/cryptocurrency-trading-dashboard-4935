@@ -93,6 +93,11 @@ supabase secrets set BYBIT_API_SECRET="sua_api_secret_aqui"
 - [ ] Modo **REAL** selecionado (não Testnet)
 - [ ] Alavancagem configurada na Bybit
 
+> Estado em 27/11/2026: os três primeiros itens foram validados (credenciais HMAC
+> v2 configuradas, conexão testada e saldo/posições reais visíveis no painel, sem
+> enviar ordens). Os dois últimos dependem da configuração da sua conta Bybit e
+> não foram alterados por esta entrega.
+
 ### Como Usar:
 
 1. Vá para aba **"Auto Trader"**

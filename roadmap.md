@@ -1,22 +1,24 @@
 # Roadmap
 
-## Simplificação visual
+## Concluído em 27/11/2026
+- [x] PR #1 mergeado (`da99e44`); releases `v1.0.0`, `v1.0.1` e `v1.0.2`.
+- [x] Autenticação/RLS, 5 migrations aplicadas, Edge Functions deployadas e segredos configurados.
+- [x] Aba Pesquisa (somente leitura): tabelas, agente dentro de `ai-market-analysis` e UI com URLs, anexos e ficha estruturada.
+- [x] Bloqueios 401/403 da Pesquisa testados; pesquisa real validada por API e pela interface com sessão admin temporária (removida depois). Nenhuma ordem foi executada.
+- [x] CI com 7 checks bloqueantes, 7/7 verdes; gitleaks com allowlist dos commits antigos já revogados.
+- [x] Chat flutuante validado na UI com URL do repositório: fontes citadas, ficha e persistência no histórico.
+
+## Simplificação visual (pendente)
 - [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
 - [ ] Conferir navegação e aparência no celular e computador
 - [ ] Exclusões definitivas de funções — aguardando indicação do usuário
 
-## Em andamento
-- [ ] Aba Pesquisa (chat de pesquisa de estratégias, somente leitura)
-  - [x] Tabelas strategy_leads + audit_log (RLS admin)
-  - [x] Agente de pesquisa dentro do serviço ai-market-analysis (sem chaves de exchange; sem apagar TradingView)
-  - [x] Front-end: aba Pesquisa (chat, URLs, ficha, leads)
-  - [x] Deploy + bloqueio sem login testado (401)
-  - [ ] Pesquisa real logado — não testável aqui (backend externo); usuário testar
-- [x] .env: plataforma exige que fique versionado (só chaves públicas)
+## Validações que dependem do usuário
+- [ ] Chat de trading normal (modo que pode operar) com IA real — somente após confirmação explícita, de preferência em dry-run
+- [ ] Painel de Observabilidade sem erros após acompanhamento pós-deploy
+- [ ] Alertas de "senhas vazadas" — exigem plano Pro do Supabase
 
-## Pendências antigas
-- [x] Chave Bybit padrão: HMAC publicado, RSA removido/desativado; saldo e posições reais verificados no painel, sem enviar ordens
-- [ ] Chat de trading: testar com IA real (Groq)
-- [x] Alertas de acesso a tabelas corrigidos (resta: senhas vazadas = plano Pro do Supabase)
-- [ ] B3 (WINZ25/WDOF26) não operacional — migração b3_* nunca aplicada
-- [ ] FreeLLMAPI sem endereço público (Cloudflare Tunnel pendente)
+## Pendências externas/opcionais
+- [ ] B3 (`WINZ25`/`WDOF26`) não operacional — SQL `b3_*` nunca foi versionado; permanece intocado
+- [ ] FreeLLMAPI sem endereço público (Cloudflare Tunnel pendente); o roteador já usa Groq/OpenAI/Lovable
+- [ ] Créditos na OpenAI/Lovable para reduzir a dependência do free tier do Groq
