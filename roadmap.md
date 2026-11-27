@@ -1,5 +1,10 @@
 # Roadmap
 
+## Simplificação visual
+- [ ] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
+- [ ] Conferir navegação e aparência no celular e computador
+- [ ] Exclusões definitivas de funções — aguardando indicação do usuário
+
 ## Em andamento
 - [ ] Aba Pesquisa (chat de pesquisa de estratégias, somente leitura)
   - [x] Tabelas strategy_leads + audit_log (RLS admin)

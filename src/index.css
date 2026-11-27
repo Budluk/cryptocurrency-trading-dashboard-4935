@@ -1,28 +1,26 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 225 25% 4%;
+    --background: 220 8% 6%;
     --foreground: 60 9% 98%;
-    --card: 225 20% 7%;
+    --card: 220 7% 9%;
     --card-foreground: 60 9% 98%;
-    --popover: 225 20% 7%;
+    --popover: 220 7% 9%;
     --popover-foreground: 60 9% 98%;
     --primary: 168 80% 50%;
     --primary-foreground: 225 25% 4%;
-    --secondary: 225 15% 12%;
+    --secondary: 220 6% 13%;
     --secondary-foreground: 60 9% 98%;
-    --muted: 225 15% 18%;
-    --muted-foreground: 225 10% 55%;
-    --accent: 265 75% 60%;
+    --muted: 220 6% 17%;
+    --muted-foreground: 220 5% 66%;
+    --accent: 200 55% 58%;
     --accent-foreground: 60 9% 98%;
     --destructive: 0 72% 55%;
     --destructive-foreground: 60 9% 98%;
-    --border: 225 15% 15%;
+    --border: 220 6% 20%;
     --input: 225 15% 12%;
     --ring: 168 80% 50%;
     --success: 160 70% 45%;
@@ -32,7 +30,7 @@
     --chart-3: 35 95% 55%;
     --chart-4: 265 75% 60%;
     --chart-5: 340 70% 55%;
-    --radius: 0.75rem;
+    --radius: 0.5rem;
     
     /* Enhanced Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(168 80% 50%) 0%, hsl(200 85% 55%) 100%);
@@ -51,11 +49,9 @@
   
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
-    background: 
-      radial-gradient(ellipse 80% 60% at 50% -20%, hsl(168 80% 50% / 0.08), transparent),
-      radial-gradient(ellipse 60% 50% at 80% 50%, hsl(265 75% 60% / 0.05), transparent),
-      linear-gradient(180deg, hsl(225 25% 4%) 0%, hsl(225 20% 6%) 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: 0;
+    background: hsl(var(--background));
   }
 }
 
@@ -261,4 +257,39 @@
 ::selection {
   background: hsl(var(--primary) / 0.3);
   color: hsl(var(--foreground));
+}
+/* Restrained trading workspace surfaces */
+.workspace-disclosure {
+  border-top: 1px solid hsl(var(--border));
+}
+.workspace-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 56px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  list-style: none;
+}
+.workspace-disclosure > summary::-webkit-details-marker { display: none; }
+.workspace-disclosure[open] > summary .disclosure-chevron { transform: rotate(180deg); }
+.workspace-disclosure[open] > summary > span:last-child { transform: rotate(45deg); }
+.trading-workspace .glass-card,
+.trading-workspace .card-elevated,
+.trading-workspace .stat-card {
+  background: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: none;
+}
+.trading-workspace .card-elevated:hover { transform: none; }
+.trading-workspace .stat-card::before { display: none; }
+.trading-workspace .gradient-text {
+  color: hsl(var(--foreground));
+  background: none;
+}
+.trading-workspace :is(h1,h2,h3,h4,p,span) { letter-spacing: 0; }
+.robot-controls > .grid > div { border-bottom: 1px solid hsl(var(--border)); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

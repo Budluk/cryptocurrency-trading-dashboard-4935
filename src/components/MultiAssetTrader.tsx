@@ -1914,164 +1914,53 @@ export const MultiAssetTrader = () => {
 
   return (
     <div className="space-y-4">
-      <Card className="p-6 bg-gradient-to-br from-purple-500/10 to-blue-500/10 border-purple-500/20">
-        {/* Header com 24/7 Badge */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30">
-                <Zap className="h-7 w-7 text-yellow-500" />
-              </div>
-              <div className="absolute -top-1 -right-1 flex items-center gap-0.5 bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
-                <Clock className="h-2.5 w-2.5" />
-                24/7
-              </div>
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold">Multi-Asset Trader</h3>
-              <p className="text-sm text-muted-foreground">Estratégia com IA e alavancagem dinâmica</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Badge variant={isTestnet ? "outline" : "destructive"} className="text-sm px-3 py-1.5 animate-pulse">
-              {isTestnet ? '🧪 TESTNET' : '⚡ CONTA REAL'}
-            </Badge>
-            <Badge 
-              variant={getCorrelationRisk().level === 'low' ? 'default' : getCorrelationRisk().level === 'medium' ? 'secondary' : 'destructive'}
-              className="text-xs flex items-center gap-1"
-            >
-              <Network className="h-3 w-3" />
-              {getCorrelationRisk().message}
-            </Badge>
-          </div>
+      <div className="robot-controls">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-xl font-semibold">Robô de trading</h2><p className="mt-1 text-sm text-muted-foreground">{isRunning ? 'Em operação' : 'Parado'} · {cycleCount} ciclos</p></div>
+          <Badge variant={isDemoMode || isTestnet ? "outline" : "destructive"}>{isDemoMode ? 'Demo' : isTestnet ? 'Testnet' : 'Conta real'}</Badge>
         </div>
 
-        {/* Saldo Real em Destaque */}
-        <Card className="p-5 mb-6 bg-gradient-to-br from-green-500/15 to-emerald-500/10 border-green-500/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-green-500/20">
-                <Wallet className="h-8 w-8 text-green-400" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground font-medium">Saldo Total da Banca</span>
-                  <Badge className="bg-green-500/20 text-green-400 border-0 text-[10px]">
-                    AO VIVO
-                  </Badge>
-                </div>
-                <div className="text-4xl font-bold text-green-400 font-mono tracking-tight">
-                  ${currentBalance.toFixed(2)}
-                </div>
-                {lastSyncTime && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Última atualização: {lastSyncTime.toLocaleTimeString()}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-xs text-muted-foreground mb-1">P&L Hoje</div>
-              <div className={`text-2xl font-bold font-mono ${dailyPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)}
-              </div>
-            </div>
-          </div>
-        </Card>
-
         {/* Status Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <Card className="p-4 bg-background/50">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+          <div className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="h-4 w-4 text-blue-500" />
+              <TrendingUp className="h-4 w-4 text-primary" />
               <span className="text-xs text-muted-foreground">Alavancagem</span>
             </div>
             <div className="text-xl font-bold">{getLeverageForBalance(currentBalance, historicalWinRate)}x</div>
             <div className="text-xs text-muted-foreground">Win: {historicalWinRate.toFixed(0)}%</div>
-          </Card>
+          </div>
 
-          <Card className="p-4 bg-background/50">
+          <div className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
-              <Zap className="h-4 w-4 text-yellow-500" />
+              <Zap className="h-4 w-4 text-warning" />
               <span className="text-xs text-muted-foreground">Posições</span>
             </div>
             <div className="text-xl font-bold">{openPositionsCount}/{maxOpenPositions}</div>
             <div className="text-xs text-muted-foreground">{activeTrades.length} total</div>
-          </Card>
+          </div>
 
-          <Card className="p-4 bg-background/50">
+          <div className="p-4 bg-background/50">
             <div className="flex items-center gap-2 mb-1">
-              <Target className="h-4 w-4 text-green-500" />
+              <Target className="h-4 w-4 text-success" />
               <span className="text-xs text-muted-foreground">Proteção</span>
             </div>
             <div className="text-xl font-bold">{consecutiveLosses}/{MAX_CONSECUTIVE_LOSSES}</div>
             <div className="text-xs text-muted-foreground">Perdas seguidas</div>
-          </Card>
-        </div>
-
-        {/* Proteções */}
-        <div className="grid grid-cols-1 gap-3 mb-4">
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <div className="text-xs font-medium mb-1">📊 Posições Max</div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setMaxOpenPositions(Math.max(1, maxOpenPositions - 1))} disabled={isRunning}>-</Button>
-              <span className="text-sm font-bold">{maxOpenPositions}</span>
-              <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setMaxOpenPositions(Math.min(200, maxOpenPositions + 1))} disabled={isRunning}>+</Button>
-            </div>
           </div>
         </div>
-
-        {/* Margem */}
-        <Card className={`p-4 mb-4 ${isDemoMode ? 'bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20' : 'bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20'}`}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              {isDemoMode ? <FlaskConical className="h-5 w-5 text-blue-400" /> : <DollarSign className="h-5 w-5 text-purple-400" />}
-              <span className="text-sm font-medium">{isDemoMode ? 'Conta Demo' : 'Gerenciamento de Margem'}</span>
-            </div>
-            <Badge variant="outline" className={isDemoMode ? "text-blue-400 border-blue-400" : "text-purple-400 border-purple-400"}>
-              {isDemoMode ? `${demoPositionsCount}/10` : `${openPositionsCount}/${maxOpenPositions}`}
-            </Badge>
-          </div>
-          
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{isDemoMode ? 'Saldo Demo:' : 'Margem Total:'}</span>
-              <span className={`font-mono ${isDemoMode ? 'text-blue-400' : 'text-purple-400'}`}>
-                ${isDemoMode ? demoBalance.toFixed(2) : currentBalance.toFixed(2)}
-              </span>
-            </div>
-            {isDemoMode && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">PnL Não Realizado:</span>
-                  <span className={`font-mono ${demoUnrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    ${demoUnrealizedPnL.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">PnL Total:</span>
-                  <span className={`font-mono ${demoPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    ${demoPnL.toFixed(2)}
-                  </span>
-                </div>
-              </>
-            )}
-            <Progress value={(isDemoMode ? demoPositionsCount / 10 : openPositionsCount / maxOpenPositions) * 100} className="h-2 mt-2" />
-          </div>
-        </Card>
 
         {/* Mode Toggle */}
         <div className="space-y-3 mb-4">
           {/* Demo Mode - NOVO */}
           <div className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
             isDemoMode 
-              ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400 shadow-lg shadow-blue-500/20' 
-              : 'bg-blue-500/10 border-blue-500/20'
+              ? 'bg-secondary/40 border-primary shadow-lg shadow-primary/20' 
+              : 'bg-primary/10 border-primary/20'
           }`}>
             <div>
               <Label className="text-sm font-medium flex items-center gap-2">
-                <FlaskConical className={`h-4 w-4 ${isDemoMode ? 'text-blue-400 animate-pulse' : 'text-blue-400/60'}`} />
+                <FlaskConical className={`h-4 w-4 ${isDemoMode ? 'text-primary' : 'text-primary/60'}`} />
                 Modo Demo ($20)
               </Label>
               <p className="text-xs text-muted-foreground">
@@ -2099,7 +1988,7 @@ export const MultiAssetTrader = () => {
 
           {/* Real/Testnet Toggle - desabilitado no modo demo */}
           {!isDemoMode && (
-            <div className="flex items-center justify-between p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+            <div className="flex flex-wrap gap-3 items-center justify-between p-4 bg-warning/10 border border-warning/20 rounded-lg">
               <div>
                 <Label className="text-sm font-medium">Modo de operação</Label>
                 <p className="text-xs text-muted-foreground">{isTestnet ? 'Testnet' : '⚠️ REAL'}</p>
@@ -2117,21 +2006,81 @@ export const MultiAssetTrader = () => {
         <div className="flex gap-2 mb-4">
           {!isRunning ? (
             <>
-              <Button onClick={startTrading} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600" size="lg">
-                <Play className="h-5 w-5 mr-2" />Iniciar Trader 24/7
+              <Button onClick={startTrading} className="flex-1" size="lg">
+                <Play className="h-5 w-5 mr-2" />Iniciar robô
               </Button>
               <Button onClick={resetBankroll} variant="outline" size="lg">Reset</Button>
             </>
           ) : (
             <Button onClick={stopTrading} variant="destructive" className="w-full" size="lg">
-              <Square className="h-5 w-5 mr-2" />Parar Trader
+              <Square className="h-5 w-5 mr-2" />Parar robô
             </Button>
           )}
         </div>
 
+        <details className="workspace-disclosure mb-4">
+          <summary>Limites e gestão de risco<span className="ml-auto text-muted-foreground">+</span></summary>
+          <div className="space-y-4 py-4">
+        {/* Proteções */}
+        <div className="grid grid-cols-1 gap-3 mb-4">
+          <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+            <div className="text-xs font-medium mb-1">📊 Posições Max</div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setMaxOpenPositions(Math.max(1, maxOpenPositions - 1))} disabled={isRunning}>-</Button>
+              <span className="text-sm font-bold">{maxOpenPositions}</span>
+              <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setMaxOpenPositions(Math.min(200, maxOpenPositions + 1))} disabled={isRunning}>+</Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Margem */}
+        <div className={`p-4 mb-4 ${isDemoMode ? 'bg-secondary/40 border-primary/20' : 'bg-secondary/40 border-accent/20'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              {isDemoMode ? <FlaskConical className="h-5 w-5 text-primary" /> : <DollarSign className="h-5 w-5 text-accent" />}
+              <span className="text-sm font-medium">{isDemoMode ? 'Conta Demo' : 'Gerenciamento de Margem'}</span>
+            </div>
+            <Badge variant="outline" className={isDemoMode ? "text-primary border-primary" : "text-accent border-accent"}>
+              {isDemoMode ? `${demoPositionsCount}/10` : `${openPositionsCount}/${maxOpenPositions}`}
+            </Badge>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{isDemoMode ? 'Saldo Demo:' : 'Margem Total:'}</span>
+              <span className={`font-mono ${isDemoMode ? 'text-primary' : 'text-accent'}`}>
+                ${isDemoMode ? demoBalance.toFixed(2) : currentBalance.toFixed(2)}
+              </span>
+            </div>
+            {isDemoMode && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PnL Não Realizado:</span>
+                  <span className={`font-mono ${demoUnrealizedPnL >= 0 ? 'text-success' : 'text-destructive'}`}>
+                    ${demoUnrealizedPnL.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">PnL Total:</span>
+                  <span className={`font-mono ${demoPnL >= 0 ? 'text-success' : 'text-destructive'}`}>
+                    ${demoPnL.toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
+            <Progress value={(isDemoMode ? demoPositionsCount / 10 : openPositionsCount / maxOpenPositions) * 100} className="h-2 mt-2" />
+          </div>
+        </div>
+
+        <RiskPresetSelector />
+          </div>
+        </details>
+        <details className="workspace-disclosure mb-4">
+          <summary>Aprendizado e estratégia<span className="ml-auto text-muted-foreground">+</span></summary>
+          <div className="space-y-4 py-4">
         {/* ML Card */}
-        <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="p-4 bg-secondary/40 border-accent/20 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div>
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 🧠 ML Adaptativo
@@ -2180,62 +2129,41 @@ export const MultiAssetTrader = () => {
           {mlConfig?.is_enabled && (
             <>
               <div className="grid grid-cols-4 gap-2 text-xs mb-3">
-                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Lev</div><div className="font-bold text-purple-400">{mlConfig.recommended_leverage}x</div></div>
-                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">SL</div><div className="font-bold text-red-400">{mlConfig.recommended_stop_loss_pct?.toFixed(2)}%</div></div>
-                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">TP</div><div className="font-bold text-green-400">{mlConfig.recommended_take_profit_pct?.toFixed(2)}%</div></div>
-                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Conf</div><div className="font-bold text-yellow-400">{mlConfig.confidence_score?.toFixed(0)}%</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Lev</div><div className="font-bold text-accent">{mlConfig.recommended_leverage}x</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">SL</div><div className="font-bold text-destructive">{mlConfig.recommended_stop_loss_pct?.toFixed(2)}%</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">TP</div><div className="font-bold text-success">{mlConfig.recommended_take_profit_pct?.toFixed(2)}%</div></div>
+                <div className="p-2 bg-background/50 rounded border"><div className="text-muted-foreground">Conf</div><div className="font-bold text-warning">{mlConfig.confidence_score?.toFixed(0)}%</div></div>
               </div>
               
               {/* Alertas críticos do ML */}
               {mlConfig?.optimal_patterns?.criticalWarnings?.length > 0 && (
-                <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-lg mb-2">
-                  <div className="text-xs font-medium text-red-400 mb-1">⚠️ Alertas Críticos</div>
+                <div className="p-2 bg-destructive/10 border border-destructive/30 rounded-lg mb-2">
+                  <div className="text-xs font-medium text-destructive mb-1">⚠️ Alertas Críticos</div>
                   {mlConfig.optimal_patterns.criticalWarnings.slice(0, 2).map((warning: string, i: number) => (
-                    <div key={i} className="text-xs text-red-300/80 line-clamp-2">{warning}</div>
+                    <div key={i} className="text-xs text-destructive/80 line-clamp-2">{warning}</div>
                   ))}
                 </div>
               )}
               
               {/* Símbolos a evitar */}
               {mlConfig?.optimal_patterns?.symbolsToAvoid?.length > 0 && (
-                <div className="p-2 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                  <div className="text-xs font-medium text-orange-400 mb-1">🚫 Símbolos Bloqueados</div>
-                  <div className="text-xs text-orange-300/80">{mlConfig.optimal_patterns.symbolsToAvoid.join(', ')}</div>
+                <div className="p-2 bg-warning/10 border border-warning/30 rounded-lg">
+                  <div className="text-xs font-medium text-warning mb-1">🚫 Símbolos Bloqueados</div>
+                  <div className="text-xs text-warning/80">{mlConfig.optimal_patterns.symbolsToAvoid.join(', ')}</div>
                 </div>
               )}
             </>
           )}
-        </Card>
-
-        {/* 🎚️ Preset de Gestão de Risco */}
-        <RiskPresetSelector />
-
-        {/* 🔍 Diagnóstico de Gates Bloqueados */}
-        <GateDiagnosticsPanel
-          skipCounts={gateDiagnostics.skipCounts}
-          totalAnalyzed={gateDiagnostics.totalAnalyzed}
-          openedThisCycle={gateDiagnostics.openedThisCycle}
-          lastCycleAt={gateDiagnostics.lastCycleAt}
-        />
-
-        {/* 📋 Auditoria por trade — gates aplicados */}
-        <GateAuditTable />
-
-        {/* 🚫 Monitor Anti-Perdas */}
-        <AntiLossMonitor 
-          getBlockedStats={getBlockedStats} 
-          blockedCount={blockedCount}
-          forceUnblock={forceUnblock}
-        />
+        </div>
 
         {/* Gestão de Saídas */}
-        <Card className="p-4 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20 mb-4">
+        <div className="p-4 bg-secondary/40 border-primary/20 mb-4">
           <div className="flex items-center gap-2 mb-3">
-            <Brain className="h-5 w-5 text-blue-400" />
+            <Brain className="h-5 w-5 text-primary" />
             <span className="text-sm font-medium">Gestão de Saídas</span>
           </div>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
               <div><Label className="text-xs font-medium">Smart Exit (ML)</Label></div>
               <Switch checked={smartExitEnabled} onCheckedChange={setSmartExitEnabled} disabled={isRunning} />
@@ -2256,24 +2184,24 @@ export const MultiAssetTrader = () => {
               <Switch checked={trailingStopEnabled} onCheckedChange={setTrailingStopEnabled} disabled={isRunning} />
             </div>
           </div>
-        </Card>
+        </div>
 
         {/* 🎯 Sistema de Ordens Armadas S/R */}
-        <Card className={`p-4 mb-4 transition-all duration-300 ${
+        <div className={`p-4 mb-4 transition-all duration-300 ${
           armedOrders.filter(o => o.status === 'armed').length > 0 
-            ? 'bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-amber-400 shadow-lg shadow-amber-500/20 animate-pulse' 
-            : 'bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20'
+            ? 'bg-secondary/40 border-warning shadow-lg shadow-warning/20' 
+            : 'bg-secondary/40 border-warning/20'
         }`}>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
-              <Crosshair className={`h-5 w-5 ${armedOrders.filter(o => o.status === 'armed').length > 0 ? 'text-amber-300 animate-spin' : 'text-amber-400'}`} style={{ animationDuration: '3s' }} />
+              <Crosshair className={`h-5 w-5 ${armedOrders.filter(o => o.status === 'armed').length > 0 ? 'text-warning animate-spin' : 'text-warning'}`} style={{ animationDuration: '3s' }} />
               <span className="text-sm font-medium">Ordens Armadas S/R</span>
               {armedOrders.filter(o => o.status === 'armed').length > 0 ? (
-                <Badge className="bg-amber-500 text-black font-bold text-xs px-2 py-1 animate-bounce">
+                <Badge className="bg-warning text-primary-foreground font-bold text-xs px-2 py-1">
                   🎯 {armedOrders.filter(o => o.status === 'armed').length} ARMADA{armedOrders.filter(o => o.status === 'armed').length > 1 ? 'S' : ''}
                 </Badge>
               ) : (
-                <Badge variant="outline" className="text-[10px] text-amber-400">$0.20+ min</Badge>
+                <Badge variant="outline" className="text-[10px] text-warning">$0.20+ min</Badge>
               )}
             </div>
             <Switch checked={armedModeEnabled} onCheckedChange={setArmedModeEnabled} disabled={isRunning} />
@@ -2287,28 +2215,28 @@ export const MultiAssetTrader = () => {
               
               {/* Ordens armadas ativas - DESTAQUE VISUAL */}
               {armedOrders.filter(o => o.status === 'armed').length > 0 ? (
-                <div className="space-y-2 max-h-32 overflow-y-auto mb-3 p-2 bg-amber-500/10 rounded-lg border-2 border-amber-400/50">
-                  <div className="text-xs text-amber-300 font-semibold mb-1">⚡ ORDENS PRONTAS PARA EXECUTAR:</div>
+                <div className="space-y-2 max-h-32 overflow-y-auto mb-3 p-2 bg-warning/10 rounded-lg border-2 border-warning/50">
+                  <div className="text-xs text-warning font-semibold mb-1">⚡ ORDENS PRONTAS PARA EXECUTAR:</div>
                   {armedOrders.filter(o => o.status === 'armed').slice(0, 5).map((order) => (
-                    <div key={order.id} className="flex justify-between items-center text-xs p-2 bg-background/70 rounded border border-amber-400/40 hover:bg-amber-500/20 transition-colors">
-                      <span className="font-bold text-amber-200">{order.symbol.replace('USDT', '')}</span>
+                    <div key={order.id} className="flex justify-between items-center text-xs p-2 bg-background/70 rounded border border-warning/40 hover:bg-warning/20 transition-colors">
+                      <span className="font-bold text-warning">{order.symbol.replace('USDT', '')}</span>
                       <Badge variant={order.side === 'Buy' ? 'default' : 'destructive'} className="text-[10px] font-semibold">
                         {order.srType === 'support' ? '🟢 SUP' : '🔴 RES'} {order.side}
                       </Badge>
-                      <span className="text-amber-300 font-mono">@{order.entryPrice.toFixed(4)}</span>
+                      <span className="text-warning font-mono">@{order.entryPrice.toFixed(4)}</span>
                       <div className="flex flex-col items-end">
-                        <span className="text-red-400 text-[9px]">SL: {order.stopLoss.toFixed(4)}</span>
-                        <span className="text-green-400 text-[9px]">TP: {order.takeProfit.toFixed(4)}</span>
+                        <span className="text-destructive text-[9px]">SL: {order.stopLoss.toFixed(4)}</span>
+                        <span className="text-success text-[9px]">TP: {order.takeProfit.toFixed(4)}</span>
                       </div>
-                      <span className="text-green-400 font-bold">+${order.expectedProfit.toFixed(2)}</span>
+                      <span className="text-success font-bold">+${order.expectedProfit.toFixed(2)}</span>
                     </div>
                   ))}
-                  <div className="text-[10px] text-amber-400/80 text-center mt-1">
+                  <div className="text-[10px] text-warning/80 text-center mt-1">
                     💡 Ordens executam automaticamente quando preço atingir nível S/R
                   </div>
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground text-center py-3 mb-3 border border-dashed border-amber-500/30 rounded">
+                <div className="text-xs text-muted-foreground text-center py-3 mb-3 border border-dashed border-warning/30 rounded">
                   {isRunning ? (
                     <div className="flex flex-col items-center gap-1">
                       <span className="animate-pulse">🔍 Analisando níveis S/R...</span>
@@ -2338,16 +2266,16 @@ export const MultiAssetTrader = () => {
               )}
             </>
           )}
-        </Card>
+        </div>
 
         {/* 🤖 AI Trading Intelligence */}
-        <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/20 mb-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="p-4 bg-secondary/40 border-accent/20 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-purple-400" />
+              <Sparkles className="h-5 w-5 text-accent" />
               <span className="text-sm font-medium">AI Trading Intelligence</span>
               {lastTrainingTime && (
-                <Badge variant="outline" className="text-[10px] text-purple-400">
+                <Badge variant="outline" className="text-[10px] text-accent">
                   Treinado {new Date(lastTrainingTime).toLocaleTimeString()}
                 </Badge>
               )}
@@ -2361,13 +2289,13 @@ export const MultiAssetTrader = () => {
                 {/* Padrões */}
                 <div className="p-2 bg-background/50 rounded border text-center">
                   <div className="text-[10px] text-muted-foreground">Win Rate</div>
-                  <div className="font-bold text-green-400">{aiPatterns?.winRate?.toFixed(1) || '--'}%</div>
+                  <div className="font-bold text-success">{aiPatterns?.winRate?.toFixed(1) || '--'}%</div>
                 </div>
                 
                 {/* Baleias */}
                 <div className="p-2 bg-background/50 rounded border text-center">
                   <div className="text-[10px] text-muted-foreground">Baleias</div>
-                  <div className={`font-bold ${whaleAnalysis?.whaleDirection === 'BULLISH' ? 'text-green-400' : whaleAnalysis?.whaleDirection === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'}`}>
+                  <div className={`font-bold ${whaleAnalysis?.whaleDirection === 'BULLISH' ? 'text-success' : whaleAnalysis?.whaleDirection === 'BEARISH' ? 'text-destructive' : 'text-warning'}`}>
                     {whaleAnalysis?.whaleDirection || '--'}
                   </div>
                 </div>
@@ -2375,7 +2303,7 @@ export const MultiAssetTrader = () => {
                 {/* Sentimento */}
                 <div className="p-2 bg-background/50 rounded border text-center">
                   <div className="text-[10px] text-muted-foreground">Sentimento</div>
-                  <div className={`font-bold ${sentimentAnalysis?.sentiment === 'BULLISH' ? 'text-green-400' : sentimentAnalysis?.sentiment === 'BEARISH' ? 'text-red-400' : 'text-yellow-400'}`}>
+                  <div className={`font-bold ${sentimentAnalysis?.sentiment === 'BULLISH' ? 'text-success' : sentimentAnalysis?.sentiment === 'BEARISH' ? 'text-destructive' : 'text-warning'}`}>
                     {sentimentAnalysis?.sentiment || '--'}
                   </div>
                 </div>
@@ -2385,9 +2313,9 @@ export const MultiAssetTrader = () => {
               {aiRecommendations && (
                 <div className="text-xs text-muted-foreground mb-2 p-2 bg-background/30 rounded">
                   <div className="flex flex-wrap gap-2">
-                    <span>Lev: <span className="text-purple-400 font-medium">{aiRecommendations.optimalLeverage}x</span></span>
-                    <span>SL: <span className="text-red-400 font-medium">{(aiRecommendations.optimalStopLoss * 100).toFixed(2)}%</span></span>
-                    <span>TP: <span className="text-green-400 font-medium">{(aiRecommendations.optimalTakeProfit * 100).toFixed(2)}%</span></span>
+                    <span>Lev: <span className="text-accent font-medium">{aiRecommendations.optimalLeverage}x</span></span>
+                    <span>SL: <span className="text-destructive font-medium">{(aiRecommendations.optimalStopLoss * 100).toFixed(2)}%</span></span>
+                    <span>TP: <span className="text-success font-medium">{(aiRecommendations.optimalTakeProfit * 100).toFixed(2)}%</span></span>
                   </div>
                   {aiRecommendations.insights && (
                     <div className="mt-1 text-[10px] opacity-75">{aiRecommendations.insights}</div>
@@ -2412,37 +2340,37 @@ export const MultiAssetTrader = () => {
               </Button>
             </>
           )}
-        </Card>
+        </div>
 
         {/* 😱 Market Intelligence (Fear & Greed, Events, Whales) */}
         {aiIntelligenceEnabled && (
-          <Card className="p-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20 mb-4">
-            <div className="flex items-center justify-between mb-3">
+          <div className="p-4 bg-secondary/40 border-warning/20 mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-lg">😱</span>
                 <span className="text-sm font-medium">Market Intelligence</span>
                 {intelLastUpdate && (
-                  <Badge variant="outline" className="text-[10px] text-amber-400">
+                  <Badge variant="outline" className="text-[10px] text-warning">
                     {new Date(intelLastUpdate).toLocaleTimeString()}
                   </Badge>
                 )}
               </div>
-              {isIntelLoading && <span className="text-xs text-muted-foreground animate-pulse">Atualizando...</span>}
+              {isIntelLoading && <span className="text-xs text-muted-foreground">Atualizando...</span>}
             </div>
             
             <div className="grid grid-cols-3 gap-2 mb-3">
               {/* Fear & Greed */}
               <div className={`p-2 rounded border text-center ${
                 fearGreed?.sentiment === 'EXTREME_FEAR' || fearGreed?.sentiment === 'FEAR' 
-                  ? 'bg-red-500/10 border-red-500/30' 
+                  ? 'bg-destructive/10 border-destructive/30' 
                   : fearGreed?.sentiment === 'EXTREME_GREED' || fearGreed?.sentiment === 'GREED'
-                    ? 'bg-green-500/10 border-green-500/30'
+                    ? 'bg-success/10 border-success/30'
                     : 'bg-background/50'
               }`}>
                 <div className="text-[10px] text-muted-foreground">Fear & Greed</div>
                 <div className={`font-bold text-lg ${
-                  (fearGreed?.value || 50) <= 30 ? 'text-red-400' : 
-                  (fearGreed?.value || 50) >= 70 ? 'text-green-400' : 'text-yellow-400'
+                  (fearGreed?.value || 50) <= 30 ? 'text-destructive' : 
+                  (fearGreed?.value || 50) >= 70 ? 'text-success' : 'text-warning'
                 }`}>
                   {fearGreed?.value || '--'}
                 </div>
@@ -2468,28 +2396,28 @@ export const MultiAssetTrader = () => {
             
             {/* Trading Advice */}
             {fearGreed && (
-              <div className="text-xs p-2 bg-background/30 rounded border-l-2 border-amber-500/50">
-                <span className="text-amber-400 font-medium">💡 Conselho: </span>
+              <div className="text-xs p-2 bg-background/30 rounded border-l-2 border-warning/50">
+                <span className="text-warning font-medium">💡 Conselho: </span>
                 {fearGreed.tradingAdvice}
               </div>
             )}
             
             {/* High Impact Events Warning */}
             {marketEvents.filter(e => e.impact === 'HIGH').length > 0 && (
-              <div className="mt-2 text-xs p-2 bg-red-500/10 rounded border border-red-500/20">
-                <div className="text-red-400 font-medium mb-1">⚠️ Eventos de Alto Impacto:</div>
+              <div className="mt-2 text-xs p-2 bg-destructive/10 rounded border border-destructive/20">
+                <div className="text-destructive font-medium mb-1">⚠️ Eventos de Alto Impacto:</div>
                 {marketEvents.filter(e => e.impact === 'HIGH').slice(0, 2).map((e, i) => (
                   <div key={i} className="text-[10px] text-muted-foreground">• {e.title}</div>
                 ))}
               </div>
             )}
-          </Card>
+          </div>
         )}
 
         {/* Opções Avançadas */}
-        <Card className="p-4 bg-background/50 mb-4">
+        <div className="p-4 bg-background/50 mb-4">
           <div className="text-sm font-medium mb-3">⚙️ Opções Avançadas</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <div className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
               <Label className="text-xs">Pyramiding</Label>
               <Switch checked={scaleInOutEnabled} onCheckedChange={setScaleInOutEnabled} disabled={isRunning} />
@@ -2507,11 +2435,36 @@ export const MultiAssetTrader = () => {
               <Switch checked={dynamicLeverageEnabled} onCheckedChange={setDynamicLeverageEnabled} disabled={isRunning} />
             </div>
           </div>
-        </Card>
+        </div>
 
+          </div>
+        </details>
+        <details className="workspace-disclosure mb-4">
+          <summary>Diagnóstico e auditoria<span className="ml-auto text-muted-foreground">+</span></summary>
+          <div className="space-y-4 py-4">
+        {/* 🔍 Diagnóstico de Gates Bloqueados */}
+        <GateDiagnosticsPanel
+          skipCounts={gateDiagnostics.skipCounts}
+          totalAnalyzed={gateDiagnostics.totalAnalyzed}
+          openedThisCycle={gateDiagnostics.openedThisCycle}
+          lastCycleAt={gateDiagnostics.lastCycleAt}
+        />
+
+        {/* 📋 Auditoria por trade — gates aplicados */}
+        <GateAuditTable />
+
+        {/* 🚫 Monitor Anti-Perdas */}
+        <AntiLossMonitor 
+          getBlockedStats={getBlockedStats} 
+          blockedCount={blockedCount}
+          forceUnblock={forceUnblock}
+        />
+
+          </div>
+        </details>
         {/* Recent Trades */}
         {activeTrades.length > 0 && (
-          <Card className="p-4 bg-background/50">
+          <div className="p-4 bg-background/50">
             <div className="text-sm font-medium mb-2">📊 Trades Recentes</div>
             <div className="space-y-1 max-h-32 overflow-y-auto">
               {activeTrades.slice(-5).reverse().map((trade, i) => (
@@ -2523,9 +2476,9 @@ export const MultiAssetTrader = () => {
                 </div>
               ))}
             </div>
-          </Card>
+          </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 };

@@ -207,13 +207,13 @@ export const BybitPositionsPanel = () => {
   };
 
   return (
-    <Card className="p-3 sm:p-4 md:p-6">
+    <section aria-label="Conta e posições Bybit" className="space-y-5">
       {/* Saldo Total Bybit - Mobile Optimized */}
-      <div className="mb-4 p-3 sm:p-4 bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg border border-primary/20">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="border-b border-border pb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">Saldo Total</p>
-            <p className="text-2xl sm:text-3xl font-bold text-primary">${totalEquity.toFixed(2)}</p>
+            <p className="text-xs text-muted-foreground">Saldo total · USDT</p>
+            <p className="text-3xl font-semibold font-mono tabular-nums text-foreground">${totalEquity.toFixed(2)}</p>
           </div>
           <div className="flex gap-4 sm:gap-6">
             <div>
@@ -222,21 +222,21 @@ export const BybitPositionsPanel = () => {
             </div>
             <div>
               <p className="text-[10px] sm:text-xs text-muted-foreground">Disponível</p>
-              <p className="text-sm sm:text-base font-semibold text-green-500">${totalAvailableBalance.toFixed(2)}</p>
+              <p className="text-sm sm:text-base font-semibold text-success">${totalAvailableBalance.toFixed(2)}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Header Mobile Optimized */}
-      <div className="flex flex-col gap-3 mb-4 sm:mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            Posições Bybit
+            
+            Posições abertas
           </h3>
           {bybitUnstable && (
-            <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-yellow-500/50 text-yellow-500 mb-1">
+            <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-warning/50 text-warning mb-1">
               ⚠ Bybit instável — mostrando último dado
             </Badge>
           )}
@@ -251,6 +251,8 @@ export const BybitPositionsPanel = () => {
             <Button 
               size="sm" 
               variant="outline" 
+              aria-label="Atualizar posições"
+              title="Atualizar posições"
               onClick={() => refetch()}
               disabled={isLoading}
               className="h-9 px-3 text-xs sm:text-sm"
@@ -261,6 +263,7 @@ export const BybitPositionsPanel = () => {
               <Button
                 size="sm"
                 variant="destructive"
+                aria-label="Fechar todas as posições"
                 onClick={() => setConfirmClose({ all: true })}
                 disabled={closingPosition === 'ALL'}
                 className="h-9 px-3 text-xs sm:text-sm"
@@ -288,16 +291,16 @@ export const BybitPositionsPanel = () => {
           <p className="text-muted-foreground">Carregando posições da Bybit...</p>
         </div>
       ) : !positions || positions.length === 0 ? (
-        <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border">
+        <div className="text-center py-8 border-b border-border">
           <p className="text-lg font-semibold text-muted-foreground mb-2">
-            Nenhuma posição aberta na Bybit
+            Nenhuma posição aberta
           </p>
           <p className="text-sm text-muted-foreground">
-            Todas as posições foram fechadas ou ainda não há operações
+            Sem operações em andamento
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {positions.map((position: any, idx: number) => {
             const pnl = parseFloat(position.unrealisedPnl || '0') || 0;
             const positionValue = parseFloat(position.positionValue || '1') || 1;
@@ -306,11 +309,11 @@ export const BybitPositionsPanel = () => {
             return (
               <div 
                 key={`${position.symbol}-${idx}`}
-                className={`p-3 sm:p-4 rounded-xl border-2 transition-all ${
+                className={`p-3 sm:p-4 rounded-lg border transition-all ${
                   pnl > 0 
-                    ? 'bg-green-500/5 border-green-500/30' 
+                    ? 'bg-success/5 border-success/30' 
                     : pnl < 0 
-                    ? 'bg-red-500/5 border-red-500/30' 
+                    ? 'bg-destructive/5 border-destructive/30' 
                     : 'bg-muted/30 border-border'
                 }`}
               >
@@ -318,12 +321,12 @@ export const BybitPositionsPanel = () => {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className={`p-2 rounded-lg ${
-                      position.side === 'Buy' ? 'bg-green-500/20' : 'bg-red-500/20'
+                      position.side === 'Buy' ? 'bg-success/20' : 'bg-destructive/20'
                     }`}>
                       {position.side === 'Buy' ? (
-                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-green-500" />
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-success" />
                       ) : (
-                        <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" />
+                        <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
                       )}
                     </div>
                     <div>
@@ -341,6 +344,8 @@ export const BybitPositionsPanel = () => {
                     <Button
                       variant="ghost"
                       size="sm"
+                      aria-label={expandedCharts[position.symbol] ? "Ocultar gráfico" : "Mostrar gráfico"}
+                      title={expandedCharts[position.symbol] ? "Ocultar gráfico" : "Mostrar gráfico"}
                       onClick={() => toggleChart(position.symbol)}
                       className="h-8 w-8 p-0"
                     >
@@ -391,14 +396,14 @@ export const BybitPositionsPanel = () => {
                     <p className="font-bold text-xs sm:text-sm font-mono">${(parseFloat(position.markPrice) || 0).toFixed(2)}</p>
                   </div>
                   <div className="bg-background/50 rounded-lg p-2 sm:p-2.5">
-                    <p className="text-[10px] sm:text-xs text-red-400 uppercase">SL</p>
-                    <p className="font-bold text-xs sm:text-sm font-mono text-red-400">
+                    <p className="text-[10px] sm:text-xs text-destructive uppercase">SL</p>
+                    <p className="font-bold text-xs sm:text-sm font-mono text-destructive">
                       {position.stopLoss ? `$${(parseFloat(position.stopLoss) || 0).toFixed(2)}` : '-'}
                     </p>
                   </div>
                   <div className="bg-background/50 rounded-lg p-2 sm:p-2.5">
-                    <p className="text-[10px] sm:text-xs text-green-400 uppercase">TP</p>
-                    <p className="font-bold text-xs sm:text-sm font-mono text-green-400">
+                    <p className="text-[10px] sm:text-xs text-success uppercase">TP</p>
+                    <p className="font-bold text-xs sm:text-sm font-mono text-success">
                       {position.takeProfit ? `$${(parseFloat(position.takeProfit) || 0).toFixed(2)}` : '-'}
                     </p>
                   </div>
@@ -408,16 +413,16 @@ export const BybitPositionsPanel = () => {
                 <div className="flex items-center justify-between pt-2 border-t border-border/50">
                   <div className="flex items-center gap-2 sm:gap-4">
                     <div className={`text-lg sm:text-xl font-bold font-mono ${
-                      pnl > 0 ? 'text-green-500' : 
-                      pnl < 0 ? 'text-red-500' : 'text-muted-foreground'
+                      pnl > 0 ? 'text-success' : 
+                      pnl < 0 ? 'text-destructive' : 'text-muted-foreground'
                     }`}>
                       {pnl >= 0 ? '+' : ''}${(pnl || 0).toFixed(2)}
                     </div>
                     <Badge 
                       variant={pnl >= 0 ? 'secondary' : 'destructive'}
                       className={`text-xs font-mono ${
-                        pnl > 0 ? 'bg-green-500/20 text-green-500 border-green-500/30' : 
-                        pnl < 0 ? 'bg-red-500/20 text-red-500 border-red-500/30' : ''
+                        pnl > 0 ? 'bg-success/20 text-success border-success/30' : 
+                        pnl < 0 ? 'bg-destructive/20 text-destructive border-destructive/30' : ''
                       }`}
                     >
                       {pnlPercentage > 0 ? '+' : ''}{(pnlPercentage || 0).toFixed(2)}%
@@ -456,13 +461,13 @@ export const BybitPositionsPanel = () => {
                     <p className="text-sm">Total de posições: <span className="font-bold">{positions?.length || 0}</span></p>
                     <p className="text-sm">
                       P&L Total: <span className={`font-bold ${
-                        totalPnL > 0 ? 'text-green-500' : 'text-red-500'
+                        totalPnL > 0 ? 'text-success' : 'text-destructive'
                       }`}>
                         ${(totalPnL || 0).toFixed(2)}
                       </span>
                     </p>
                   </div>
-                  <p className="text-xs text-red-500 font-semibold mt-2">
+                  <p className="text-xs text-destructive font-semibold mt-2">
                     ⚠️ ATENÇÃO: Esta ação fechará TODAS as posições ao preço de mercado e NÃO pode ser desfeita!
                   </p>
                 </>
@@ -476,7 +481,7 @@ export const BybitPositionsPanel = () => {
                       <p className="text-sm">Quantidade: <span className="font-bold">{confirmClose.size}</span></p>
                       <p className="text-sm">
                         P&L Atual: <span className={`font-bold ${
-                          parseFloat(confirmClose.unrealisedPnl) > 0 ? 'text-green-500' : 'text-red-500'
+                          parseFloat(confirmClose.unrealisedPnl) > 0 ? 'text-success' : 'text-destructive'
                         }`}>
                           ${(parseFloat(confirmClose.unrealisedPnl) || 0).toFixed(2)}
                         </span>
@@ -492,12 +497,12 @@ export const BybitPositionsPanel = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmClosePosition} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction onClick={confirmClosePosition} className="bg-destructive hover:bg-destructive">
               {confirmClose?.all ? 'Fechar Todas Agora' : 'Confirmar Fechamento'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </section>
   );
 };
