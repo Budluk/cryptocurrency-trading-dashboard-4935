@@ -12,3 +12,16 @@ commits = [
   "c4f9bea9489af18c215cc38aa31ea748736ce1b8",
   "dba32ad85ff95509caff4b8082ba4a6d1e756b5a",
 ]
+
+# A chave anon/publishable do Supabase é pública por design (Vite a embute no
+# bundle) e o JWT falso abaixo é fixture de teste. Cada exceção é limitada a
+# uma regra e a um caminho exato para não enfraquecer o scan no resto do repo.
+[[allowlists]]
+description = "Fixture de x-api-key em testes de rate limit"
+targetRules = ["generic-api-key"]
+paths = ['''^supabase/functions/_shared/rateLimit\.test\.ts$''']
+
+[[allowlists]]
+description = "Chave publishable (anon) do Supabase no cliente"
+targetRules = ["jwt"]
+paths = ['''^src/integrations/supabase/client\.ts$''']
