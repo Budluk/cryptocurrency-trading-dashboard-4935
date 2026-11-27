@@ -269,7 +269,7 @@ supabase secrets set `
 | `TRADINGVIEW_WEBHOOK_SECRET` | `tradingview-webhook` | **sim — sem ela a função responde 503** |
 | `PERPLEXITY_API_KEY` | `aiRouter.webSearchFetch` (busca web) + notícias em `ai-market-analysis` + `market-intelligence` | sim, para pesquisa web |
 | `FREELLMAPI_URL` / `FREELLMAPI_KEY` / `FREELLMAPI_MODEL` | 1º provedor do `aiRouter` (`model` default `auto`) | URL só se o FreeLLMAPI estiver exposto publicamente (ver pendências) |
-| `GROQ_API_KEY` (+ `GROQ_MODEL`, default `llama-3.3-70b-versatile`) | 2º provedor do `aiRouter` | recomendado |
+| `GROQ_API_KEY` (+ `GROQ_MODEL`, default `llama-3.3-70b-versatile`, **descontinuado**) | 2º provedor do `aiRouter`; use `openai/gpt-oss-120b` | recomendado |
 | `OPENAI_API_KEY` (+ `OPENAI_MODEL`, default `gpt-4o-mini`) | 3º provedor do `aiRouter` | opcional |
 | `LOVABLE_API_KEY` | fallback final do `aiRouter`, chat (`google/gemini-3.8-flash`), `ai-market-analysis`, `ai-comprehensive-analysis`, `ai-trading-intelligence`, `ml-auto-corrector` | **sim — sem ela o chat não responde** |
 | `GITHUB_TOKEN` | `researchAgent` e `tradingChat` (API do GitHub) | recomendado; sem token o limite é 60 req/h |
@@ -370,12 +370,17 @@ curl.exe -s -X POST "$URL/functions/v1/ai-market-analysis" `
 > Sem `PERPLEXITY_API_KEY` a busca web fica indisponível; sem `GITHUB_TOKEN`
 > a API do GitHub limita a 60 requisições/hora.
 >
-> **Estado observado em 27/11/2026:** autenticação/autorização, leitura de URLs e
-> o bloqueio a usuários sem `admin` foram validados em runtime. A geração final
-> da resposta estava indisponível porque os provedores de `aiRouter.ts` falharam:
-> Groq devolveu `model_not_found` para `llama-3.3-70b-versatile`, OpenAI devolveu
-> `insufficient_quota` e o fallback Lovable está sem créditos no projeto. Ajuste
-> `GROQ_MODEL`/créditos antes de esperar uma resposta 200 com ficha estruturada.
+> **Validação em 27/11/2026:** autenticação/autorização, leitura de URLs, ficha
+> estruturada, fontes e persistência no histórico foram confirmados em runtime.
+> O modelo antigo `llama-3.3-70b-versatile` foi descontinuado no Groq; configurei
+> `GROQ_MODEL=openai/gpt-oss-120b` e reduzi as fontes enviadas ao prompt para
+> 3.000 caracteres (deploy da função `ai-market-analysis` v141). Uma pesquisa com
+> a URL deste repositório retornou `research: true`, texto em português, ficha
+> válida e `Fontes: [1] ...`, terminando com
+> `Modo pesquisa: nenhuma ordem foi executada.`. O fallback Lovable segue sem
+> créditos e a OpenAI sem quota; se o Groq devolver 429 por limite de
+> tokens/minuto do plano free, aguarde ~60 s (circuit breaker) e repita —
+> nenhuma ordem é enviada em nenhum caso.
 
 ### 5.2 Webhook da TradingView (`tradingview-webhook`)
 
