@@ -7,7 +7,7 @@ import { Activity, Clock, Search, Settings, LayoutDashboard, ChevronDown, BarCha
 import { ObservabilityPanel } from "@/components/ObservabilityPanel";
 import {
   LazyAdvancedAISignals, LazyPerformanceDashboard, LazyMultiAssetTrader,
-  LazyAdvancedAnalytics, LazySentimentDashboard, LazyPortfolioRebalancer,
+  LazyAdvancedAnalytics, LazySentimentDashboard,
   LazyOrderFlowDashboard, LazyTrailingStopVisual, LazyLiveMetricsPanel,
   LazyTradeHistoryTimeline, LazyAutoTraderSettings, LazyMLAdaptiveSettings,
   LazyTraderProfileSettings, LazyResearchTab,
@@ -76,7 +76,7 @@ const Index = () => (
           </details>
           <details className="workspace-disclosure">
             <summary>Mais análises<ChevronDown className="disclosure-chevron ml-auto h-4 w-4" aria-hidden="true" /></summary>
-            <div className="space-y-5 py-5"><LazyOrderFlowDashboard /><LazySentimentDashboard /><LazyPortfolioRebalancer /></div>
+            <div className="space-y-5 py-5"><LazyOrderFlowDashboard /><LazySentimentDashboard /></div>
           </details>
         </TabsContent>
         <TabsContent value="research"><LazyResearchTab /></TabsContent>

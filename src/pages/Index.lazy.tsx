@@ -8,7 +8,6 @@ const PerformanceDashboard = lazy(() => import("@/components/PerformanceDashboar
 const MultiAssetTrader = lazy(() => import("@/components/MultiAssetTrader").then(m => ({ default: m.MultiAssetTrader })));
 const AdvancedAnalytics = lazy(() => import("@/components/AdvancedAnalytics").then(m => ({ default: m.AdvancedAnalytics })));
 const SentimentDashboard = lazy(() => import("@/components/SentimentDashboard").then(m => ({ default: m.SentimentDashboard })));
-const PortfolioRebalancer = lazy(() => import("@/components/PortfolioRebalancer").then(m => ({ default: m.PortfolioRebalancer })));
 const OrderFlowDashboard = lazy(() => import("@/components/OrderFlowDashboard").then(m => ({ default: m.OrderFlowDashboard })));
 const TrailingStopVisual = lazy(() => import("@/components/TrailingStopVisual").then(m => ({ default: m.TrailingStopVisual })));
 const LiveMetricsPanel = lazy(() => import("@/components/LiveMetricsPanel").then(m => ({ default: m.LiveMetricsPanel })));
@@ -54,12 +53,6 @@ export const LazyAdvancedAnalytics = () => (
 export const LazySentimentDashboard = () => (
   <Suspense fallback={<ComponentSkeleton />}>
     <SentimentDashboard />
-  </Suspense>
-);
-
-export const LazyPortfolioRebalancer = () => (
-  <Suspense fallback={<ComponentSkeleton />}>
-    <PortfolioRebalancer />
   </Suspense>
 );
 

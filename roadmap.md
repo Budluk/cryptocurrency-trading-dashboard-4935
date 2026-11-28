@@ -49,7 +49,7 @@
 ## Simplificação visual (concluída em 28/11/2026)
 - [x] Organizar navegação, saldo e posições; separar controles do robô e recolher detalhes extras
 - [x] Conferir navegação e aparência no celular e computador: preview em largura desktop e em iframe de 390 px (sem overflow horizontal, abas e painel B3/corretores visíveis, zero erros no console)
-- [ ] Exclusões definitivas de funções — aguardando indicação do usuário
+- [x] Remover rebalanceamento de carteira; navegação verificada em celular e computador, 5 testes E2E passaram sem ordens reais
 
 ## Validações que dependem do usuário
 - [x] Decisão do usuário em 27/11/2026: manter apenas simulação. O `dry_run` foi validado, mas nenhuma ordem real foi autorizada ou executada; o flag `BINANCE_ENABLE_LIVE` permanece desligado.
