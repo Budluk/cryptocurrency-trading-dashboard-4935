@@ -196,8 +196,9 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       position.side, position.entry_price, exitPrice, position.quantity, position.leverage,
     );
     const margin = calculateDemoMargin(position.entry_price, position.quantity, position.leverage);
-    const balance = Math.max(accountRef.current.balance + margin + pnl, 0);
-    const totalPnl = accountRef.current.pnl + pnl;
+    const previous = { ...accountRef.current };
+    const balance = Math.max(previous.balance + margin + pnl, 0);
+    const totalPnl = previous.pnl + pnl;
     const userId = await getUserId();
     const closedAt = new Date().toISOString();
     const account = demoAccountRef.current;
@@ -207,7 +208,9 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     if (account) {
       if (!await persistAccount(balance, totalPnl)) return { success: false, pnl };
 
-      const { error: closeError } = await supabase
+      // `select` é essencial: um update com zero linhas não retorna erro e
+      // deixaria a posição aberta no banco enquanto a UI a remove.
+      const { data: closed, error: closeError } = await supabase
         .from('demo_positions')
         .update({
           status: 'closed',
@@ -217,10 +220,12 @@ export const useDemoTrading = (isDemoMode: boolean) => {
           pnl,
         })
         .eq('id', position.id)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .select('id');
 
-      if (closeError) {
-        console.warn(`⚠️ [DEMO] Falha ao fechar posição: ${closeError.message}`);
+      if (closeError || !closed?.length) {
+        console.warn(`⚠️ [DEMO] Falha ao fechar posição: ${closeError?.message ?? 'nenhuma linha atualizada'}`);
+        await persistAccount(previous.balance, previous.pnl);
         return { success: false, pnl };
       }
 
@@ -237,6 +242,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
       if (tradeError) {
         console.warn(`⚠️ [DEMO] Falha ao registrar trade: ${tradeError.message}`);
+        await persistAccount(previous.balance, previous.pnl);
         return { success: false, pnl };
       }
     }
@@ -290,14 +296,18 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       opened_at: new Date().toISOString(),
     };
 
-    const balance = Math.max(accountRef.current.balance - marginRequired, 0);
+    const previous = { ...accountRef.current };
+    const balance = Math.max(previous.balance - marginRequired, 0);
     const userId = await getUserId();
 
     // A ordem paper só aparece na UI depois que conta e posição estão gravadas.
-    if (!await persistAccount(balance, accountRef.current.pnl)) {
+    if (!await persistAccount(balance, previous.pnl)) {
       return { success: false, error: 'Falha ao persistir a conta demo' };
     }
+    // O id gerado no cliente também é a chave da linha: sem ele, o fechamento
+    // usaria um id que não existe no banco e a posição ficaria aberta.
     const { error } = await supabase.from('demo_positions').insert({
+      id: newPosition.id,
       user_id: userId,
       demo_account_id: account.id,
       symbol: newPosition.symbol,
@@ -313,6 +323,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
     if (error) {
       console.warn(`⚠️ [DEMO] Falha ao salvar posição: ${error.message}`);
+      await persistAccount(previous.balance, previous.pnl);
       return { success: false, error: 'Falha ao salvar a posição demo' };
     }
 

@@ -233,11 +233,16 @@ test("Modo demo roda ciclo paper, persiste e nunca envia ordem real", async ({ p
   await expect(page.getByText(/Posições: 0\/10/)).toBeVisible({ timeout: 15000 });
 
   // Recarregar não pode restaurar o robô em modo real nem a posição fechada.
-  await Promise.all([
+  const [positionsResponse] = await Promise.all([
     page.waitForResponse((response) =>
-      response.url().includes("/rest/v1/demo_accounts") && response.request().method() === "GET"),
+      response.url().includes("/rest/v1/demo_positions") &&
+      response.url().includes("status=eq.open") &&
+      response.request().method() === "GET"),
     page.reload(),
   ]);
+  const openPositions = await positionsResponse.json();
+  expect(Array.isArray(openPositions) && openPositions.length).toBe(0);
+
   await page.getByRole("tab", { name: "Robô" }).click();
   await expect(page.getByText("Demo (paper)", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/Posições: 0\/10/)).toBeVisible({ timeout: 15000 });
