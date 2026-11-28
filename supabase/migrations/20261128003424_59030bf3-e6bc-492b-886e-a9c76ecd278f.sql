@@ -1,0 +1,5 @@
+ALTER POLICY "Authenticated users can read b3 contracts" ON public.b3_contracts TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role) AND (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true');
+ALTER POLICY "Authenticated users can read b3 signals" ON public.b3_signals TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role) AND (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true');
+ALTER POLICY "Anyone authenticated can read prompt versions" ON public.prompt_versions TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role) AND (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true');
+ALTER POLICY "Authenticated users can read b3 ticks" ON public.b3_ticks TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role) AND (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true');
+ALTER POLICY "Authenticated users can read b3 analysis" ON public.b3_analysis TO authenticated USING (public.has_role(auth.uid(), 'admin'::public.app_role) AND (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true');
