@@ -34,6 +34,7 @@ import { RiskPresetSelector } from "./RiskPresetSelector";
 import { GateAuditTable } from "./GateAuditTable";
 import { getRiskRule, getCurrentPreset } from "@/config/qualityRiskConfig";
 import { recordGateAudit } from "@/lib/gateAudit";
+import { readDemoMode, writeDemoMode } from "@/lib/demoTrading";
 
 interface Trade {
   symbol: string;
@@ -48,7 +49,9 @@ export const MultiAssetTrader = () => {
   const [isRunning, setIsRunning] = useState(false);
   const tradingLockRef = useRef(false);
   const [isTestnet, setIsTestnet] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false); // 🆕 MODO DEMO
+  // Modo demo persistente: um reload nunca pode voltar para "conta real".
+  const initialDemoModeRef = useRef(readDemoMode());
+  const [isDemoMode, setIsDemoMode] = useState(() => initialDemoModeRef.current);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [totalPnL, setTotalPnL] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
@@ -259,9 +262,14 @@ export const MultiAssetTrader = () => {
   useEffect(() => {
     const init = async () => {
       console.log('🔄 Inicializando trader...');
-      await syncBybitBalance();
-      await syncOpenPositions();
-      await fetchTop10VolatileAssets();
+      // No demo não lemos nem a conta real: saldo e posições vêm do ledger paper.
+      if (!initialDemoModeRef.current) {
+        await syncBybitBalance();
+        await syncOpenPositions();
+        await fetchTop10VolatileAssets();
+      } else {
+        console.log('🎮 [DEMO] Sincronização com a exchange real ignorada');
+      }
       
       // 🤖 Treinar IA automaticamente com histórico Bybit
       try {
@@ -345,6 +353,8 @@ export const MultiAssetTrader = () => {
 
   // Sincronizar PnL de posições fechadas com Bybit e registrar no anti-loss
   const syncClosedPositionsPnL = useCallback(async () => {
+    // Ledger demo é fechado pelo hook paper; não consultar posições reais.
+    if (isDemoMode) return;
     try {
       const userId = await getUserId();
       
@@ -472,10 +482,12 @@ export const MultiAssetTrader = () => {
     } catch (error) {
       console.error('❌ Erro ao sincronizar PnL:', error);
     }
-  }, [recordTradeResult]);
+  }, [recordTradeResult, isDemoMode]);
 
   // Smart exits + sync de preços/PnL no banco
   const updateSmartExits = useCallback(async () => {
+    // Saídas demo são simuladas em useDemoTrading — nunca chamar place_order real.
+    if (isDemoMode) return;
     if (!smartExitEnabled && !trailingStopEnabled) return;
 
     try {
@@ -587,7 +599,7 @@ export const MultiAssetTrader = () => {
     } catch (error) {
       console.error('Erro ao atualizar smart exits:', error);
     }
-  }, [smartExitEnabled, trailingStopEnabled, partialExitEnabled, isTestnet, mlConfig, processOpenPositions, positionTracking, syncClosedPositionsPnL, clearPositionState, refetch]);
+  }, [smartExitEnabled, trailingStopEnabled, partialExitEnabled, isTestnet, isDemoMode, mlConfig, processOpenPositions, positionTracking, syncClosedPositionsPnL, clearPositionState, refetch]);
 
   const analyzeAndTrade = async () => {
     // 🔒 Mutex: impedir execuções concorrentes
@@ -752,16 +764,16 @@ export const MultiAssetTrader = () => {
         // === CRITÉRIOS PARA SCALPING LUCRATIVO (mais flexíveis em TESTNET) ===
         
         // 1. Spread máximo
-        const maxSpread = isTestnet ? 0.20 : 0.05;
+        const maxSpread = isTestnet || isDemoMode ? 0.20 : 0.05;
         if (a.spread > maxSpread) return false;
         
         // 2. Volume mínimo
-        const minVolume = isTestnet ? 100000 : (isInTop10 ? 500000 : 1000000);
+        const minVolume = isTestnet || isDemoMode ? 100000 : (isInTop10 ? 500000 : 1000000);
         if (a.volume24h < minVolume) return false;
         
         // 3. Faixa de volatilidade
-        const minVol = isTestnet ? 0.5 : (isInTop10 ? 1.5 : 2.0);
-        const maxVol = isTestnet ? 25 : 10;
+        const minVol = isTestnet || isDemoMode ? 0.5 : (isInTop10 ? 1.5 : 2.0);
+        const maxVol = isTestnet || isDemoMode ? 25 : 10;
         if (a.volatility < minVol || a.volatility > maxVol) return false;
         
         // 4. Preço mínimo para evitar dust trades
@@ -774,7 +786,7 @@ export const MultiAssetTrader = () => {
           'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
           'SUIUSDT', 'APTUSDT', 'NEARUSDT', 'ARBUSDT', 'OPUSDT',
         ]);
-        if (!isTestnet && !ALLOWED_SYMBOLS.has(symbol)) return false;
+        if (!isTestnet && !isDemoMode && !ALLOWED_SYMBOLS.has(symbol)) return false;
         
         return true;
       });
@@ -824,7 +836,7 @@ export const MultiAssetTrader = () => {
       console.log(`🔥 ${topVolatileAssets.length} ativos após filtro avançado | Top 5: ${topVolatileAssets.slice(0, 5).map(a => `${a.instrument.symbol}(${a.assetScore.toFixed(2)})${a.isWhitelisted ? '⭐' : ''}`).join(', ')}`);
 
       // 🎯 ORDENS ARMADAS (S/R): armar + disparar a cada ciclo com base nos tickers atuais
-      if (armedModeEnabled) {
+      if (armedModeEnabled && !isDemoMode) {
         try {
           // 1) Disparar ordens já armadas quando o preço encostar no nível
           await checkArmedOrdersForTrigger(tickersMap);
@@ -1267,7 +1279,7 @@ export const MultiAssetTrader = () => {
           }
 
           // 🆕 Usar saldo atualizado (balanceNow é decrementado após cada trade)
-          const freshBalance = isDemoMode ? demoBalance : balanceNow;
+          const freshBalance = balanceNow; // demo: saldo local já decrementado a cada abertura
           const minBalance = isDemoMode ? 1 : 2; // Demo permite saldo menor
           
           if (freshBalance < minBalance) {
@@ -1277,7 +1289,7 @@ export const MultiAssetTrader = () => {
           }
           
           // 🆕 Verificar exposição máxima do portfolio
-          const exposureData = calculateExposure(openPositions, currentBalance);
+          const exposureData = calculateExposure(openPositions, balanceNow);
           if (exposureData.isOverExposed) {
             console.log(`⚠️ Exposição máxima atingida: ${exposureData.exposurePercent.toFixed(1)}% > 80%`);
             continue;
@@ -1710,6 +1722,7 @@ export const MultiAssetTrader = () => {
 
   // Pyramiding
   useEffect(() => {
+    if (isDemoMode) return; // Pyramiding usa place_order real: desligado no demo.
     if (!scaleInOutEnabled || !isRunning || !mlConfig?.optimal_patterns?.pyramiding) return;
     
     const monitorPyramiding = async () => {
@@ -1794,9 +1807,10 @@ export const MultiAssetTrader = () => {
     // Pyramiding: 60s (era 30s)
     const interval = setInterval(monitorPyramiding, 60000);
     return () => clearInterval(interval);
-  }, [scaleInOutEnabled, isRunning, mlConfig, pyramidingTracking]);
+  }, [scaleInOutEnabled, isRunning, isDemoMode, mlConfig, pyramidingTracking]);
 
   const cleanupOrphanPositions = useCallback(async () => {
+    if (isDemoMode) return;
     console.log('🧹 Sincronizando posições...');
     try {
       const userId = await getUserId();
@@ -1873,7 +1887,7 @@ export const MultiAssetTrader = () => {
     } catch (err) {
       console.log('⚠️ Erro na sincronização:', err);
     }
-  }, [refetch, isTestnet]);
+  }, [refetch, isTestnet, isDemoMode]);
 
   // Se o trader foi restaurado automaticamente, rodar a limpeza 1x para evitar "limite atingido" falso
   useEffect(() => {
@@ -1918,20 +1932,22 @@ export const MultiAssetTrader = () => {
     toast({ title: "🚀 Trader iniciado", description: `${stats.blockedSymbols.length} símbolos bloqueados` });
   };
 
+  const persistTraderStopped = useCallback(async () => {
+    const userId = await getUserIdOrNull();
+    if (!userId) return;
+    await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
+  }, []);
+
   const stopTrading = async () => {
     setIsRunning(false);
     orphanCleanupDoneRef.current = false;
-    
-    const userId = await getUserIdOrNull();
-    if (userId) {
-      await supabase.from('auto_trader_config').update({ trader_is_running: false }).eq('user_id', userId);
-    }
+    await persistTraderStopped();
 
     toast({ title: "⏸️ Trader pausado", description: `P&L Total: $${totalPnL.toFixed(2)}` });
   };
 
   const resetBankroll = async () => {
-    await syncBybitBalance();
+    if (!isDemoMode) await syncBybitBalance();
     setTotalPnL(0);
     setDailyPnL(0);
     setActiveTrades([]);
@@ -1945,7 +1961,7 @@ export const MultiAssetTrader = () => {
       <div className="robot-controls">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-xl font-semibold">Robô de trading</h2><p className="mt-1 text-sm text-muted-foreground">{isRunning ? 'Em operação' : 'Parado'} · {cycleCount} ciclos</p></div>
-          <Badge variant={isDemoMode || isTestnet ? "outline" : "destructive"}>{isDemoMode ? 'Demo' : isTestnet ? 'Testnet' : 'Conta real'}</Badge>
+          <Badge variant={isDemoMode || isTestnet ? "outline" : "destructive"}>{isDemoMode ? 'Demo (paper)' : isTestnet ? 'Testnet' : 'Conta real'}</Badge>
         </div>
 
         {/* Status Cards */}
@@ -1989,21 +2005,26 @@ export const MultiAssetTrader = () => {
             <div>
               <Label className="text-sm font-medium flex items-center gap-2">
                 <FlaskConical className={`h-4 w-4 ${isDemoMode ? 'text-primary' : 'text-primary/60'}`} />
-                Modo Demo ($20)
+                Modo Demo (paper)
               </Label>
               <p className="text-xs text-muted-foreground">
-                {isDemoMode ? `Saldo: $${demoBalance.toFixed(2)} | PnL: $${demoPnL.toFixed(2)}` : 'Simular sem dinheiro real'}
+                {isDemoMode
+                  ? `Saldo virtual: $${demoBalance.toFixed(2)} | PnL: $${demoPnL.toFixed(2)} · sem ordens reais`
+                  : 'Simular sem dinheiro real'}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <Switch 
                 checked={isDemoMode} 
-                onCheckedChange={(checked) => { 
-                  setIsDemoMode(checked); 
+                onCheckedChange={(checked) => {
+                  writeDemoMode(checked);
+                  setIsDemoMode(checked);
                   setIsTestnet(false);
-                  setIsRunning(false); 
-                  if (checked) loadDemoAccount();
-                }} 
+                  setIsRunning(false);
+                  orphanCleanupDoneRef.current = false;
+                  if (checked) void loadDemoAccount();
+                  else void persistTraderStopped();
+                }}
                 disabled={isRunning} 
               />
               {isDemoMode && (
@@ -2037,6 +2058,11 @@ export const MultiAssetTrader = () => {
               <Button onClick={startTrading} className="flex-1" size="lg">
                 <Play className="h-5 w-5 mr-2" />Iniciar robô
               </Button>
+              {isDemoMode && (
+                <Button onClick={() => void analyzeAndTrade()} variant="secondary" size="lg">
+                  <Zap className="h-5 w-5 mr-2" />Rodar 1 ciclo
+                </Button>
+              )}
               <Button onClick={resetBankroll} variant="outline" size="lg">Reset</Button>
             </>
           ) : (
@@ -2232,7 +2258,7 @@ export const MultiAssetTrader = () => {
                 <Badge variant="outline" className="text-[10px] text-warning">$0.20+ min</Badge>
               )}
             </div>
-            <Switch checked={armedModeEnabled} onCheckedChange={setArmedModeEnabled} disabled={isRunning} />
+            <Switch checked={armedModeEnabled} onCheckedChange={setArmedModeEnabled} disabled={isRunning || isDemoMode} />
           </div>
           
           {armedModeEnabled && (

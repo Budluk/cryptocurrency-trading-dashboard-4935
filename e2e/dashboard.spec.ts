@@ -148,3 +148,83 @@ test("Simular ordem envia dry_run=true e nunca uma ordem real", async ({ page })
   // A UI não envia chaves, tokens nem opt-in de live trading.
   expect(JSON.stringify(order)).not.toMatch(/api[_-]?key|api[_-]?secret|token/i);
 });
+
+test("Modo demo persiste e nunca envia place_order real", async ({ page }) => {
+  type BybitBody = { action?: string; params?: Record<string, unknown> };
+  const sentBodies: BybitBody[] = [];
+
+  await page.route(BYBIT_TRADING_ROUTE, async (route) => {
+    const request = route.request();
+    let body: BybitBody = {};
+    try {
+      body = request.postDataJSON() as BybitBody;
+    } catch {
+      // Sem corpo: apenas health check.
+    }
+    sentBodies.push(body);
+
+    const response =
+      body.action === "get_instruments"
+        ? {
+            success: true,
+            data: [
+              {
+                symbol: "BTCUSDT",
+                status: "Trading",
+                quoteCoin: "USDT",
+                lotSizeFilter: { minOrderQty: "0.001", qtyStep: "0.001", maxOrderQty: "100" },
+              },
+            ],
+          }
+        : body.action === "get_ticker"
+          ? {
+              success: true,
+              data: [
+                {
+                  symbol: "BTCUSDT",
+                  lastPrice: "50000",
+                  price24hPcnt: "1.5",
+                  turnover24h: "5000000",
+                  bid1Price: "49999",
+                  ask1Price: "50001",
+                },
+              ],
+            }
+          : { success: false, error: "stubbed by E2E" };
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.route("https://api.bybit.com/v5/market/tickers*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ result: { list: [{ lastPrice: "50000" }] } }),
+    }),
+  );
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Robô" }).click();
+  await page.getByRole("switch").first().click();
+
+  await expect(page.getByText("Modo Demo (paper)")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("trading-demo-mode")))
+    .toBe("true");
+
+  await page.getByRole("button", { name: /Rodar 1 ciclo/ }).click();
+  await page.waitForTimeout(2500);
+
+  expect(sentBodies.filter((body) => body.action === "place_order")).toEqual([]);
+  expect(sentBodies.filter((body) => body.action === "set_trading_stop")).toEqual([]);
+
+  // Recarregar não pode restaurar o robô em modo real.
+  await page.reload();
+  await page.getByRole("tab", { name: "Robô" }).click();
+  await expect(page.getByText("Demo (paper)", { exact: true }).first()).toBeVisible();
+  expect(sentBodies.filter((body) => body.action === "place_order")).toEqual([]);
+});

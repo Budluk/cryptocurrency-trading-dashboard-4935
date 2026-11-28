@@ -1,12 +1,23 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getUserId } from '@/lib/anonymousUser';
 import { useToast } from '@/hooks/use-toast';
+import {
+  DEMO_INITIAL_BALANCE,
+  calculateDemoMargin,
+  calculateDemoPnl,
+  demoAvailableMargin,
+  demoExitReason,
+  forgetDemoLeverage,
+  recallDemoLeverage,
+  rememberDemoLeverage,
+  type DemoSide,
+} from '@/lib/demoTrading';
 
 interface DemoPosition {
   id: string;
   symbol: string;
-  side: 'Buy' | 'Sell';
+  side: DemoSide;
   entry_price: number;
   current_price: number;
   quantity: number;
@@ -24,143 +35,217 @@ interface DemoAccount {
   total_pnl: number;
 }
 
+/**
+ * Paper trading persistente. Toda decisão, margem, PnL e saída é calculada
+ * localmente; nenhuma função deste hook chama `place_order` ou usa chaves.
+ */
 export const useDemoTrading = (isDemoMode: boolean) => {
-  const [demoBalance, setDemoBalance] = useState(20);
+  const [demoBalance, setDemoBalance] = useState(DEMO_INITIAL_BALANCE);
   const [demoPositions, setDemoPositions] = useState<DemoPosition[]>([]);
   const [demoAccount, setDemoAccount] = useState<DemoAccount | null>(null);
   const [demoPnL, setDemoPnL] = useState(0);
   const { toast } = useToast();
-  const priceCache = useRef<Map<string, number>>(new Map());
 
-  // Carregar conta demo
+  const priceCache = useRef<Map<string, number>>(new Map());
+  const accountRef = useRef({ balance: DEMO_INITIAL_BALANCE, pnl: 0 });
+  const positionsRef = useRef<DemoPosition[]>([]);
+  const syncingRef = useRef(false);
+
+  const setPositions = useCallback((next: DemoPosition[]) => {
+    positionsRef.current = next;
+    setDemoPositions(next);
+  }, []);
+
+  const persistAccount = useCallback(async (balance: number, pnl: number) => {
+    if (!demoAccount) return;
+    const { error } = await supabase
+      .from('demo_accounts')
+      .update({ current_balance: balance, total_pnl: pnl })
+      .eq('id', demoAccount.id);
+
+    if (error) console.warn(`⚠️ [DEMO] Falha ao persistir conta: ${error.message}`);
+  }, [demoAccount]);
+
+  /** Aplica deltas sem sofrer com closures antigas e grava o saldo no banco. */
+  const applyAccountDelta = useCallback(async (balanceDelta: number, pnlDelta: number) => {
+    const next = {
+      balance: Math.max(accountRef.current.balance + balanceDelta, 0),
+      pnl: accountRef.current.pnl + pnlDelta,
+    };
+    accountRef.current = next;
+    setDemoBalance(next.balance);
+    setDemoPnL(next.pnl);
+    await persistAccount(next.balance, next.pnl);
+  }, [persistAccount]);
+
   const loadDemoAccount = useCallback(async () => {
     if (!isDemoMode) return null;
-    
+
     const userId = await getUserId();
     console.log(`🎮 [DEMO] Carregando conta demo para user: ${userId}`);
-    
-    // Buscar conta demo existente ou criar nova
+
     const { data: foundAccount, error } = await supabase
       .from('demo_accounts')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
+    if (error) console.warn(`⚠️ [DEMO] Erro ao buscar conta: ${error.message}`);
+
     let account = foundAccount;
 
-    if (error) {
-      console.log(`⚠️ [DEMO] Erro ao buscar conta: ${error.message}`);
-    }
-    
     if (!account) {
-      // Criar conta demo com $20
-      console.log(`🆕 [DEMO] Criando nova conta demo...`);
       const { data: newAccount, error: insertError } = await supabase
         .from('demo_accounts')
         .insert({
           user_id: userId,
-          initial_balance: 20,
-          current_balance: 20,
-          total_pnl: 0
+          initial_balance: DEMO_INITIAL_BALANCE,
+          current_balance: DEMO_INITIAL_BALANCE,
+          total_pnl: 0,
         })
         .select()
         .single();
-      
+
       if (insertError) {
-        console.log(`❌ [DEMO] Erro ao criar conta: ${insertError.message}`);
-        // Fallback: usar conta local
-        setDemoBalance(20);
+        console.warn(`⚠️ [DEMO] Erro ao criar conta: ${insertError.message}; usando conta local.`);
+        accountRef.current = { balance: DEMO_INITIAL_BALANCE, pnl: 0 };
+        setDemoBalance(DEMO_INITIAL_BALANCE);
         setDemoPnL(0);
+        setPositions([]);
         return null;
       }
-      
       account = newAccount;
     }
-    
-    if (account) {
-      setDemoAccount(account);
-      setDemoBalance(account.current_balance);
-      setDemoPnL(account.total_pnl);
-      console.log(`✅ [DEMO] Conta carregada: $${account.current_balance.toFixed(2)} | PnL: $${account.total_pnl.toFixed(2)}`);
-      
-      // Carregar posições demo abertas
-      const { data: positions } = await supabase
-        .from('demo_positions')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'open');
-      
-      if (positions && positions.length > 0) {
-        const mappedPositions: DemoPosition[] = positions.map(p => ({
-          id: p.id,
-          symbol: p.symbol,
-          side: p.side as 'Buy' | 'Sell',
-          entry_price: p.entry_price,
-          current_price: p.current_price || p.entry_price,
-          quantity: p.quantity,
-          stop_loss: p.stop_loss,
-          take_profit: p.take_profit,
-          pnl: p.pnl || 0,
-          leverage: 10, // Default
-          opened_at: p.opened_at
-        }));
-        setDemoPositions(mappedPositions);
-        console.log(`📊 [DEMO] ${mappedPositions.length} posições carregadas`);
-      }
-    }
-    
-    return account;
-  }, [isDemoMode]);
 
-  // Buscar preço atual via API pública da Bybit
+    setDemoAccount(account);
+    accountRef.current = {
+      balance: Number(account.current_balance) || DEMO_INITIAL_BALANCE,
+      pnl: Number(account.total_pnl) || 0,
+    };
+    setDemoBalance(accountRef.current.balance);
+    setDemoPnL(accountRef.current.pnl);
+
+    const { data: positions, error: positionsError } = await supabase
+      .from('demo_positions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'open');
+
+    if (positionsError) console.warn(`⚠️ [DEMO] Erro ao carregar posições: ${positionsError.message}`);
+
+    const mapped: DemoPosition[] = (positions || []).map((p) => {
+      const entry = Number(p.entry_price) || 0;
+      return {
+        id: p.id,
+        symbol: p.symbol,
+        side: p.side === 'Sell' ? 'Sell' : 'Buy',
+        entry_price: entry,
+        current_price: Number(p.current_price) || entry,
+        quantity: Number(p.quantity) || 0,
+        stop_loss: p.stop_loss == null ? null : Number(p.stop_loss),
+        take_profit: p.take_profit == null ? null : Number(p.take_profit),
+        pnl: Number(p.pnl) || 0,
+        leverage: recallDemoLeverage(p.id, 10),
+        opened_at: p.opened_at,
+      };
+    });
+
+    setPositions(mapped);
+    console.log(`✅ [DEMO] Conta $${accountRef.current.balance.toFixed(2)} | ${mapped.length} posições`);
+    return account;
+  }, [isDemoMode, setPositions]);
+
+  /** Preço público, apenas para marcar a posição — nunca autentica na exchange. */
   const fetchCurrentPrice = useCallback(async (symbol: string): Promise<number> => {
     const cached = priceCache.current.get(symbol);
     if (cached) return cached;
-    
+
     try {
       const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`);
       const data = await response.json();
       const price = parseFloat(data?.result?.list?.[0]?.lastPrice || '0');
-      
+
       if (price > 0) {
         priceCache.current.set(symbol, price);
-        setTimeout(() => priceCache.current.delete(symbol), 5000); // Cache por 5s
+        setTimeout(() => priceCache.current.delete(symbol), 5000);
       }
-      
+
       return price;
     } catch {
       return 0;
     }
   }, []);
 
-  // Abrir posição demo
+  /** Fecha uma posição demo: devolve margem, realiza PnL e grava o ledger. */
+  const settlePosition = useCallback(async (
+    position: DemoPosition,
+    exitPrice: number,
+    reason: string,
+  ): Promise<{ success: boolean; pnl: number }> => {
+    const pnl = calculateDemoPnl(
+      position.side, position.entry_price, exitPrice, position.quantity, position.leverage,
+    );
+    const margin = calculateDemoMargin(position.entry_price, position.quantity, position.leverage);
+
+    await applyAccountDelta(margin + pnl, pnl);
+    setPositions(positionsRef.current.filter((p) => p.id !== position.id));
+    forgetDemoLeverage(position.id);
+
+    const userId = await getUserId();
+    const closedAt = new Date().toISOString();
+
+    if (demoAccount) {
+      const { error: closeError } = await supabase
+        .from('demo_positions')
+        .update({
+          status: 'closed',
+          close_reason: reason,
+          closed_at: closedAt,
+          current_price: exitPrice,
+          pnl,
+        })
+        .eq('id', position.id)
+        .eq('user_id', userId);
+
+      if (closeError) console.warn(`⚠️ [DEMO] Falha ao fechar posição: ${closeError.message}`);
+
+      const { error: tradeError } = await supabase.from('demo_trades').insert({
+        user_id: userId,
+        demo_account_id: demoAccount.id,
+        symbol: position.symbol,
+        side: position.side,
+        entry_price: position.entry_price,
+        exit_price: exitPrice,
+        quantity: position.quantity,
+        pnl,
+      });
+
+      if (tradeError) console.warn(`⚠️ [DEMO] Falha ao registrar trade: ${tradeError.message}`);
+    }
+
+    console.log(`📊 [DEMO] ${position.symbol} fechada (${reason}) | PnL: $${pnl.toFixed(2)}`);
+    return { success: true, pnl };
+  }, [applyAccountDelta, demoAccount, setPositions]);
+
   const openDemoPosition = useCallback(async (params: {
     symbol: string;
-    side: 'Buy' | 'Sell';
+    side: DemoSide;
     quantity: number;
     leverage: number;
     stopLoss?: number;
     takeProfit?: number;
     confidence?: number;
-  }): Promise<{ success: boolean; data?: any; error?: string }> => {
-    if (!isDemoMode || !demoAccount) {
-      return { success: false, error: 'Modo demo não ativo' };
-    }
+  }): Promise<{ success: boolean; data?: { orderId: string; price: number; qty: number }; error?: string }> => {
+    if (!isDemoMode || !demoAccount) return { success: false, error: 'Modo demo não ativo' };
 
     const currentPrice = await fetchCurrentPrice(params.symbol);
-    if (currentPrice === 0) {
-      return { success: false, error: 'Não foi possível obter preço atual' };
-    }
+    if (currentPrice <= 0) return { success: false, error: 'Não foi possível obter preço atual' };
 
-    // Calcular margem necessária
-    const positionValue = currentPrice * params.quantity;
-    const marginRequired = positionValue / params.leverage;
-
-    if (marginRequired > demoBalance * 0.95) { // 95% max
+    const marginRequired = calculateDemoMargin(currentPrice, params.quantity, params.leverage);
+    if (marginRequired <= 0 || marginRequired > demoAvailableMargin(accountRef.current.balance)) {
       return { success: false, error: 'Saldo demo insuficiente' };
     }
 
-    // Criar posição local
     const newPosition: DemoPosition = {
       id: crypto.randomUUID(),
       symbol: params.symbol,
@@ -168,206 +253,145 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       entry_price: currentPrice,
       current_price: currentPrice,
       quantity: params.quantity,
-      stop_loss: params.stopLoss || null,
-      take_profit: params.takeProfit || null,
+      stop_loss: params.stopLoss && params.stopLoss > 0 ? params.stopLoss : null,
+      take_profit: params.takeProfit && params.takeProfit > 0 ? params.takeProfit : null,
       pnl: 0,
       leverage: params.leverage,
-      opened_at: new Date().toISOString()
+      opened_at: new Date().toISOString(),
     };
 
-    setDemoPositions(prev => [...prev, newPosition]);
-    
-    // Deduzir margem do saldo
-    setDemoBalance(prev => prev - marginRequired);
+    rememberDemoLeverage(newPosition.id, newPosition.leverage);
+    setPositions([...positionsRef.current, newPosition]);
+    await applyAccountDelta(-marginRequired, 0);
 
-    // Salvar no banco para persistência
     const userId = await getUserId();
-    await supabase.from('demo_positions').insert({
+    const { error } = await supabase.from('demo_positions').insert({
       user_id: userId,
       demo_account_id: demoAccount.id,
-      symbol: params.symbol,
-      side: params.side,
-      entry_price: currentPrice,
-      current_price: currentPrice,
-      quantity: params.quantity,
-      stop_loss: params.stopLoss,
-      take_profit: params.takeProfit,
-      status: 'open'
+      symbol: newPosition.symbol,
+      side: newPosition.side,
+      entry_price: newPosition.entry_price,
+      current_price: newPosition.current_price,
+      quantity: newPosition.quantity,
+      stop_loss: newPosition.stop_loss,
+      take_profit: newPosition.take_profit,
+      status: 'open',
+      pnl: 0,
     });
 
-    console.log(`📊 [DEMO] Posição aberta: ${params.side} ${params.symbol} @ $${currentPrice.toFixed(4)} | Margem: $${marginRequired.toFixed(2)}`);
+    if (error) console.warn(`⚠️ [DEMO] Falha ao salvar posição: ${error.message}`);
+    console.log(`📊 [DEMO] Abertura ${newPosition.side} ${newPosition.symbol} @ $${currentPrice.toFixed(4)} | Margem $${marginRequired.toFixed(2)}`);
 
-    return { 
-      success: true, 
-      data: { 
-        orderId: newPosition.id,
-        price: currentPrice,
-        qty: params.quantity
-      } 
+    return {
+      success: true,
+      data: { orderId: newPosition.id, price: currentPrice, qty: newPosition.quantity },
     };
-  }, [isDemoMode, demoAccount, demoBalance, fetchCurrentPrice]);
+  }, [applyAccountDelta, demoAccount, fetchCurrentPrice, isDemoMode, setPositions]);
 
-  // Fechar posição demo
-  const closeDemoPosition = useCallback(async (positionId: string, reason: string = 'manual'): Promise<{ success: boolean; pnl?: number }> => {
-    const position = demoPositions.find(p => p.id === positionId);
-    if (!position) {
-      return { success: false };
-    }
+  const closeDemoPosition = useCallback(async (
+    positionId: string,
+    reason: string = 'manual',
+  ): Promise<{ success: boolean; pnl?: number }> => {
+    const position = positionsRef.current.find((p) => p.id === positionId);
+    if (!position) return { success: false };
 
     const currentPrice = await fetchCurrentPrice(position.symbol);
-    if (currentPrice === 0) {
-      return { success: false };
-    }
+    if (currentPrice <= 0) return { success: false };
 
-    // Calcular PnL
-    let pnl = 0;
-    if (position.side === 'Buy') {
-      pnl = (currentPrice - position.entry_price) * position.quantity;
-    } else {
-      pnl = (position.entry_price - currentPrice) * position.quantity;
-    }
-    
-    // Aplicar alavancagem ao PnL
-    pnl = pnl * position.leverage;
+    return settlePosition(position, currentPrice, reason);
+  }, [fetchCurrentPrice, settlePosition]);
 
-    // Calcular margem que foi usada
-    const positionValue = position.entry_price * position.quantity;
-    const marginUsed = positionValue / position.leverage;
-
-    // Devolver margem + PnL
-    const returnAmount = marginUsed + pnl;
-    setDemoBalance(prev => prev + returnAmount);
-    setDemoPnL(prev => prev + pnl);
-
-    // Remover da lista local
-    setDemoPositions(prev => prev.filter(p => p.id !== positionId));
-
-    // Atualizar banco
-    const userId = await getUserId();
-    if (demoAccount) {
-      await supabase.from('demo_accounts').update({
-        current_balance: demoBalance + returnAmount,
-        total_pnl: demoPnL + pnl
-      }).eq('id', demoAccount.id);
-    }
-
-    // Registrar trade fechado
-    await supabase.from('demo_trades').insert({
-      user_id: userId,
-      demo_account_id: demoAccount?.id,
-      symbol: position.symbol,
-      side: position.side,
-      entry_price: position.entry_price,
-      exit_price: currentPrice,
-      quantity: position.quantity,
-      pnl
-    });
-
-    console.log(`📊 [DEMO] Posição fechada: ${position.symbol} | PnL: $${pnl.toFixed(2)} (${reason})`);
-
-    return { success: true, pnl };
-  }, [demoPositions, fetchCurrentPrice, demoBalance, demoPnL, demoAccount]);
-
-  // Atualizar preços das posições demo
+  /** Marca preço/PnL e executa stop/take profit simulados. */
   const updateDemoPositions = useCallback(async () => {
-    if (!isDemoMode || demoPositions.length === 0) return;
+    if (!isDemoMode || syncingRef.current || positionsRef.current.length === 0) return;
+    syncingRef.current = true;
 
-    const updatedPositions = await Promise.all(
-      demoPositions.map(async (pos) => {
+    try {
+      const results = await Promise.all(positionsRef.current.map(async (pos) => {
         const currentPrice = await fetchCurrentPrice(pos.symbol);
-        if (currentPrice === 0) return pos;
+        if (currentPrice <= 0) return { position: pos, keep: true };
 
-        let pnl = 0;
-        if (pos.side === 'Buy') {
-          pnl = (currentPrice - pos.entry_price) * pos.quantity * pos.leverage;
-        } else {
-          pnl = (pos.entry_price - currentPrice) * pos.quantity * pos.leverage;
+        const reason = demoExitReason(pos.side, currentPrice, pos.stop_loss, pos.take_profit);
+        if (reason) {
+          await settlePosition(pos, currentPrice, reason);
+          return { position: pos, keep: false };
         }
 
-        // Verificar SL/TP
-        let shouldClose = false;
-        let closeReason = '';
+        const pnl = calculateDemoPnl(
+          pos.side, pos.entry_price, currentPrice, pos.quantity, pos.leverage,
+        );
+        return { position: { ...pos, current_price: currentPrice, pnl }, keep: true };
+      }));
 
-        if (pos.stop_loss) {
-          if (pos.side === 'Buy' && currentPrice <= pos.stop_loss) {
-            shouldClose = true;
-            closeReason = 'stop_loss';
-          } else if (pos.side === 'Sell' && currentPrice >= pos.stop_loss) {
-            shouldClose = true;
-            closeReason = 'stop_loss';
-          }
-        }
-
-        if (pos.take_profit) {
-          if (pos.side === 'Buy' && currentPrice >= pos.take_profit) {
-            shouldClose = true;
-            closeReason = 'take_profit';
-          } else if (pos.side === 'Sell' && currentPrice <= pos.take_profit) {
-            shouldClose = true;
-            closeReason = 'take_profit';
-          }
-        }
-
-        if (shouldClose) {
-          await closeDemoPosition(pos.id, closeReason);
-          return null;
-        }
-
-        return { ...pos, current_price: currentPrice, pnl };
-      })
-    );
-
-    setDemoPositions(updatedPositions.filter((p): p is DemoPosition => p !== null));
-  }, [isDemoMode, demoPositions, fetchCurrentPrice, closeDemoPosition]);
-
-  // Calcular PnL não realizado
-  const unrealizedPnL = demoPositions.reduce((sum, pos) => sum + pos.pnl, 0);
-
-  // Carregar conta demo ao ativar modo
-  useEffect(() => {
-    if (isDemoMode) {
-      loadDemoAccount();
+      setPositions(results.filter((r) => r.keep).map((r) => r.position));
+    } finally {
+      syncingRef.current = false;
     }
+  }, [fetchCurrentPrice, isDemoMode, setPositions, settlePosition]);
+
+  const unrealizedPnL = useMemo(
+    () => demoPositions.reduce((sum, pos) => sum + pos.pnl, 0),
+    [demoPositions],
+  );
+
+  useEffect(() => {
+    if (isDemoMode) void loadDemoAccount();
   }, [isDemoMode, loadDemoAccount]);
 
-  // Auto-update de posições a cada 10s
+  // Saídas simuladas: o robô permanece forceMount entre abas; este timer é o
+  // responsável por cruzar SL/TP mesmo quando nenhum ciclo novo é disparado.
   useEffect(() => {
     if (!isDemoMode || demoPositions.length === 0) return;
-    
-    const interval = setInterval(updateDemoPositions, 10000);
+    const interval = setInterval(() => void updateDemoPositions(), 10000);
     return () => clearInterval(interval);
   }, [isDemoMode, demoPositions.length, updateDemoPositions]);
 
+  const resetDemoAccount = useCallback(async () => {
+    const userId = await getUserId();
+    const closedAt = new Date().toISOString();
+    const openPositions = positionsRef.current;
+
+    if (openPositions.length > 0) {
+      for (let i = 0; i < openPositions.length; i += 100) {
+        const batch = openPositions.slice(i, i + 100);
+        const { error } = await supabase
+          .from('demo_positions')
+          .update({ status: 'closed', close_reason: 'reset', closed_at: closedAt, pnl: 0 })
+          .eq('user_id', userId)
+          .in('id', batch.map((p) => p.id));
+        if (error) console.warn(`⚠️ [DEMO] Falha ao limpar posições: ${error.message}`);
+      }
+      openPositions.forEach((p) => forgetDemoLeverage(p.id));
+    }
+
+    if (demoAccount) {
+      const { error } = await supabase
+        .from('demo_accounts')
+        .update({ current_balance: DEMO_INITIAL_BALANCE, total_pnl: 0 })
+        .eq('id', demoAccount.id);
+      if (error) console.warn(`⚠️ [DEMO] Falha ao resetar conta: ${error.message}`);
+    }
+
+    accountRef.current = { balance: DEMO_INITIAL_BALANCE, pnl: 0 };
+    setDemoBalance(DEMO_INITIAL_BALANCE);
+    setDemoPnL(0);
+    setPositions([]);
+    toast({ title: '🔄 Demo resetada', description: `Saldo restaurado para $${DEMO_INITIAL_BALANCE.toFixed(2)}` });
+  }, [demoAccount, setPositions, toast]);
+
   return {
-    // Estado
     demoBalance,
     demoPositions,
     demoAccount,
     demoPnL,
     unrealizedPnL,
     demoPositionsCount: demoPositions.length,
-    
-    // Ações
+
     loadDemoAccount,
     openDemoPosition,
     closeDemoPosition,
     updateDemoPositions,
     fetchCurrentPrice,
-    
-    // Reset
-    resetDemoAccount: async () => {
-      if (demoAccount) {
-        await supabase.from('demo_accounts').update({
-          current_balance: 20,
-          total_pnl: 0
-        }).eq('id', demoAccount.id);
-        
-        setDemoBalance(20);
-        setDemoPnL(0);
-        setDemoPositions([]);
-        
-        toast({ title: '🔄 Demo Reset', description: 'Conta demo restaurada para $20' });
-      }
-    }
+    resetDemoAccount,
   };
 };
