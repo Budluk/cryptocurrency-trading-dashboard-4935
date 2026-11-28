@@ -1,5 +1,9 @@
 # Roadmap
 
+## Correções de segurança selecionadas
+- [ ] Restringir leitura de contratos, sinais, ticks e análises B3 e versões de prompts a contas autorizadas
+- [ ] Validar as cinco permissões e atualizar somente os alertas selecionados
+
 ## Concluído em 27/11/2026
 - [x] PR #1 mergeado (`da99e44`); releases `v1.0.0`, `v1.0.1`, `v1.0.2` e `v1.0.3`.
 - [x] Autenticação/RLS, 5 migrations aplicadas, Edge Functions deployadas e segredos configurados.
