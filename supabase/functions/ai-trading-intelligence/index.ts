@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error('AI Trading Intelligence error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+    return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -154,6 +154,7 @@ async function comprehensiveAIAnalysis(symbol: string, bybitTrades: any[], large
     
     // Analisar padrões históricos
     const patterns = await analyzeWinningPatterns(bybitTrades);
+    const historicalPatterns = Array.isArray(patterns.patterns) ? undefined : patterns.patterns;
     
     // Analisar atividade de baleias
     const whaleAnalysis = await analyzeWhaleActivity(largeOrders, symbol);
@@ -180,11 +181,11 @@ Próximo catalisador: ${realtimeNews.nextCatalyst || 'Nenhum identificado'}
 ═══════════════════════════════════════════════════════════════
 
 📊 PADRÕES HISTÓRICOS DO TRADER:
-• Win Rate: ${patterns.patterns?.winRate?.toFixed(1) || 'N/A'}%
-• Profit Factor: ${patterns.patterns?.profitFactor?.toFixed(2) || 'N/A'}
-• Melhores horas UTC: ${patterns.patterns?.bestHours?.slice(0, 3).map((h: any) => h.hour).join(', ') || 'N/A'}
-• Melhor em ${symbol}: ${patterns.patterns?.bestSymbols?.includes(symbol) ? 'SIM ✅' : 'NÃO ❌'}
-• Total trades analisados: ${patterns.patterns?.totalTrades || 0}
+• Win Rate: ${historicalPatterns?.winRate?.toFixed(1) || 'N/A'}%
+• Profit Factor: ${historicalPatterns?.profitFactor?.toFixed(2) || 'N/A'}
+• Melhores horas UTC: ${historicalPatterns?.bestHours?.slice(0, 3).map(h => h.hour).join(', ') || 'N/A'}
+• Melhor em ${symbol}: ${historicalPatterns?.bestSymbols?.some(s => s.symbol === symbol) ? 'SIM ✅' : 'NÃO ❌'}
+• Total trades analisados: ${historicalPatterns?.totalTrades || 0}
 ═══════════════════════════════════════════════════════════════
 
 🎯 SUA ANÁLISE DEVE INCLUIR:
@@ -278,7 +279,7 @@ Responda em JSON VÁLIDO:
     return { error: 'Failed to parse AI response' };
   } catch (error) {
     console.error('❌ Comprehensive analysis error:', error);
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -663,11 +664,11 @@ async function getAITradingSignal(symbol: string, bybitTrades: any[], sentiment:
   if (sentimentAnalysis.sentiment === 'BULLISH') score += 15;
   else if (sentimentAnalysis.sentiment === 'BEARISH') score -= 15;
 
-  const symbolInBest = patterns.patterns.bestSymbols?.some((s: any) => s.symbol === symbol);
+  const symbolInBest = !Array.isArray(patterns.patterns) && patterns.patterns.bestSymbols?.some(s => s.symbol === symbol);
   if (symbolInBest) score += 10;
 
   const currentHour = new Date().getUTCHours();
-  const hourInBest = patterns.patterns.bestHours?.some((h: any) => h.hour === currentHour);
+  const hourInBest = !Array.isArray(patterns.patterns) && patterns.patterns.bestHours?.some(h => h.hour === currentHour);
   if (hourInBest) score += 10;
 
   if (score >= 65) direction = 'BUY';

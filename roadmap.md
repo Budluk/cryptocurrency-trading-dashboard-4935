@@ -1,5 +1,9 @@
 # Roadmap
 
+## Correção dos erros do preview
+- [ ] Corrigir os tipos das análises e o tratamento de erros; validar o painel sem executar ordens
+- [ ] Finalizar projetos após o usuário selecionar quais projetos deseja concluir
+
 ## Correções de segurança selecionadas
 - [x] Restringir leitura de contratos, sinais, ticks e análises B3 e versões de prompts a administradores autenticados, excluindo visitantes
 - [x] Validar as cinco permissões: testes no banco para administrador, conta sem autorização, visitante e serviço interno passaram; nova verificação não detecta os cinco alertas e o gerenciador confirmou sua resolução

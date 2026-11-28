@@ -161,6 +161,14 @@ interface TechnicalData {
   pricePosition: number; // 0-1 where in range
   signal: 'buy' | 'sell' | 'hold';
   score: number;
+  emaCrossover?: 'bullish' | 'bearish' | 'above' | 'below';
+  volumeAboveAvg?: boolean;
+  volumeRatio?: number;
+  isLateral?: boolean;
+  priceAboveVwap?: boolean;
+  priceBelowVwap?: boolean;
+  currentVolume?: number;
+  avgVolume20?: number;
 }
 
 interface MultiTimeframeTechnical {
@@ -186,7 +194,7 @@ async function fetchTechnicalAnalysis(symbol: string): Promise<MultiTimeframeTec
         category: 'linear', symbol, interval: tf, limit 
       });
       
-      const candles = (klineResult?.list || []).map((k: string[]) => ({
+      const candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[] = (klineResult?.list || []).map((k: string[]) => ({
         time: parseInt(k[0]),
         open: parseFloat(k[1]),
         high: parseFloat(k[2]),
@@ -922,7 +930,7 @@ Responda APENAS em JSON válido, sem markdown.`
     console.error('❌ Erro análise:', error);
     return new Response(JSON.stringify({ 
       success: false, 
-      error: error.message 
+      error: error instanceof Error ? error.message : String(error)
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
