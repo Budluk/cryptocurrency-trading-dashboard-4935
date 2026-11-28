@@ -206,6 +206,9 @@ test("Modo demo roda ciclo paper, persiste e nunca envia ordem real", async ({ p
 
   await page.goto("/");
   await page.getByRole("tab", { name: "Robô" }).click();
+  // Aguarda as leituras globais da aba Visão geral: uma get_positions em voo
+  // não pode ser atribuída ao modo demo recém-ativado.
+  await page.waitForTimeout(1500);
   await page.getByRole("switch").first().click();
   afterDemo = true;
 

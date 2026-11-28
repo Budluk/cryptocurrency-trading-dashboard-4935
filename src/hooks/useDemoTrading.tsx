@@ -197,7 +197,10 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     );
     const margin = calculateDemoMargin(position.entry_price, position.quantity, position.leverage);
     const previous = { ...accountRef.current };
-    const balance = Math.max(previous.balance + margin + pnl, 0);
+    // O banco já credita `pnl` em demo_accounts quando o trade é inserido.
+    // Gravar o PnL aqui também dobraria o crédito no saldo.
+    const marginBalance = Math.max(previous.balance + margin, 0);
+    const balance = Math.max(marginBalance + pnl, 0);
     const totalPnl = previous.pnl + pnl;
     const userId = await getUserId();
     const closedAt = new Date().toISOString();
@@ -206,7 +209,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     // Persistimos primeiro: a UI só mostra a posição fechada depois que o
     // ledger estiver consistente. Assim um reload imediato não reabre a posição.
     if (account) {
-      if (!await persistAccount(balance, totalPnl)) return { success: false, pnl };
+      if (!await persistAccount(marginBalance, previous.pnl)) return { success: false, pnl };
 
       // `select` é essencial: um update com zero linhas não retorna erro e
       // deixaria a posição aberta no banco enquanto a UI a remove.

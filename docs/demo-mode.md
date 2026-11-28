@@ -27,7 +27,7 @@ página, o robô volta em demo — nunca em "conta real" por acidente.
 | Posição | `demo_positions` com `status='open'`, stop, take profit e alavancagem local |
 | Saída | `updateDemoPositions` a cada 10 s cruza SL/TP; stop tem precedência |
 | Fechamento | `demo_positions` marcada como `closed` com `close_reason` e `closed_at` |
-| Resultado | margem + PnL devolvidos ao saldo; trade gravado em `demo_trades` |
+| Resultado | margem devolvida na conta, PnL creditado pelo trigger de `demo_trades`; trade gravado em `demo_trades` |
 | Persistência | abertura/fechamento serializados; a linha usa o mesmo `id` da posição da UI, o update exige ao menos uma linha afetada e a UI só muda depois que conta e posição são gravadas |
 | Auditoria | log no console com `mode=DEMO`; nenhuma escrita em `agent_*` |
 | Gráfico | barras de PnL aberto por ativo, comparando Demo (paper) e Real, sem nova chamada à exchange |
