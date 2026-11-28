@@ -20,6 +20,7 @@ página, o robô volta em demo — nunca em "conta real" por acidente.
 
 | Etapa | Comportamento no demo |
 |---|---|
+| Sinal | `planDemoTrade`: direção pela variação 24 h do ticker, stop 0,4 %, take profit 1 % e alavancagem 5x — sem IA paga, horário bloqueado ou filtros históricos |
 | Preço | API pública de tickers da Bybit (sem chave, sem assinatura) |
 | Abertura | `openDemoPosition`: margem = preço × quantidade ÷ alavancagem, debitada do saldo |
 | Posição | `demo_positions` com `status='open'`, stop, take profit e alavancagem local |
@@ -47,7 +48,9 @@ para testar o demo.
 
 ## Validação
 
-- `src/lib/demoTrading.test.ts`: margem, PnL, precedência do stop e persistência.
-- `e2e/dashboard.spec.ts`: liga o demo, roda um ciclo, recarrega e afirma que
-  **nenhum** `place_order`/`set_trading_stop` foi enviado.
+- `src/lib/demoTrading.test.ts`: plano determinístico do ciclo, margem, PnL,
+  precedência do stop e persistência.
+- `e2e/dashboard.spec.ts`: liga o demo, roda um ciclo, confirma a posição paper,
+  fecha a posição, recarrega e afirma que **nenhum** `place_order`,
+  `set_trading_stop`, `get_positions` ou `get_balance` foi enviado depois do demo.
 - `dry_run` do chat continua separado: ele não grava nada e não abre ordens.

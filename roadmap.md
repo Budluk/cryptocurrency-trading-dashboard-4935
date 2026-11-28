@@ -46,7 +46,8 @@
 ## Modo demo operacional (implementado em 27/11/2026)
 - [x] Modo persistente (`trading-demo-mode`): um reload não restaura o robô em conta real; badge **Demo (paper)** e botão **Rodar 1 ciclo** para teste imediato.
 - [x] Ledger paper consistente: margem debitada na abertura, `demo_positions` marcada como fechada com `close_reason`, `demo_trades` com PnL realizado, saldo/PnL gravados com checagem de erro e reset que fecha posições. Alavancagem preservada no `localStorage` (a tabela não tem essa coluna).
-- [x] Isolamento total: demo não chama `place_order`, `set_trading_stop`, smart exits, pyramiding, ordens armadas, limpeza de órfãs, sincronização de PnL real nem leitura de saldo real na inicialização.
+- [x] Isolamento total: demo não chama `place_order`, `set_trading_stop`, smart exits, pyramiding, ordens armadas, limpeza de órfãs, sincronização de PnL real nem leitura de saldo real/posições na inicialização (inclusive `useManualTradeTracker`).
+- [x] Ciclo demo determinístico: `Rodar 1 ciclo` funciona com o robô parado, ignora horários bloqueados e não depende de crédito de IA; sinal, SL/TP e margem vêm de `planDemoTrade`.
 - [x] Regras puras e testes em `src/lib/demoTrading.ts`/`.test.ts` (margem, PnL, stop antes de take profit, persistência) e E2E que confirma zero ordens reais no demo. Manual em `docs/demo-mode.md`.
 - [ ] Validar CI/push e productionização após a aprovação explícita do usuário (nova release fora do escopo da `v1.0.5`).
 

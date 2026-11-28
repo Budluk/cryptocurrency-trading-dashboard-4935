@@ -15,6 +15,73 @@ const DEMO_LEVERAGE_PREFIX = "demo-position-leverage:";
 export type DemoSide = "Buy" | "Sell";
 export type DemoExitReason = "stop_loss" | "take_profit";
 
+export interface DemoTradePlan {
+  symbol: string;
+  side: DemoSide;
+  price: number;
+  quantity: number;
+  leverage: number;
+  stopLoss: number;
+  takeProfit: number;
+  confidence: number;
+  margin: number;
+  usdSize: number;
+}
+
+const DEMO_LEVERAGE = 5;
+const DEMO_STOP_PCT = 0.004; // 0,4% — dentro do teto de risco de 0,5%
+const DEMO_TAKE_PROFIT_PCT = 0.01; // 1% — R:R 2,5:1
+
+/**
+ * Plano determinístico de um ciclo demo. Não consulta IA, horário, saldo real
+ * nem exchange: apenas transforma o preço público recebido em uma ordem paper.
+ */
+export function planDemoTrade(params: {
+  symbol: string;
+  price: number;
+  changePct?: number;
+  balance: number;
+  openSymbols?: string[];
+}): DemoTradePlan | null {
+  const { symbol, price, changePct = 0, balance, openSymbols = [] } = params;
+  if (!symbol || !Number.isFinite(price) || price <= 0) return null;
+  if (!Number.isFinite(balance) || balance <= 0) return null;
+  if (openSymbols.includes(symbol)) return null;
+
+  const available = demoAvailableMargin(balance);
+  if (available <= 0) return null;
+
+  const side: DemoSide = changePct >= 0 ? "Buy" : "Sell";
+  const minQty = price > 1000 ? 0.001 : 0.01;
+  const step = minQty;
+  const targetMargin = Math.min(available * 0.5, 5);
+  const rawQty = (targetMargin * DEMO_LEVERAGE) / price;
+  const quantity = Number(Math.max(minQty, Math.floor(rawQty / step) * step).toFixed(6));
+
+  const margin = calculateDemoMargin(price, quantity, DEMO_LEVERAGE);
+  if (margin <= 0 || margin > available) return null;
+
+  const stopLoss = side === "Buy"
+    ? price * (1 - DEMO_STOP_PCT)
+    : price * (1 + DEMO_STOP_PCT);
+  const takeProfit = side === "Buy"
+    ? price * (1 + DEMO_TAKE_PROFIT_PCT)
+    : price * (1 - DEMO_TAKE_PROFIT_PCT);
+
+  return {
+    symbol,
+    side,
+    price,
+    quantity,
+    leverage: DEMO_LEVERAGE,
+    stopLoss,
+    takeProfit,
+    confidence: 70,
+    margin,
+    usdSize: price * quantity,
+  };
+}
+
 /** PnL de uma posição demo, já com alavancagem aplicada. */
 export function calculateDemoPnl(
   side: DemoSide,

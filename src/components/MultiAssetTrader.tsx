@@ -34,7 +34,7 @@ import { RiskPresetSelector } from "./RiskPresetSelector";
 import { GateAuditTable } from "./GateAuditTable";
 import { getRiskRule, getCurrentPreset } from "@/config/qualityRiskConfig";
 import { recordGateAudit } from "@/lib/gateAudit";
-import { readDemoMode, writeDemoMode } from "@/lib/demoTrading";
+import { planDemoTrade, readDemoMode, writeDemoMode } from "@/lib/demoTrading";
 
 interface Trade {
   symbol: string;
@@ -69,6 +69,7 @@ export const MultiAssetTrader = () => {
   
   // 🆕 Hook Demo Trading
   const {
+    demoAccount,
     demoBalance,
     demoPositions,
     demoPnL,
@@ -148,7 +149,7 @@ export const MultiAssetTrader = () => {
   } = useMarketIntelligence();
   
   // 🎓 Manual Trade Tracker - IA aprende com todas as suas operações
-  const { markAsBotOpened, manualTradesCount } = useManualTradeTracker(isTestnet, true);
+  const { markAsBotOpened, manualTradesCount } = useManualTradeTracker(isTestnet, true, isDemoMode);
   
   // 🔄 Auto ML Sync - Sincroniza automaticamente com histórico Bybit
   const { 
@@ -609,24 +610,128 @@ export const MultiAssetTrader = () => {
     }
     tradingLockRef.current = true;
     try {
-      // 🆕 No modo demo, usar saldo demo e pular sincronização Bybit
-      let balanceNow: number;
-      let topVolNow: string[];
-      
+      // 🧪 DEMO: ciclo determinístico e isolado. Não depende de IA paga,
+      // horário, filtros históricos nem de qualquer chamada autenticada.
       if (isDemoMode) {
-        balanceNow = demoBalance;
-        topVolNow = []; // Demo não precisa top volatile da Bybit
-        console.log(`💰 [DEMO] Saldo: $${demoBalance.toFixed(2)} | Posições: ${demoPositionsCount}`);
-      } else {
-        balanceNow = await syncBybitBalance();
-        await syncOpenPositions();
-        topVolNow = await fetchTop10VolatileAssets();
-        
-        // 🛡️ EARLY EXIT: Se saldo disponível < $3, não faz sentido continuar o ciclo
-        if (balanceNow < 3) {
-          console.log(`🛑 Saldo disponível muito baixo: $${balanceNow.toFixed(2)} - pulando ciclo (margem toda em uso)`);
+        const finishDemoCycle = (opened: number, analyzed: number) => {
+          setGateDiagnostics({
+            skipCounts: {},
+            totalAnalyzed: analyzed,
+            openedThisCycle: opened,
+            lastCycleAt: new Date(),
+          });
+          setCycleCount(prev => prev + 1);
+        };
+
+        let account = demoAccount;
+        if (!account) account = await loadDemoAccount();
+        if (!account) {
+          console.error('❌ [DEMO] Conta demo não carregada - ciclo abortado');
+          toast({ title: '⚠️ Demo não pronta', description: 'Aguarde o carregamento da conta demo e tente novamente.', variant: 'destructive' });
           return;
         }
+
+        const { data: tickersData, error: tickersError } = await supabase.functions.invoke('bybit-trading', {
+          body: { action: 'get_tickers', isTestnet: false, params: { category: 'linear' } }
+        });
+        const tickers = Array.isArray(tickersData?.data)
+          ? tickersData.data
+          : (tickersData?.data?.list || []);
+        if (tickersError || !tickersData?.success || tickers.length === 0) {
+          console.warn('⚠️ [DEMO] Ticker público indisponível; tentando preço de referência', tickersError);
+        }
+
+        const openSymbols = demoPositions.map(p => p.symbol);
+        const candidates = tickers
+          .map((t: any) => ({
+            symbol: String(t.symbol || ''),
+            price: Number(t.lastPrice || 0),
+            changePct: Number(t.price24hPcnt || 0) * 100,
+            volume: Number(t.turnover24h || 0),
+          }))
+          .filter((t: { symbol: string; price: number }) =>
+            t.symbol.endsWith('USDT') && t.price > 0 && !openSymbols.includes(t.symbol))
+          .sort((a: { symbol: string; volume: number }, b: { symbol: string; volume: number }) => {
+            const rank = (s: string) => (s === 'BTCUSDT' || s === 'ETHUSDT' ? 0 : 1);
+            return rank(a.symbol) - rank(b.symbol) || b.volume - a.volume;
+          })
+          .slice(0, 10);
+
+        let chosen = candidates[0];
+        if (!chosen) {
+          const fallbackPrice = await fetchCurrentPrice('BTCUSDT');
+          if (fallbackPrice > 0 && !openSymbols.includes('BTCUSDT')) {
+            chosen = { symbol: 'BTCUSDT', price: fallbackPrice, changePct: 0, volume: 0 };
+          }
+        }
+
+        const plan = chosen
+          ? planDemoTrade({
+              symbol: chosen.symbol,
+              price: chosen.price,
+              changePct: chosen.changePct,
+              balance: demoBalance,
+              openSymbols,
+            })
+          : null;
+
+        if (!plan) {
+          console.warn('⚠️ [DEMO] Nenhum ativo disponível para o ciclo simulado');
+          toast({ title: '⚠️ Demo sem ativo', description: 'Não foi possível obter um preço público para simular a ordem.', variant: 'destructive' });
+          finishDemoCycle(0, candidates.length);
+          return;
+        }
+
+        console.log(`🧪 [DEMO] Sinal ${plan.side} ${plan.symbol} @ $${plan.price.toFixed(4)} | confiança ${plan.confidence}% | sem ordem real`);
+        const demoResult = await openDemoPosition({
+          symbol: plan.symbol,
+          side: plan.side,
+          quantity: plan.quantity,
+          leverage: plan.leverage,
+          stopLoss: plan.stopLoss,
+          takeProfit: plan.takeProfit,
+          confidence: plan.confidence,
+          price: plan.price,
+        });
+
+        if (!demoResult.success) {
+          console.error(`❌ [DEMO] Falha na ordem simulada: ${demoResult.error}`);
+          toast({ title: '❌ Demo não abriu posição', description: demoResult.error, variant: 'destructive' });
+          finishDemoCycle(0, 1);
+          return;
+        }
+
+        setActiveTrades(prev => [{
+          symbol: plan.symbol,
+          action: plan.side,
+          confidence: plan.confidence,
+          leverage: plan.leverage,
+          usdSize: plan.usdSize,
+          timestamp: new Date().toISOString(),
+        }, ...prev].slice(0, 50));
+        console.log(`✅ [DEMO] TRADE: ${JSON.stringify({
+          symbol: plan.symbol, side: plan.side, leverage: plan.leverage,
+          qty: plan.quantity, stopLoss: plan.stopLoss, takeProfit: plan.takeProfit,
+          mode: 'DEMO', orderId: demoResult.data?.orderId,
+        })}`);
+        toast({
+          title: '🧪 Demo: ordem simulada',
+          description: `${plan.side} ${plan.symbol} @ $${plan.price.toFixed(4)} · SL/TP simulados`,
+        });
+        finishDemoCycle(1, 1);
+        return;
+      }
+
+      // Modo real: sincronizar saldo/posições e filtros da exchange.
+      // O ramo demo já retornou acima, então não há leitura autenticada aqui.
+      let balanceNow = await syncBybitBalance();
+      await syncOpenPositions();
+      const topVolNow = await fetchTop10VolatileAssets();
+      
+      // 🛡️ EARLY EXIT: Se saldo disponível < $3, não faz sentido continuar o ciclo
+      if (balanceNow < 3) {
+        console.log(`🛑 Saldo disponível muito baixo: $${balanceNow.toFixed(2)} - pulando ciclo (margem toda em uso)`);
+        return;
       }
       
       // 🆕 Buscar tendência do BTC para correlação com alts
@@ -2009,7 +2114,7 @@ export const MultiAssetTrader = () => {
               </Label>
               <p className="text-xs text-muted-foreground">
                 {isDemoMode
-                  ? `Saldo virtual: $${demoBalance.toFixed(2)} | PnL: $${demoPnL.toFixed(2)} · sem ordens reais`
+                  ? `Saldo virtual: $${demoBalance.toFixed(2)} | PnL: $${demoPnL.toFixed(2)} | Posições: ${demoPositionsCount}/10 · sem ordens reais`
                   : 'Simular sem dinheiro real'}
               </p>
             </div>
@@ -2123,6 +2228,25 @@ export const MultiAssetTrader = () => {
               </>
             )}
             <Progress value={(isDemoMode ? demoPositionsCount / 10 : openPositionsCount / maxOpenPositions) * 100} className="h-2 mt-2" />
+            {isDemoMode && demoPositions.length > 0 && (
+              <div className="space-y-1 pt-2">
+                {demoPositions.map(position => (
+                  <div key={position.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-mono">
+                      {position.side} {position.symbol} · {position.leverage}x · ${position.pnl.toFixed(2)}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => void closeDemoPosition(position.id, 'manual')}
+                    >
+                      Fechar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

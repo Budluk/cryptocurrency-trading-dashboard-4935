@@ -7,6 +7,7 @@ import {
   demoAvailableMargin,
   demoExitReason,
   forgetDemoLeverage,
+  planDemoTrade,
   readDemoMode,
   recallDemoLeverage,
   rememberDemoLeverage,
@@ -30,6 +31,25 @@ describe('demoTrading', () => {
   test('limita a margem disponível a 95% do saldo', () => {
     expect(demoAvailableMargin(DEMO_INITIAL_BALANCE)).toBeCloseTo(19);
     expect(demoAvailableMargin(-1)).toBe(0);
+  });
+
+  test('plana um ciclo demo sem depender de IA, horário ou conta real', () => {
+    const buy = planDemoTrade({ symbol: 'BTCUSDT', price: 50000, changePct: 1.5, balance: 20 });
+    expect(buy).not.toBeNull();
+    expect(buy!.side).toBe('Buy');
+    expect(buy!.leverage).toBe(5);
+    expect(buy!.quantity).toBeGreaterThan(0);
+    expect(buy!.margin).toBeLessThanOrEqual(demoAvailableMargin(20));
+    expect(buy!.stopLoss).toBeCloseTo(49800, 2);
+    expect(buy!.takeProfit).toBeCloseTo(50500, 2);
+
+    const sell = planDemoTrade({ symbol: 'ETHUSDT', price: 3000, changePct: -1, balance: 20 });
+    expect(sell!.side).toBe('Sell');
+    expect(sell!.stopLoss).toBeGreaterThan(3000);
+    expect(sell!.takeProfit).toBeLessThan(3000);
+
+    expect(planDemoTrade({ symbol: 'BTCUSDT', price: 50000, balance: 20, openSymbols: ['BTCUSDT'] })).toBeNull();
+    expect(planDemoTrade({ symbol: 'BTCUSDT', price: 0, balance: 20 })).toBeNull();
   });
 
   test('stop tem precedência sobre take profit no mesmo tick', () => {

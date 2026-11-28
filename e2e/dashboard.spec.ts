@@ -149,9 +149,10 @@ test("Simular ordem envia dry_run=true e nunca uma ordem real", async ({ page })
   expect(JSON.stringify(order)).not.toMatch(/api[_-]?key|api[_-]?secret|token/i);
 });
 
-test("Modo demo persiste e nunca envia place_order real", async ({ page }) => {
+test("Modo demo roda ciclo paper, persiste e nunca envia ordem real", async ({ page }) => {
   type BybitBody = { action?: string; params?: Record<string, unknown> };
-  const sentBodies: BybitBody[] = [];
+  const sent: Array<{ body: BybitBody; afterDemo: boolean }> = [];
+  let afterDemo = false;
 
   await page.route(BYBIT_TRADING_ROUTE, async (route) => {
     const request = route.request();
@@ -161,8 +162,16 @@ test("Modo demo persiste e nunca envia place_order real", async ({ page }) => {
     } catch {
       // Sem corpo: apenas health check.
     }
-    sentBodies.push(body);
+    sent.push({ body, afterDemo });
 
+    const ticker = {
+      symbol: "BTCUSDT",
+      lastPrice: "50000",
+      price24hPcnt: "1.5",
+      turnover24h: "5000000",
+      bid1Price: "49999",
+      ask1Price: "50001",
+    };
     const response =
       body.action === "get_instruments"
         ? {
@@ -176,20 +185,8 @@ test("Modo demo persiste e nunca envia place_order real", async ({ page }) => {
               },
             ],
           }
-        : body.action === "get_ticker"
-          ? {
-              success: true,
-              data: [
-                {
-                  symbol: "BTCUSDT",
-                  lastPrice: "50000",
-                  price24hPcnt: "1.5",
-                  turnover24h: "5000000",
-                  bid1Price: "49999",
-                  ask1Price: "50001",
-                },
-              ],
-            }
+        : body.action === "get_ticker" || body.action === "get_tickers"
+          ? { success: true, data: [ticker] }
           : { success: false, error: "stubbed by E2E" };
 
     await route.fulfill({
@@ -210,6 +207,7 @@ test("Modo demo persiste e nunca envia place_order real", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("tab", { name: "Robô" }).click();
   await page.getByRole("switch").first().click();
+  afterDemo = true;
 
   await expect(page.getByText("Modo Demo (paper)")).toBeVisible();
   await expect
@@ -217,14 +215,24 @@ test("Modo demo persiste e nunca envia place_order real", async ({ page }) => {
     .toBe("true");
 
   await page.getByRole("button", { name: /Rodar 1 ciclo/ }).click();
-  await page.waitForTimeout(2500);
+  await expect(page.getByText(/Posições: 1\/10/)).toBeVisible({ timeout: 15000 });
 
-  expect(sentBodies.filter((body) => body.action === "place_order")).toEqual([]);
-  expect(sentBodies.filter((body) => body.action === "set_trading_stop")).toEqual([]);
+  const demoBodies = sent.filter((entry) => entry.afterDemo).map((entry) => entry.body);
+  expect(demoBodies.some((body) => body.action === "get_tickers")).toBe(true);
+  expect(demoBodies.filter((body) => body.action === "place_order")).toEqual([]);
+  expect(demoBodies.filter((body) => body.action === "set_trading_stop")).toEqual([]);
+  expect(demoBodies.filter((body) => body.action === "get_positions")).toEqual([]);
+  expect(demoBodies.filter((body) => body.action === "get_balance")).toEqual([]);
+  expect(demoBodies.filter((body) => body.action === "set_leverage")).toEqual([]);
+
+  // Fechar a posição paper completa o ciclo: PnL realizado volta para o saldo.
+  await page.locator("summary").filter({ hasText: "Limites e gestão de risco" }).click();
+  await page.getByRole("button", { name: "Fechar" }).first().click();
+  await expect(page.getByText(/Posições: 0\/10/)).toBeVisible({ timeout: 15000 });
 
   // Recarregar não pode restaurar o robô em modo real.
   await page.reload();
   await page.getByRole("tab", { name: "Robô" }).click();
   await expect(page.getByText("Demo (paper)", { exact: true }).first()).toBeVisible();
-  expect(sentBodies.filter((body) => body.action === "place_order")).toEqual([]);
+  expect(sent.filter((entry) => entry.body.action === "place_order")).toEqual([]);
 });

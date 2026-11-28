@@ -30,7 +30,11 @@ interface TrackedPosition {
  * 🧠 Hook para rastrear operações manuais do usuário e alimentar o sistema de ML
  * Detecta quando o usuário abre uma posição manualmente na Bybit e registra para aprendizado
  */
-export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = true) => {
+export const useManualTradeTracker = (
+  isTestnet: boolean,
+  isEnabled: boolean = true,
+  isDemoMode: boolean = false,
+) => {
   const { toast } = useToast();
   const { addTradeToBuffer } = useContinuousMLTraining();
   
@@ -195,7 +199,8 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
 
   // 🔄 Sincronizar posições da Bybit periodicamente
   const syncPositions = useCallback(async () => {
-    if (!isEnabled) return;
+    // O ledger demo não consulta a conta real: nenhum get_positions em paper.
+    if (!isEnabled || isDemoMode) return;
     
     try {
       const data = await invokeBybit('get_positions', { category: 'linear', settleCoin: 'USDT' }, { isTestnet });
@@ -212,11 +217,11 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
     } catch (err) {
       console.error('Erro ao sincronizar posições para tracking:', err);
     }
-  }, [isEnabled, isTestnet, detectManualTrades]);
+  }, [isEnabled, isDemoMode, isTestnet, detectManualTrades]);
 
   // ⏰ Iniciar monitoramento
   useEffect(() => {
-    if (!isEnabled) return;
+    if (!isEnabled || isDemoMode) return;
     
     console.log('🎓 Manual Trade Tracker ativado - IA vai aprender com suas operações!');
     
@@ -230,7 +235,7 @@ export const useManualTradeTracker = (isTestnet: boolean, isEnabled: boolean = t
       clearInterval(interval);
       console.log('🎓 Manual Trade Tracker desativado');
     };
-  }, [isEnabled, syncPositions]);
+  }, [isEnabled, isDemoMode, syncPositions]);
 
   return {
     markAsBotOpened,

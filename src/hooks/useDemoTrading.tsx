@@ -48,6 +48,8 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
   const priceCache = useRef<Map<string, number>>(new Map());
   const accountRef = useRef({ balance: DEMO_INITIAL_BALANCE, pnl: 0 });
+  const demoAccountRef = useRef<DemoAccount | null>(null);
+  const loadTokenRef = useRef(0); // evita que um load antigo sobrescreva posições recém-abertas
   const positionsRef = useRef<DemoPosition[]>([]);
   const syncingRef = useRef(false);
 
@@ -57,14 +59,15 @@ export const useDemoTrading = (isDemoMode: boolean) => {
   }, []);
 
   const persistAccount = useCallback(async (balance: number, pnl: number) => {
-    if (!demoAccount) return;
+    const account = demoAccountRef.current;
+    if (!account) return;
     const { error } = await supabase
       .from('demo_accounts')
       .update({ current_balance: balance, total_pnl: pnl })
-      .eq('id', demoAccount.id);
+      .eq('id', account.id);
 
     if (error) console.warn(`⚠️ [DEMO] Falha ao persistir conta: ${error.message}`);
-  }, [demoAccount]);
+  }, []);
 
   /** Aplica deltas sem sofrer com closures antigas e grava o saldo no banco. */
   const applyAccountDelta = useCallback(async (balanceDelta: number, pnlDelta: number) => {
@@ -81,6 +84,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
   const loadDemoAccount = useCallback(async () => {
     if (!isDemoMode) return null;
 
+    const token = ++loadTokenRef.current;
     const userId = await getUserId();
     console.log(`🎮 [DEMO] Carregando conta demo para user: ${userId}`);
 
@@ -108,6 +112,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
       if (insertError) {
         console.warn(`⚠️ [DEMO] Erro ao criar conta: ${insertError.message}; usando conta local.`);
+        demoAccountRef.current = null;
         accountRef.current = { balance: DEMO_INITIAL_BALANCE, pnl: 0 };
         setDemoBalance(DEMO_INITIAL_BALANCE);
         setDemoPnL(0);
@@ -117,6 +122,8 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       account = newAccount;
     }
 
+    if (token !== loadTokenRef.current) return account;
+    demoAccountRef.current = account;
     setDemoAccount(account);
     accountRef.current = {
       balance: Number(account.current_balance) || DEMO_INITIAL_BALANCE,
@@ -132,6 +139,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       .eq('status', 'open');
 
     if (positionsError) console.warn(`⚠️ [DEMO] Erro ao carregar posições: ${positionsError.message}`);
+    if (token !== loadTokenRef.current) return account;
 
     const mapped: DemoPosition[] = (positions || []).map((p) => {
       const entry = Number(p.entry_price) || 0;
@@ -182,6 +190,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     exitPrice: number,
     reason: string,
   ): Promise<{ success: boolean; pnl: number }> => {
+    loadTokenRef.current += 1;
     const pnl = calculateDemoPnl(
       position.side, position.entry_price, exitPrice, position.quantity, position.leverage,
     );
@@ -193,8 +202,9 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
     const userId = await getUserId();
     const closedAt = new Date().toISOString();
+    const account = demoAccountRef.current;
 
-    if (demoAccount) {
+    if (account) {
       const { error: closeError } = await supabase
         .from('demo_positions')
         .update({
@@ -211,7 +221,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
       const { error: tradeError } = await supabase.from('demo_trades').insert({
         user_id: userId,
-        demo_account_id: demoAccount.id,
+        demo_account_id: account.id,
         symbol: position.symbol,
         side: position.side,
         entry_price: position.entry_price,
@@ -225,7 +235,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
 
     console.log(`📊 [DEMO] ${position.symbol} fechada (${reason}) | PnL: $${pnl.toFixed(2)}`);
     return { success: true, pnl };
-  }, [applyAccountDelta, demoAccount, setPositions]);
+  }, [applyAccountDelta, setPositions]);
 
   const openDemoPosition = useCallback(async (params: {
     symbol: string;
@@ -235,10 +245,16 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     stopLoss?: number;
     takeProfit?: number;
     confidence?: number;
+    /** Preço público já obtido no ciclo; evita uma segunda chamada de rede. */
+    price?: number;
   }): Promise<{ success: boolean; data?: { orderId: string; price: number; qty: number }; error?: string }> => {
-    if (!isDemoMode || !demoAccount) return { success: false, error: 'Modo demo não ativo' };
+    loadTokenRef.current += 1;
+    const account = demoAccountRef.current;
+    if (!isDemoMode || !account) return { success: false, error: 'Modo demo não ativo' };
 
-    const currentPrice = await fetchCurrentPrice(params.symbol);
+    const currentPrice = params.price && params.price > 0
+      ? params.price
+      : await fetchCurrentPrice(params.symbol);
     if (currentPrice <= 0) return { success: false, error: 'Não foi possível obter preço atual' };
 
     const marginRequired = calculateDemoMargin(currentPrice, params.quantity, params.leverage);
@@ -267,7 +283,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     const userId = await getUserId();
     const { error } = await supabase.from('demo_positions').insert({
       user_id: userId,
-      demo_account_id: demoAccount.id,
+      demo_account_id: account.id,
       symbol: newPosition.symbol,
       side: newPosition.side,
       entry_price: newPosition.entry_price,
@@ -286,7 +302,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       success: true,
       data: { orderId: newPosition.id, price: currentPrice, qty: newPosition.quantity },
     };
-  }, [applyAccountDelta, demoAccount, fetchCurrentPrice, isDemoMode, setPositions]);
+  }, [applyAccountDelta, fetchCurrentPrice, isDemoMode, setPositions]);
 
   const closeDemoPosition = useCallback(async (
     positionId: string,
@@ -347,6 +363,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
   }, [isDemoMode, demoPositions.length, updateDemoPositions]);
 
   const resetDemoAccount = useCallback(async () => {
+    loadTokenRef.current += 1;
     const userId = await getUserId();
     const closedAt = new Date().toISOString();
     const openPositions = positionsRef.current;
@@ -364,11 +381,12 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       openPositions.forEach((p) => forgetDemoLeverage(p.id));
     }
 
-    if (demoAccount) {
+    const account = demoAccountRef.current;
+    if (account) {
       const { error } = await supabase
         .from('demo_accounts')
         .update({ current_balance: DEMO_INITIAL_BALANCE, total_pnl: 0 })
-        .eq('id', demoAccount.id);
+        .eq('id', account.id);
       if (error) console.warn(`⚠️ [DEMO] Falha ao resetar conta: ${error.message}`);
     }
 
@@ -377,7 +395,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     setDemoPnL(0);
     setPositions([]);
     toast({ title: '🔄 Demo resetada', description: `Saldo restaurado para $${DEMO_INITIAL_BALANCE.toFixed(2)}` });
-  }, [demoAccount, setPositions, toast]);
+  }, [setPositions, toast]);
 
   return {
     demoBalance,
