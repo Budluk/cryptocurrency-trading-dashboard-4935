@@ -35,6 +35,7 @@ import { GateAuditTable } from "./GateAuditTable";
 import { getRiskRule, getCurrentPreset } from "@/config/qualityRiskConfig";
 import { recordGateAudit } from "@/lib/gateAudit";
 import { planDemoTrade, readDemoMode, writeDemoMode } from "@/lib/demoTrading";
+import { OpenPositionsChart } from "./OpenPositionsChart";
 
 interface Trade {
   symbol: string;
@@ -52,6 +53,10 @@ export const MultiAssetTrader = () => {
   // Modo demo persistente: um reload nunca pode voltar para "conta real".
   const initialDemoModeRef = useRef(readDemoMode());
   const [isDemoMode, setIsDemoMode] = useState(() => initialDemoModeRef.current);
+  // Ref sincronizada no render: a inicialização assíncrona precisa enxergar o
+  // toggle de demo imediatamente, antes que uma leitura real chegue a ser enviada.
+  const isDemoModeRef = useRef(isDemoMode);
+  isDemoModeRef.current = isDemoMode;
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [totalPnL, setTotalPnL] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
@@ -264,10 +269,12 @@ export const MultiAssetTrader = () => {
     const init = async () => {
       console.log('🔄 Inicializando trader...');
       // No demo não lemos nem a conta real: saldo e posições vêm do ledger paper.
-      if (!initialDemoModeRef.current) {
-        await syncBybitBalance();
-        await syncOpenPositions();
-        await fetchTop10VolatileAssets();
+      // Cada chamada é revalidada porque o toggle pode acontecer enquanto a
+      // inicialização assíncrona ainda está em voo.
+      if (!isDemoModeRef.current) {
+        if (!isDemoModeRef.current) await syncBybitBalance();
+        if (!isDemoModeRef.current) await syncOpenPositions();
+        if (!isDemoModeRef.current) await fetchTop10VolatileAssets();
       } else {
         console.log('🎮 [DEMO] Sincronização com a exchange real ignorada');
       }
@@ -2154,6 +2161,28 @@ export const MultiAssetTrader = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Gráfico único com as operações abertas dos dois modos */}
+        <div className="mb-4">
+          <OpenPositionsChart
+            demoPositions={demoPositions.map(position => ({
+              symbol: position.symbol,
+              pnl: position.pnl,
+              side: position.side,
+              leverage: position.leverage,
+              entryPrice: position.entry_price,
+              currentPrice: position.current_price,
+            }))}
+            realPositions={openPositions.map(position => ({
+              symbol: position.symbol,
+              pnl: Number(position.unrealized_pnl) || 0,
+              side: position.side,
+              leverage: position.leverage,
+              entryPrice: position.entry_price,
+              currentPrice: position.current_price,
+            }))}
+          />
         </div>
 
         {/* Controls */}

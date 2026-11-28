@@ -9,7 +9,8 @@ real: sinal → decisão → ordem simulada → posição → stop/take profit �
 2. O saldo virtual começa em **$20** (ou usa o saldo já existente da conta demo).
 3. Clique em **Iniciar robô** para o loop de 60 s, ou em **Rodar 1 ciclo** para
    disparar um ciclo imediato enquanto testa.
-4. Acompanhe **Saldo virtual**, **PnL não realizado**, **PnL total** e a aba
+4. Acompanhe **Saldo virtual**, **PnL não realizado**, **PnL total**, o
+   **Gráfico de operações em andamento** (séries Demo e Real) e a aba
    **Conta Demo** (até 10 posições).
 5. **Reset** ao lado do switch restaura $20 e fecha as posições paper.
 
@@ -28,6 +29,7 @@ página, o robô volta em demo — nunca em "conta real" por acidente.
 | Fechamento | `demo_positions` marcada como `closed` com `close_reason` e `closed_at` |
 | Resultado | margem + PnL devolvidos ao saldo; trade gravado em `demo_trades` |
 | Auditoria | log no console com `mode=DEMO`; nenhuma escrita em `agent_*` |
+| Gráfico | barras de PnL aberto por ativo, comparando Demo (paper) e Real, sem nova chamada à exchange |
 
 Não foi criada nenhuma tabela ou migration: o demo usa `demo_accounts`,
 `demo_positions` e `demo_trades`, que já existem.
@@ -50,6 +52,8 @@ para testar o demo.
 
 - `src/lib/demoTrading.test.ts`: plano determinístico do ciclo, margem, PnL,
   precedência do stop e persistência.
+- `src/lib/openPositionsChart.test.ts`: agrupamento das posições abertas por
+  ativo, separando as séries Demo/Real e ignorando PnL inválido.
 - `e2e/dashboard.spec.ts`: liga o demo, roda um ciclo, confirma a posição paper,
   fecha a posição, recarrega e afirma que **nenhum** `place_order`,
   `set_trading_stop`, `get_positions` ou `get_balance` foi enviado depois do demo.

@@ -216,6 +216,8 @@ test("Modo demo roda ciclo paper, persiste e nunca envia ordem real", async ({ p
 
   await page.getByRole("button", { name: /Rodar 1 ciclo/ }).click();
   await expect(page.getByText(/Posições: 1\/10/)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Gráfico de operações em andamento")).toBeVisible();
+  await expect(page.getByText(/Demo: [+-]?\$[\d.]+ \(1\)/)).toBeVisible();
 
   const demoBodies = sent.filter((entry) => entry.afterDemo).map((entry) => entry.body);
   expect(demoBodies.some((body) => body.action === "get_tickers")).toBe(true);
