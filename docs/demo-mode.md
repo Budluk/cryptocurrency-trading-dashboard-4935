@@ -28,6 +28,7 @@ página, o robô volta em demo — nunca em "conta real" por acidente.
 | Saída | `updateDemoPositions` a cada 10 s cruza SL/TP; stop tem precedência |
 | Fechamento | `demo_positions` marcada como `closed` com `close_reason` e `closed_at` |
 | Resultado | margem + PnL devolvidos ao saldo; trade gravado em `demo_trades` |
+| Persistência | abertura/fechamento serializados; a UI só muda depois que conta e posição são gravadas, então um reload imediato não reabre posição fechada |
 | Auditoria | log no console com `mode=DEMO`; nenhuma escrita em `agent_*` |
 | Gráfico | barras de PnL aberto por ativo, comparando Demo (paper) e Real, sem nova chamada à exchange |
 
@@ -55,6 +56,7 @@ para testar o demo.
 - `src/lib/openPositionsChart.test.ts`: agrupamento das posições abertas por
   ativo, separando as séries Demo/Real e ignorando PnL inválido.
 - `e2e/dashboard.spec.ts`: liga o demo, roda um ciclo, confirma a posição paper,
-  fecha a posição, recarrega e afirma que **nenhum** `place_order`,
-  `set_trading_stop`, `get_positions` ou `get_balance` foi enviado depois do demo.
+  fecha a posição, recarrega e afirma que ela continua fechada e que **nenhum**
+  `place_order`, `set_trading_stop`, `get_positions` ou `get_balance` foi enviado
+  depois do demo.
 - `dry_run` do chat continua separado: ele não grava nada e não abre ordens.

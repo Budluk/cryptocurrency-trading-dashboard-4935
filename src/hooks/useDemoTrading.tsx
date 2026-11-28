@@ -58,28 +58,29 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     setDemoPositions(next);
   }, []);
 
-  const persistAccount = useCallback(async (balance: number, pnl: number) => {
+  const persistAccount = useCallback(async (balance: number, pnl: number): Promise<boolean> => {
     const account = demoAccountRef.current;
-    if (!account) return;
+    if (!account) return true; // Conta apenas local: não há ledger no banco.
     const { error } = await supabase
       .from('demo_accounts')
       .update({ current_balance: balance, total_pnl: pnl })
       .eq('id', account.id);
 
-    if (error) console.warn(`⚠️ [DEMO] Falha ao persistir conta: ${error.message}`);
+    if (error) {
+      console.warn(`⚠️ [DEMO] Falha ao persistir conta: ${error.message}`);
+      return false;
+    }
+    return true;
   }, []);
 
-  /** Aplica deltas sem sofrer com closures antigas e grava o saldo no banco. */
-  const applyAccountDelta = useCallback(async (balanceDelta: number, pnlDelta: number) => {
-    const next = {
-      balance: Math.max(accountRef.current.balance + balanceDelta, 0),
-      pnl: accountRef.current.pnl + pnlDelta,
-    };
-    accountRef.current = next;
-    setDemoBalance(next.balance);
-    setDemoPnL(next.pnl);
-    await persistAccount(next.balance, next.pnl);
-  }, [persistAccount]);
+  // Serializa aberturas/fechamentos: sem isso, duas operações simultâneas
+  // calculam o saldo a partir do mesmo snapshot e corrompem o ledger.
+  const ledgerQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const withLedgerLock = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+    const result = ledgerQueueRef.current.then(operation, operation);
+    ledgerQueueRef.current = result.then(() => undefined, () => undefined);
+    return result;
+  }, []);
 
   const loadDemoAccount = useCallback(async () => {
     if (!isDemoMode) return null;
@@ -189,22 +190,23 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     position: DemoPosition,
     exitPrice: number,
     reason: string,
-  ): Promise<{ success: boolean; pnl: number }> => {
+  ): Promise<{ success: boolean; pnl: number }> => withLedgerLock(async () => {
     loadTokenRef.current += 1;
     const pnl = calculateDemoPnl(
       position.side, position.entry_price, exitPrice, position.quantity, position.leverage,
     );
     const margin = calculateDemoMargin(position.entry_price, position.quantity, position.leverage);
-
-    await applyAccountDelta(margin + pnl, pnl);
-    setPositions(positionsRef.current.filter((p) => p.id !== position.id));
-    forgetDemoLeverage(position.id);
-
+    const balance = Math.max(accountRef.current.balance + margin + pnl, 0);
+    const totalPnl = accountRef.current.pnl + pnl;
     const userId = await getUserId();
     const closedAt = new Date().toISOString();
     const account = demoAccountRef.current;
 
+    // Persistimos primeiro: a UI só mostra a posição fechada depois que o
+    // ledger estiver consistente. Assim um reload imediato não reabre a posição.
     if (account) {
+      if (!await persistAccount(balance, totalPnl)) return { success: false, pnl };
+
       const { error: closeError } = await supabase
         .from('demo_positions')
         .update({
@@ -217,7 +219,10 @@ export const useDemoTrading = (isDemoMode: boolean) => {
         .eq('id', position.id)
         .eq('user_id', userId);
 
-      if (closeError) console.warn(`⚠️ [DEMO] Falha ao fechar posição: ${closeError.message}`);
+      if (closeError) {
+        console.warn(`⚠️ [DEMO] Falha ao fechar posição: ${closeError.message}`);
+        return { success: false, pnl };
+      }
 
       const { error: tradeError } = await supabase.from('demo_trades').insert({
         user_id: userId,
@@ -230,12 +235,21 @@ export const useDemoTrading = (isDemoMode: boolean) => {
         pnl,
       });
 
-      if (tradeError) console.warn(`⚠️ [DEMO] Falha ao registrar trade: ${tradeError.message}`);
+      if (tradeError) {
+        console.warn(`⚠️ [DEMO] Falha ao registrar trade: ${tradeError.message}`);
+        return { success: false, pnl };
+      }
     }
+
+    accountRef.current = { balance, pnl: totalPnl };
+    setDemoBalance(balance);
+    setDemoPnL(totalPnl);
+    setPositions(positionsRef.current.filter((p) => p.id !== position.id));
+    forgetDemoLeverage(position.id);
 
     console.log(`📊 [DEMO] ${position.symbol} fechada (${reason}) | PnL: $${pnl.toFixed(2)}`);
     return { success: true, pnl };
-  }, [applyAccountDelta, setPositions]);
+  }), [persistAccount, setPositions, withLedgerLock]);
 
   const openDemoPosition = useCallback(async (params: {
     symbol: string;
@@ -247,7 +261,7 @@ export const useDemoTrading = (isDemoMode: boolean) => {
     confidence?: number;
     /** Preço público já obtido no ciclo; evita uma segunda chamada de rede. */
     price?: number;
-  }): Promise<{ success: boolean; data?: { orderId: string; price: number; qty: number }; error?: string }> => {
+  }): Promise<{ success: boolean; data?: { orderId: string; price: number; qty: number }; error?: string }> => withLedgerLock(async () => {
     loadTokenRef.current += 1;
     const account = demoAccountRef.current;
     if (!isDemoMode || !account) return { success: false, error: 'Modo demo não ativo' };
@@ -276,11 +290,13 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       opened_at: new Date().toISOString(),
     };
 
-    rememberDemoLeverage(newPosition.id, newPosition.leverage);
-    setPositions([...positionsRef.current, newPosition]);
-    await applyAccountDelta(-marginRequired, 0);
-
+    const balance = Math.max(accountRef.current.balance - marginRequired, 0);
     const userId = await getUserId();
+
+    // A ordem paper só aparece na UI depois que conta e posição estão gravadas.
+    if (!await persistAccount(balance, accountRef.current.pnl)) {
+      return { success: false, error: 'Falha ao persistir a conta demo' };
+    }
     const { error } = await supabase.from('demo_positions').insert({
       user_id: userId,
       demo_account_id: account.id,
@@ -295,14 +311,24 @@ export const useDemoTrading = (isDemoMode: boolean) => {
       pnl: 0,
     });
 
-    if (error) console.warn(`⚠️ [DEMO] Falha ao salvar posição: ${error.message}`);
+    if (error) {
+      console.warn(`⚠️ [DEMO] Falha ao salvar posição: ${error.message}`);
+      return { success: false, error: 'Falha ao salvar a posição demo' };
+    }
+
+    rememberDemoLeverage(newPosition.id, newPosition.leverage);
+    accountRef.current = { balance, pnl: accountRef.current.pnl };
+    setDemoBalance(balance);
+    setDemoPnL(accountRef.current.pnl);
+    setPositions([...positionsRef.current, newPosition]);
+
     console.log(`📊 [DEMO] Abertura ${newPosition.side} ${newPosition.symbol} @ $${currentPrice.toFixed(4)} | Margem $${marginRequired.toFixed(2)}`);
 
     return {
       success: true,
       data: { orderId: newPosition.id, price: currentPrice, qty: newPosition.quantity },
     };
-  }, [applyAccountDelta, fetchCurrentPrice, isDemoMode, setPositions]);
+  }), [fetchCurrentPrice, isDemoMode, persistAccount, setPositions, withLedgerLock]);
 
   const closeDemoPosition = useCallback(async (
     positionId: string,

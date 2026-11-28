@@ -232,9 +232,15 @@ test("Modo demo roda ciclo paper, persiste e nunca envia ordem real", async ({ p
   await page.getByRole("button", { name: "Fechar" }).first().click();
   await expect(page.getByText(/Posições: 0\/10/)).toBeVisible({ timeout: 15000 });
 
-  // Recarregar não pode restaurar o robô em modo real.
-  await page.reload();
+  // Recarregar não pode restaurar o robô em modo real nem a posição fechada.
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes("/rest/v1/demo_accounts") && response.request().method() === "GET"),
+    page.reload(),
+  ]);
   await page.getByRole("tab", { name: "Robô" }).click();
   await expect(page.getByText("Demo (paper)", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Posições: 0\/10/)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/Posições: 1\/10/)).toHaveCount(0);
   expect(sent.filter((entry) => entry.body.action === "place_order")).toEqual([]);
 });
