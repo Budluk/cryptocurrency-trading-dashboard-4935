@@ -5,3 +5,5 @@
 - Research agent (strategy research chat) lives in supabase/functions/_shared/researchAgent.ts and is routed via action "research*" inside ai-market-analysis — the Supabase plan has no room for a new function, and it must never import Bybit/exchange code or keys.
 
 - Keep the trading robot mounted across workspace tabs (forceMount with inactive panels hidden) so navigation does not interrupt its timers; use disclosure sections for secondary controls without changing their handlers.
+
+- Validate selected database read policies with supabase/tests/selected_read_permissions.sql through the migration tool; role-switching tests restore identity and preserve all records so access regressions can be checked safely.
